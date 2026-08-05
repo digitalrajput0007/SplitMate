@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/services/settlementService.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/implementation_plan.artifact.md" beforeDir="false" afterPath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/implementation_plan.artifact.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/task.artifact.md" beforeDir="false" afterPath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/task.artifact.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/constants/theme.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/constants/theme.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/hooks/useGroupBalances.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useGroupBalances.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ActivityScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ActivityScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/AddGroupMemberModal.tsx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/EditExpenseScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EditExpenseScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3HVUNL9djdDqj9RK3e8S5A7wAH9" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "com.google.services.firebase.aqiPopupShown": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "C:/Users/sbiet/.gemini/antigravity-ide/scratch/SplitMate",
+    "settings.editor.selected.configurable": "templates.modelproviders.configurable"
+  }
+}]]></component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="" />
+      <created>1785952688977</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1785952688977</updated>
+    </task>
+    <servers />
+  </component>
+</project>

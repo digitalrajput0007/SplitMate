@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import * as Linking from 'expo-linking';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { resendVerificationEmail, checkEmailVerified } from '../services/authService';
 import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
@@ -18,22 +21,36 @@ import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerification'>;
 
 export default function EmailVerificationScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
   const email = route.params?.email || 'user@example.com';
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [timer, setTimer] = useState(0);
+
+  // Countdown timer for resend button
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (timer > 0) {
+      interval = setInterval(() => {
+        setTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timer]);
 
   const handleCheckVerified = async () => {
     setLoading(true);
     setStatusMessage(null);
     try {
       const isVerified = await checkEmailVerified();
-      setLoading(false);
 
       const currentUser = auth.currentUser;
       if (isVerified && currentUser?.uid) {
         await setUserEmailVerifiedInFirestore(currentUser.uid);
+        setLoading(false);
         navigation.navigate('ProfileSetup');
       } else {
+        setLoading(false);
         setStatusMessage('Email link has not been verified yet. Please check your inbox and click the verification link.');
       }
     } catch (e: any) {
@@ -44,69 +61,110 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   };
 
   const handleResend = async () => {
+    if (timer > 0) return;
+
     setLoading(true);
     setStatusMessage(null);
     try {
       await resendVerificationEmail();
       setLoading(false);
-      Alert.alert('Email Sent', `A new verification link has been sent to ${email}.`);
+      setTimer(60); // Increased to 60s as a safer buffer
       setStatusMessage('Verification email link sent! Check your inbox.');
     } catch (e: any) {
       setLoading(false);
-      setStatusMessage('Verification email link sent! Check your inbox.');
+
+      if (e.code === 'auth/too-many-requests') {
+        setStatusMessage('Too many requests. Please wait a few minutes before trying again.');
+        setTimer(120); // Force a longer wait if Firebase is already throttling
+        Alert.alert('Too Many Requests', 'Firebase has temporarily blocked email requests due to too many attempts. Please wait 2 minutes.');
+      } else {
+        const errorMessage = e.message || 'Failed to resend email. Please try again later.';
+        setStatusMessage(errorMessage);
+        Alert.alert('Error', errorMessage);
+      }
+    }
+  };
+
+  const handleOpenEmailApp = async () => {
+    try {
+      await Linking.openURL('mailto:');
+    } catch (error) {
+      Alert.alert('Error', 'Could not open email app. Please open it manually.');
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
         {/* Envelope Graphic */}
-        <View style={styles.iconCircle}>
+        <View style={[styles.iconCircle, { backgroundColor: colors.primaryContainer }]}>
           <Text style={styles.envelopeEmoji}>✉️</Text>
         </View>
 
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Check your email</Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>
           We sent a verification link to{' '}
-          <Text style={styles.emailHighlight}>{email}</Text>
+          <Text style={[styles.emailHighlight, { color: colors.primary }]}>{email}</Text>
         </Text>
 
         {statusMessage && (
-          <View style={styles.statusBox}>
-            <Text style={styles.statusText}>{statusMessage}</Text>
+          <View style={[styles.statusBox, { backgroundColor: colors.primaryContainer }]}>
+            <Text style={[styles.statusText, { color: colors.onPrimaryContainer }]}>{statusMessage}</Text>
           </View>
         )}
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Verification Instructions</Text>
-          <Text style={styles.infoText}>
+        <View style={[styles.infoCard, {
+          backgroundColor: colors.surfaceContainerLowest,
+          borderColor: colors.divider
+        }]}>
+          <Text style={[styles.infoTitle, { color: colors.primary }]}>Verification Instructions</Text>
+          <Text style={[styles.infoText, { color: colors.onSurfaceVariant }]}>
             1. Open the email sent to {email}.{'\n'}
             2. Click the verification link inside.{'\n'}
             3. Return here and tap "I've Verified My Email" below.
           </Text>
         </View>
 
-        {/* Action Buttons */}
+        {/* Primary Action: Re-check verification */}
         <TouchableOpacity
-          style={[styles.primaryButton, loading && styles.disabledButton]}
+          style={[
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            loading && styles.disabledButton
+          ]}
           onPress={handleCheckVerified}
           activeOpacity={0.85}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={Colors.onPrimary} size="small" />
+            <ActivityIndicator color={colors.onPrimary} size="small" />
           ) : (
-            <Text style={styles.primaryButtonText}>I've Verified My Email</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>I've Verified My Email</Text>
           )}
         </TouchableOpacity>
 
+        {/* Secondary Action: Open Email App */}
+        <TouchableOpacity
+          style={[styles.outlineButton, { borderColor: colors.primary }]}
+          onPress={handleOpenEmailApp}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.outlineButtonText, { color: colors.primary }]}>Open Email App</Text>
+        </TouchableOpacity>
+
+        {/* Tertiary Action: Resend Link with Timer */}
         <TouchableOpacity
           style={styles.secondaryButton}
           onPress={handleResend}
           activeOpacity={0.7}
-          disabled={loading}
+          disabled={loading || timer > 0}
         >
-          <Text style={styles.secondaryButtonText}>Resend Link</Text>
+          <Text style={[
+            styles.secondaryButtonText,
+            { color: timer > 0 ? colors.outline : colors.primary }
+          ]}>
+            {timer > 0 ? `Resend Link in ${timer}s` : 'Resend Verification Email'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -116,7 +174,6 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   content: {
     flex: 1,
@@ -128,7 +185,6 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
@@ -139,23 +195,19 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     textAlign: 'center',
     marginBottom: Spacing.xs,
   },
   subtitle: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
     marginBottom: Spacing.md,
     maxWidth: 300,
   },
   emailHighlight: {
     fontWeight: '600',
-    color: Colors.primary,
   },
   statusBox: {
-    backgroundColor: Colors.primaryContainer,
     borderRadius: BorderRadius.md,
     padding: Spacing.sm,
     marginBottom: Spacing.md,
@@ -164,36 +216,30 @@ const styles = StyleSheet.create({
   },
   statusText: {
     ...Typography.labelMd,
-    color: Colors.onPrimaryContainer,
     textAlign: 'center',
   },
   infoCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   infoTitle: {
     ...Typography.titleMd,
     fontSize: 14,
-    color: Colors.primary,
     marginBottom: 6,
     fontWeight: '700',
   },
   infoText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     lineHeight: 22,
   },
   primaryButton: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     alignItems: 'center',
@@ -202,19 +248,32 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.5,
   },
   primaryButtonText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
     fontWeight: '700',
+  },
+  outlineButton: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: BorderRadius.md,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+    borderWidth: 1.5,
+  },
+  outlineButtonText: {
+    ...Typography.titleMd,
+    fontWeight: '600',
   },
   secondaryButton: {
     paddingVertical: Spacing.sm,
   },
   secondaryButtonText: {
     ...Typography.bodyMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
 });
+
