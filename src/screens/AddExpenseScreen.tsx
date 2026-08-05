@@ -160,9 +160,9 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {/* Total Amount Input Card */}
           <View style={styles.amountCard}>
-            <Text style={styles.amountLabel}>Total Amount ({currencyConfig.code})</Text>
-            <View style={styles.amountRow}>
-              <Text style={styles.amountCurrency}>{currencyConfig.symbol}</Text>
+            <Text style={styles.amountLabel}>Total Amount (INR)</Text>
+            <View style={styles.amountInputRow}>
+              <Text style={styles.amountCurrency}>₹</Text>
               <TextInput
                 style={styles.amountInput}
                 value={amount}
@@ -268,7 +268,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
                     
                     {splitType === 'exact' ? (
                       <View style={styles.customInputBox}>
-                        <Text style={styles.customCurrency}>{currencyConfig.symbol}</Text>
+                        <Text style={styles.customCurrency}>₹</Text>
                         <TextInput
                           style={styles.customInput}
                           value={customAmounts[m.uid] || ''}

@@ -16,26 +16,30 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import { GroupCard } from '../components/GroupCard';
 import { BannerAdSlot } from '../components/BannerAdSlot';
 import { auth } from '../config/firebase';
-import { getCurrencyConfig, formatCurrency } from '../services/currencyService';
+import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   getUserProfileFromFirestore,
   subscribeUserBalanceSummary,
-  getAllUsersFromFirestore,
+  getSavedUserContactsFromFirestore,
+  subscribeToPendingInvitations,
+  acceptGroupInvitation,
+  declineGroupInvitation,
   GroupData,
   UserProfile,
   UserBalanceSummary,
+  GroupInvitation,
 } from '../services/firestoreService';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
-  const currencyConfig = getCurrencyConfig();
 
   const currentUser = auth.currentUser;
 
   const [firstName, setFirstName] = useState('');
   const [groups, setGroups] = useState<GroupData[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<GroupInvitation[]>([]);
   const [frequentContacts, setFrequentContacts] = useState<UserProfile[]>([]);
   const [balanceSummary, setBalanceSummary] = useState<UserBalanceSummary>({
     totalBalance: 0,
@@ -77,22 +81,45 @@ export default function HomeScreen() {
       setLoading(false);
     });
 
+    // Subscribe to Pending Group Invitations
+    const unsubInvitations = subscribeToPendingInvitations(currentUser.uid, (invs) => {
+      setPendingInvitations(invs);
+    });
+
     // Subscribe to Realtime Balance Calculations across all expenses & settlements
     const unsubBalance = subscribeUserBalanceSummary(currentUser.uid, (summary) => {
       setBalanceSummary(summary);
     });
 
-    // Load Frequent Contacts
-    getAllUsersFromFirestore().then((users) => {
-      const otherUsers = users.filter((u) => u.uid !== currentUser.uid);
-      setFrequentContacts(otherUsers.slice(0, 6));
+    // Load Frequent Contacts (Saved User Contacts)
+    getSavedUserContactsFromFirestore(currentUser.uid).then((contacts) => {
+      setFrequentContacts(contacts.slice(0, 6));
     });
 
     return () => {
       unsubGroups();
+      unsubInvitations();
       unsubBalance();
     };
   }, [currentUser]);
+
+  const handleAcceptInv = async (inv: GroupInvitation) => {
+    if (!inv.invitationId) return;
+    try {
+      await acceptGroupInvitation(inv.invitationId, inv.groupId);
+    } catch (e) {
+      console.log('Error accepting invitation:', e);
+    }
+  };
+
+  const handleDeclineInv = async (inv: GroupInvitation) => {
+    if (!inv.invitationId) return;
+    try {
+      await declineGroupInvitation(inv.invitationId, inv.groupId);
+    } catch (e) {
+      console.log('Error declining invitation:', e);
+    }
+  };
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.sm;
 
@@ -108,7 +135,7 @@ export default function HomeScreen() {
         <View style={styles.greeting}>
           <View style={styles.greetingTitleBox}>
             <Text style={styles.greetingText}>Hey, {firstName} 👋</Text>
-            <Text style={styles.greetingSubtext}>Here's your expense summary ({currencyConfig.code})</Text>
+            <Text style={styles.greetingSubtext}>Here's your expense summary (INR)</Text>
           </View>
           <TouchableOpacity
             style={styles.notifBtn}
@@ -123,7 +150,7 @@ export default function HomeScreen() {
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>Total Balance</Text>
           <View style={styles.balanceRow}>
-            <Text style={styles.balanceCurrency}>{currencyConfig.symbol}</Text>
+            <Text style={styles.balanceCurrency}>₹</Text>
             <Text style={styles.balanceAmount}>{balanceSummary.totalBalance.toFixed(2)}</Text>
           </View>
           <View style={styles.divider} />
@@ -177,6 +204,43 @@ export default function HomeScreen() {
             ))}
           </ScrollView>
         </View>
+
+        {/* Pending Invitations Banner / Section */}
+        {pendingInvitations.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                Pending Invitations ({pendingInvitations.length})
+              </Text>
+            </View>
+            <View style={{ gap: Spacing.sm }}>
+              {pendingInvitations.map((inv) => (
+                <View key={inv.invitationId} style={styles.invitationCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.invitationTitle}>You've been added to {inv.groupName}</Text>
+                    <Text style={styles.invitationSub}>Invited by {inv.invitedByName}</Text>
+                  </View>
+                  <View style={styles.invitationActions}>
+                    <TouchableOpacity
+                      style={styles.declineBtn}
+                      onPress={() => handleDeclineInv(inv)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.declineBtnText}>Decline</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.acceptBtn}
+                      onPress={() => handleAcceptInv(inv)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.acceptBtnText}>Accept</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Your Groups */}
         <View style={styles.section}>
@@ -305,6 +369,54 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   addContactIcon: { fontSize: 24, color: Colors.primary, fontWeight: '300' },
+  invitationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surfaceContainerLowest,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primaryContainer,
+    ...Shadows.card,
+  },
+  invitationTitle: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+    fontWeight: '600',
+  },
+  invitationSub: {
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  invitationActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: Spacing.md,
+  },
+  declineBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainerHighest,
+  },
+  declineBtnText: {
+    ...Typography.labelMd,
+    color: Colors.onSurfaceVariant,
+    fontWeight: '600',
+  },
+  acceptBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.primary,
+  },
+  acceptBtnText: {
+    ...Typography.labelMd,
+    color: Colors.onPrimary,
+    fontWeight: '600',
+  },
   groupsList: { gap: Spacing.sm },
   loadingBox: { paddingVertical: Spacing.xl, alignItems: 'center' },
   emptyCard: {

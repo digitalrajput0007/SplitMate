@@ -17,7 +17,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
-import { getAllUsersFromFirestore, UserProfile } from '../services/firestoreService';
+import { auth } from '../config/firebase';
+import { getAllUsersFromFirestore, addContactToUserFirestore, getSavedUserContactsFromFirestore, UserProfile } from '../services/firestoreService';
 import { useNavigation } from '@react-navigation/native';
 
 interface ContactItem {
@@ -28,10 +29,12 @@ interface ContactItem {
   imageUri?: string;
   isOnboarded: boolean;
   onboardedUser?: UserProfile;
+  isAdded?: boolean;
 }
 
 export default function InviteContactsScreen() {
   const navigation = useNavigation();
+  const currentUser = auth.currentUser;
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<ContactItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,11 +67,15 @@ export default function InviteContactsScreen() {
       const onboardedUsers = await getAllUsersFromFirestore();
       const onboardedPhoneMap = new Map<string, UserProfile>();
       onboardedUsers.forEach((user) => {
-        if (user.mobile) {
+        if (user.mobile && user.uid !== currentUser?.uid) {
           const norm = normalizePhone(user.mobile);
           if (norm) onboardedPhoneMap.set(norm, user);
         }
       });
+
+      // Retrieve existing added user contacts from Firestore
+      const savedContacts = currentUser?.uid ? await getSavedUserContactsFromFirestore(currentUser.uid) : [];
+      const savedUids = new Set(savedContacts.map((u) => u.uid));
 
       const parsedContacts: ContactItem[] = [];
       data.forEach((c) => {
@@ -78,6 +85,7 @@ export default function InviteContactsScreen() {
           const norm = normalizePhone(rawNum);
           const onboardedUser = norm ? onboardedPhoneMap.get(norm) : undefined;
           const imageUri = c.imageAvailable && c.image?.uri ? c.image.uri : undefined;
+          const alreadyAdded = onboardedUser?.uid ? savedUids.has(onboardedUser.uid) : false;
 
           parsedContacts.push({
             id: c.id || Math.random().toString(),
@@ -87,6 +95,7 @@ export default function InviteContactsScreen() {
             imageUri: imageUri || onboardedUser?.photoUrl,
             isOnboarded: !!onboardedUser,
             onboardedUser: onboardedUser,
+            isAdded: alreadyAdded,
           });
         }
       });
@@ -130,8 +139,20 @@ export default function InviteContactsScreen() {
     }
   };
 
-  const handleAddContact = (contact: ContactItem) => {
-    Alert.alert('Add Friend', `${contact.name} is on SplitMate! Added to your SplitMate contacts.`);
+  const handleAddContact = async (contact: ContactItem) => {
+    if (!currentUser?.uid || !contact.onboardedUser?.uid) return;
+    try {
+      await addContactToUserFirestore(currentUser.uid, contact.onboardedUser.uid);
+      setContacts((prev) =>
+        prev.map((c) => (c.id === contact.id ? { ...c, isAdded: true } : c))
+      );
+      setFilteredContacts((prev) =>
+        prev.map((c) => (c.id === contact.id ? { ...c, isAdded: true } : c))
+      );
+      Alert.alert('Added Contact', `${contact.name} has been added to your SplitMate contacts!`);
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to add contact.');
+    }
   };
 
   const renderContactItem = ({ item }: { item: ContactItem }) => {
@@ -162,13 +183,19 @@ export default function InviteContactsScreen() {
         </View>
 
         {item.isOnboarded ? (
-          <TouchableOpacity
-            style={styles.addIconCircle}
-            onPress={() => handleAddContact(item)}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="add" size={22} color={Colors.onPrimary} />
-          </TouchableOpacity>
+          item.isAdded ? (
+            <View style={[styles.addIconCircle, { backgroundColor: Colors.positive }]}>
+              <MaterialIcons name="check" size={20} color="#FFFFFF" />
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.addIconCircle}
+              onPress={() => handleAddContact(item)}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="add" size={22} color={Colors.onPrimary} />
+            </TouchableOpacity>
+          )
         ) : (
           <TouchableOpacity
             style={styles.inviteButton}

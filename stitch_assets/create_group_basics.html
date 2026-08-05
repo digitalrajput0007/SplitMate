@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SplitMate - Create Group</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error-container": "#93000a",
+                        "surface-variant": "#e2e2e2",
+                        "on-primary-container": "#cacfff",
+                        "on-tertiary-fixed-variant": "#713700",
+                        "secondary": "#4c56af",
+                        "on-background": "#1a1c1c",
+                        "on-secondary": "#ffffff",
+                        "inverse-on-surface": "#f0f1f1",
+                        "on-secondary-fixed": "#000767",
+                        "on-error": "#ffffff",
+                        "primary-fixed-dim": "#bac3ff",
+                        "on-primary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "inverse-surface": "#2f3131",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#454652",
+                        "on-surface": "#1a1c1c",
+                        "surface-tint": "#4355b9",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed-variant": "#343d96",
+                        "tertiary-fixed": "#ffdcc6",
+                        "surface-container-low": "#f3f3f3",
+                        "on-secondary-container": "#27308a",
+                        "surface-container-high": "#e8e8e8",
+                        "outline": "#757684",
+                        "surface-container": "#eeeeee",
+                        "surface-dim": "#dadada",
+                        "surface-bright": "#f9f9f9",
+                        "secondary-fixed": "#e0e0ff",
+                        "primary": "#24389c",
+                        "on-tertiary-fixed": "#301400",
+                        "on-primary-fixed-variant": "#293ca0",
+                        "tertiary-container": "#8f4700",
+                        "secondary-container": "#959efd",
+                        "outline-variant": "#c5c5d4",
+                        "tertiary-fixed-dim": "#ffb784",
+                        "on-tertiary": "#ffffff",
+                        "inverse-primary": "#bac3ff",
+                        "primary-container": "#3f51b5",
+                        "primary-fixed": "#dee0ff",
+                        "secondary-fixed-dim": "#bdc2ff",
+                        "surface-container-highest": "#e2e2e2",
+                        "on-tertiary-container": "#ffc7a2",
+                        "on-primary-fixed": "#00105c",
+                        "tertiary": "#6c3400",
+                        "surface": "#f9f9f9",
+                        "background": "#f9f9f9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "xl": "32px",
+                        "unit": "4px",
+                        "md": "16px",
+                        "container-margin": "20px",
+                        "xs": "4px",
+                        "lg": "24px",
+                        "sm": "8px",
+                        "gutter": "12px",
+                        "xxl": "48px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Inter"],
+                        "title-md": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "numeric-display": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "label-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "title-md": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "numeric-display": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col relative">
+<!-- TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center px-container-margin h-16 bg-surface flat no shadows">
+<button class="mr-4 text-primary transition-colors duration-200 active:opacity-70 hover:bg-surface-container-low p-2 rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-title-md text-title-md text-on-surface flex-1">Create a Group</h1>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 mt-16 px-container-margin pb-32 overflow-y-auto">
+<!-- Photo Upload -->
+<div class="flex justify-center mt-xl mb-xl">
+<div class="relative w-32 h-32 rounded-full bg-surface-container-highest border border-outline-variant flex items-center justify-center shadow-[0_4px_20px_0_rgba(0,0,0,0.04)]">
+<span class="material-symbols-outlined text-4xl text-on-surface-variant">photo_camera</span>
+<button class="absolute bottom-0 right-0 w-8 h-8 bg-primary rounded-full flex items-center justify-center border-2 border-surface shadow-sm hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined text-on-primary text-sm">add</span>
+</button>
+</div>
+</div>
+<!-- Input Field -->
+<div class="mb-xl">
+<label class="block font-label-md text-label-md text-on-surface-variant mb-sm" for="groupName">Group name</label>
+<input class="w-full px-4 py-3 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-body-lg text-body-lg text-on-surface placeholder:text-outline" id="groupName" placeholder="e.g., Goa Trip" type="text"/>
+</div>
+<!-- Group Type Selection -->
+<div class="mb-xl">
+<label class="block font-label-md text-label-md text-on-surface-variant mb-md">Group type</label>
+<div class="grid grid-cols-2 gap-gutter">
+<!-- Selected Card (Trip) -->
+<button class="flex flex-col items-center justify-center p-md rounded-lg bg-primary text-on-primary shadow-[0_4px_20px_0_rgba(0,0,0,0.04)] transition-all">
+<span class="material-symbols-outlined mb-sm text-2xl">flight</span>
+<span class="font-body-md text-body-md font-medium">Trip</span>
+</button>
+<!-- Unselected Cards -->
+<button class="flex flex-col items-center justify-center p-md rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container-low transition-all shadow-[0_4px_20px_0_rgba(0,0,0,0.04)]">
+<span class="material-symbols-outlined mb-sm text-2xl text-on-surface-variant">home</span>
+<span class="font-body-md text-body-md font-medium">Family</span>
+</button>
+<button class="flex flex-col items-center justify-center p-md rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container-low transition-all shadow-[0_4px_20px_0_rgba(0,0,0,0.04)]">
+<span class="material-symbols-outlined mb-sm text-2xl text-on-surface-variant">favorite</span>
+<span class="font-body-md text-body-md font-medium">Couple</span>
+</button>
+<button class="flex flex-col items-center justify-center p-md rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container-low transition-all shadow-[0_4px_20px_0_rgba(0,0,0,0.04)]">
+<span class="material-symbols-outlined mb-sm text-2xl text-on-surface-variant">apartment</span>
+<span class="font-body-md text-body-md font-medium">Flatmate</span>
+</button>
+<button class="flex flex-col items-center justify-center p-md rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:bg-surface-container-low transition-all shadow-[0_4px_20px_0_rgba(0,0,0,0.04)] col-span-2">
+<span class="material-symbols-outlined mb-sm text-2xl text-on-surface-variant">more_horiz</span>
+<span class="font-body-md text-body-md font-medium">Other</span>
+</button>
+</div>
+</div>
+<!-- Conditional Fields for Trip -->
+<div class="mb-xxl">
+<div class="flex gap-gutter">
+<div class="flex-1 relative">
+<label class="block font-label-md text-label-md text-on-surface-variant mb-sm">Start date</label>
+<div class="relative">
+<input class="w-full pl-4 pr-10 py-3 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-body-md text-body-md text-on-surface placeholder:text-outline" placeholder="DD/MM/YYYY" type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">calendar_today</span>
+</div>
+</div>
+<div class="flex-1 relative">
+<label class="block font-label-md text-label-md text-on-surface-variant mb-sm">End date</label>
+<div class="relative">
+<input class="w-full pl-4 pr-10 py-3 rounded-lg border border-outline-variant bg-surface-container-lowest focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-body-md text-body-md text-on-surface placeholder:text-outline" placeholder="DD/MM/YYYY" type="text"/>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">calendar_today</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Action Area -->
+<div class="fixed bottom-0 left-0 w-full p-container-margin bg-surface bg-opacity-90 backdrop-blur-sm border-t border-surface-variant z-40">
+<button class="w-full py-4 rounded-lg bg-primary text-on-primary font-title-md text-title-md flex items-center justify-center gap-2 hover:bg-primary-container transition-colors active:opacity-90">
+            Next
+            <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+</body></html>

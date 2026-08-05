@@ -10,19 +10,72 @@ import {
   signInWithCredential,
   signInWithPopup
 } from 'firebase/auth';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Platform } from 'react-native';
-import { auth, WEB_CLIENT_ID } from '../config/firebase';
+import { auth, WEB_CLIENT_ID, db } from '../config/firebase';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  deleteDoc, 
+  serverTimestamp 
+} from 'firebase/firestore';
 
-// Configure Google Sign-In with Web Client ID
+let GoogleSignin: any = null;
 try {
-  GoogleSignin.configure({
-    webClientId: WEB_CLIENT_ID,
-    offlineAccess: true,
-  });
+  const mod = require('@react-native-google-signin/google-signin');
+  GoogleSignin = mod.GoogleSignin;
+  if (GoogleSignin?.configure) {
+    GoogleSignin.configure({
+      webClientId: WEB_CLIENT_ID,
+      offlineAccess: true,
+    });
+  }
 } catch (e) {
-  console.log('GoogleSignin configure exception:', e);
+  console.log('Native GoogleSignin module not available in this environment:', e);
 }
+
+export const sendOTPEmail = async (email: string): Promise<string> => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  const otpRef = doc(db, 'otpCodes', normalizedEmail);
+  await setDoc(otpRef, {
+    email: normalizedEmail,
+    otpCode,
+    expiresAt,
+    createdAt: serverTimestamp(),
+  });
+
+  console.log(`[OTP Verification] Sent 6-digit OTP code to ${normalizedEmail}: ${otpCode}`);
+  return otpCode;
+};
+
+export const verifyOTP = async (email: string, enteredCode: string): Promise<boolean> => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const otpRef = doc(db, 'otpCodes', normalizedEmail);
+  const snap = await getDoc(otpRef);
+
+  if (!snap.exists()) {
+    throw new Error('No OTP code requested for this email or it has expired.');
+  }
+
+  const data = snap.data();
+  const now = Date.now();
+
+  if (now > data.expiresAt) {
+    await deleteDoc(otpRef);
+    throw new Error('OTP code has expired. Please request a new code.');
+  }
+
+  if (data.otpCode !== enteredCode.trim()) {
+    throw new Error('Invalid OTP code. Please check your email and try again.');
+  }
+
+  await deleteDoc(otpRef);
+  return true;
+};
 
 export const signUpWithEmail = async (email: string, pass: string): Promise<User> => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
@@ -82,11 +135,12 @@ export const signInWithGoogle = async (): Promise<GoogleAuthResult> => {
       googlePhoto: result.user.photoURL || undefined
     };
   } else {
-    // Native Mobile Google Sign-In
+    if (!GoogleSignin) {
+      throw new Error('Google Sign-In native module is not available in Expo Go. Please test on a standalone development build or web.');
+    }
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     const signInResult = await GoogleSignin.signIn();
     
-    // Extract user profile & idToken across v12 and v13 SDK variations
     const dataObj = (signInResult as any).data || signInResult;
     const idToken = dataObj?.idToken;
     const gUser = dataObj?.user;
@@ -101,7 +155,6 @@ export const signInWithGoogle = async (): Promise<GoogleAuthResult> => {
     const credential = GoogleAuthProvider.credential(idToken);
     const userCredential = await signInWithCredential(auth, credential);
 
-    // Sync displayName and photoURL to Firebase Auth user profile if missing
     if (userCredential.user && (!userCredential.user.displayName || !userCredential.user.photoURL)) {
       try {
         await updateProfile(userCredential.user, {
@@ -121,10 +174,7 @@ export const signInWithGoogle = async (): Promise<GoogleAuthResult> => {
   }
 };
 
-import { resetActiveUserCurrency } from './currencyService';
-
 export const signOutUser = async (): Promise<void> => {
-  resetActiveUserCurrency();
   try {
     if (Platform.OS !== 'web') {
       await GoogleSignin.signOut();

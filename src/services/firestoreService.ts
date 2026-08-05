@@ -2,6 +2,7 @@ import {
   collection, 
   doc, 
   setDoc, 
+  updateDoc,
   getDoc, 
   getDocs, 
   deleteDoc, 
@@ -11,6 +12,8 @@ import {
   serverTimestamp, 
   orderBy 
 } from 'firebase/firestore';
+import { getCurrencyConfig, formatCurrency } from './currencyService';
+export { formatCurrency };
 import { db, auth } from '../config/firebase';
 
 export interface UserProfile {
@@ -21,37 +24,53 @@ export interface UserProfile {
   paymentHandle?: string;
   dob?: string;
   mobile?: string;
-  preferredCurrency?: string;
+  emailVerified?: boolean;
   preferences?: {
     expenseAlerts?: boolean;
     settlementReminders?: boolean;
     monthlyDigest?: boolean;
-    currency?: string;
     theme?: string;
     language?: string;
   };
   createdAt?: any;
 }
 
-export interface GroupMemberProfile {
+export interface GroupMemberDetail {
   uid: string;
   name: string;
   email?: string;
   photoUrl?: string;
   role?: 'Admin' | 'Member';
+  joinedAt?: number;
+  includeExistingExpenses?: boolean;
+}
+
+export interface GroupInvitation {
+  invitationId?: string;
+  groupId: string;
+  groupName: string;
+  fromUserId?: string;
+  toUserId?: string;
+  invitedUid?: string;
+  invitedByName: string;
+  includeExistingExpenses: boolean;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt?: any;
 }
 
 export interface GroupData {
   groupId: string;
   name: string;
   category?: 'Travel' | 'Food' | 'Rent' | 'Event' | 'Utilities' | 'Other';
-  groupType?: 'Trip' | 'Home' | 'Couple' | 'Other';
+  groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Home' | 'Other';
   enableDates?: boolean;
   startDate?: string;
   endDate?: string;
   memberIds: string[];
   members?: Array<{ name: string; email?: string }>;
-  memberProfiles?: Record<string, GroupMemberProfile>;
+  memberProfiles?: Record<string, GroupMemberDetail>;
+  membersJoinedAt?: Record<string, number>;
+  memberExistingExpensesPreference?: Record<string, boolean>;
   createdBy: string;
   createdAt: any;
   balanceLabel?: 'owed' | 'owe' | 'settled';
@@ -113,7 +132,7 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       paymentHandle: profile.paymentHandle || '',
       dob: profile.dob || '',
       mobile: profile.mobile || '',
-      preferredCurrency: profile.preferredCurrency || 'INR',
+      ...(profile.emailVerified !== undefined && { emailVerified: profile.emailVerified }),
       updatedAt: serverTimestamp(),
     };
 
@@ -128,6 +147,15 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       console.log('Firestore Profile Sync Notice:', error?.message || error);
     }
     return null;
+  }
+};
+
+export const setUserEmailVerifiedInFirestore = async (uid: string): Promise<void> => {
+  try {
+    const userRef = doc(db, 'users', uid);
+    await setDoc(userRef, { emailVerified: true, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (error) {
+    console.error('Error setting emailVerified in Firestore:', error);
   }
 };
 
@@ -147,6 +175,30 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<UserProf
   }
 };
 
+export const isMobileNumberRegistered = async (mobileNumber: string, currentUid?: string): Promise<boolean> => {
+  try {
+    const rawDigits = mobileNumber.replace(/[^0-9]/g, '').slice(-10);
+    if (!rawDigits || rawDigits.length < 10) return false;
+
+    const querySnap = await getDocs(collection(db, 'users'));
+    for (const docSnap of querySnap.docs) {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as UserProfile;
+        if (data.uid !== currentUid && data.mobile) {
+          const userRawDigits = data.mobile.replace(/[^0-9]/g, '').slice(-10);
+          if (userRawDigits === rawDigits) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error('Error checking duplicate mobile number:', error);
+    return false;
+  }
+};
+
 export const getAllUsersFromFirestore = async (): Promise<UserProfile[]> => {
   try {
     const querySnap = await getDocs(collection(db, 'users'));
@@ -159,6 +211,33 @@ export const getAllUsersFromFirestore = async (): Promise<UserProfile[]> => {
     return users;
   } catch (error: any) {
     console.log('Error fetching all users from Firestore:', error);
+    return [];
+  }
+};
+
+export const addContactToUserFirestore = async (currentUid: string, contactUid: string): Promise<void> => {
+  try {
+    const userContactRef = doc(db, 'users', currentUid, 'user_contacts', contactUid);
+    await setDoc(userContactRef, {
+      contactUid,
+      addedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error adding user contact:', error);
+  }
+};
+
+export const getSavedUserContactsFromFirestore = async (currentUid: string): Promise<UserProfile[]> => {
+  try {
+    const contactsSnap = await getDocs(collection(db, 'users', currentUid, 'user_contacts'));
+    const contactIds = contactsSnap.docs.map((d) => d.id);
+
+    if (contactIds.length === 0) return [];
+
+    const allUsers = await getAllUsersFromFirestore();
+    return allUsers.filter((u) => contactIds.includes(u.uid));
+  } catch (error) {
+    console.error('Error fetching saved contacts:', error);
     return [];
   }
 };
@@ -183,7 +262,10 @@ export const createGroupInFirestore = async (
   name: string,
   memberIds: string[],
   extraDetails?: {
-    groupType?: 'Trip' | 'Home' | 'Couple' | 'Other';
+    groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Other';
+    photoUrl?: string;
+    familyName?: string;
+    setupMonthlySplit?: boolean;
     enableDates?: boolean;
     startDate?: string;
     endDate?: string;
@@ -193,25 +275,114 @@ export const createGroupInFirestore = async (
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('User not authenticated');
 
-    const allMemberIds = Array.from(new Set([currentUser.uid, ...memberIds]));
+    const now = Date.now();
+    const joinedAtMap: Record<string, number> = {};
+    const existingExpensesPrefMap: Record<string, boolean> = {};
+
+    // Creator joins immediately as accepted
+    joinedAtMap[currentUser.uid] = now;
+    existingExpensesPrefMap[currentUser.uid] = true;
+
+    // Filter invited members excluding creator
+    const invitedMemberIds = Array.from(new Set(memberIds.filter((id) => id !== currentUser.uid)));
+    const allMemberIds = [currentUser.uid, ...invitedMemberIds];
 
     const groupRef = doc(collection(db, 'groups'));
     const groupData: GroupData = {
       groupId: groupRef.id,
       name: name.trim(),
       memberIds: allMemberIds,
+      membersJoinedAt: joinedAtMap,
+      memberExistingExpensesPreference: existingExpensesPrefMap,
       createdBy: currentUser.uid,
       createdAt: serverTimestamp(),
       ...(extraDetails?.groupType && { groupType: extraDetails.groupType }),
+      ...(extraDetails?.photoUrl && { photoUrl: extraDetails.photoUrl }),
+      ...(extraDetails?.familyName && { familyName: extraDetails.familyName }),
+      ...(extraDetails?.setupMonthlySplit !== undefined && { setupMonthlySplit: extraDetails.setupMonthlySplit }),
       ...(extraDetails?.enableDates !== undefined && { enableDates: extraDetails.enableDates }),
       ...(extraDetails?.startDate && { startDate: extraDetails.startDate }),
       ...(extraDetails?.endDate && { endDate: extraDetails.endDate }),
     };
 
     await setDoc(groupRef, groupData);
+
+    // Create pending invitations in groupInvitations collection for each invited user
+    console.log(`[Firestore] About to process ${invitedMemberIds.length} pending invitations...`);
+    for (const invitedUid of invitedMemberIds) {
+      console.log(`[Firestore] About to write invitation for user: ${invitedUid}`);
+      try {
+        const invRef = doc(collection(db, 'groupInvitations'));
+        const invData = {
+          invitationId: invRef.id,
+          groupId: groupRef.id,
+          groupName: name.trim(),
+          fromUserId: currentUser.uid,
+          toUserId: invitedUid,
+          invitedByName: currentUser.displayName || 'Group Admin',
+          includeExistingExpenses: true,
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        };
+        await setDoc(invRef, invData);
+        console.log(`✓ INVITATION WRITTEN SUCCESSFULLY for user ${invitedUid} (invId: ${invRef.id})`);
+      } catch (invErr: any) {
+        console.error(`✗ INVITATION WRITE FAILED for user ${invitedUid}:`, invErr?.code || 'unknown', invErr?.message || invErr);
+      }
+    }
+
     return groupRef.id;
   } catch (error) {
     console.error('Error creating group in Firestore:', error);
+    throw error;
+  }
+};
+
+export const inviteMemberToGroup = async (
+  groupId: string,
+  newMemberUid: string,
+  includeExistingExpenses: boolean
+) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('User not authenticated');
+
+    const groupRef = doc(db, 'groups', groupId);
+    const snap = await getDoc(groupRef);
+    if (!snap.exists()) throw new Error('Group not found');
+
+    const groupData = snap.data() as GroupData;
+    const currentMemberIds = groupData.memberIds || [];
+    if (!currentMemberIds.includes(newMemberUid)) {
+      currentMemberIds.push(newMemberUid);
+      await updateDoc(groupRef, {
+        memberIds: currentMemberIds,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Issue a pending invitation for the new user
+    console.log(`[Firestore] About to write invitation for user: ${newMemberUid}`);
+    try {
+      const invRef = doc(collection(db, 'groupInvitations'));
+      const invData = {
+        invitationId: invRef.id,
+        groupId,
+        groupName: groupData.name || 'Group',
+        fromUserId: currentUser.uid,
+        toUserId: newMemberUid,
+        invitedByName: currentUser.displayName || 'Group Admin',
+        includeExistingExpenses,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      };
+      await setDoc(invRef, invData);
+      console.log(`✓ INVITATION WRITTEN SUCCESSFULLY for user ${newMemberUid} (invId: ${invRef.id})`);
+    } catch (invErr: any) {
+      console.error(`✗ INVITATION WRITE FAILED for user ${newMemberUid}:`, invErr?.code || 'unknown', invErr?.message || invErr);
+    }
+  } catch (error) {
+    console.error('Error inviting member to group:', error);
     throw error;
   }
 };
@@ -236,29 +407,162 @@ export const deleteGroupFromFirestore = async (groupId: string) => {
   }
 };
 
+export const addMemberToGroupWithPreference = async (
+  groupId: string,
+  newMemberUid: string,
+  includeExistingExpenses: boolean
+) => {
+  return inviteMemberToGroup(groupId, newMemberUid, includeExistingExpenses);
+};
+
+export const acceptGroupInvitation = async (invitationId: string, groupId: string) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('User not authenticated');
+
+    const invRef = doc(db, 'groupInvitations', invitationId);
+    const invSnap = await getDoc(invRef);
+    if (!invSnap.exists()) throw new Error('Invitation not found');
+
+    const invData = invSnap.data() as GroupInvitation;
+
+    // Update invitation status to accepted
+    await updateDoc(invRef, {
+      status: 'accepted',
+      updatedAt: serverTimestamp(),
+    });
+
+    // Update group membersJoinedAt and memberExistingExpensesPreference
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (groupSnap.exists()) {
+      const gData = groupSnap.data() as GroupData;
+      const membersJoinedAt = gData.membersJoinedAt || {};
+      membersJoinedAt[currentUser.uid] = Date.now();
+
+      const memberExistingExpensesPreference = gData.memberExistingExpensesPreference || {};
+      memberExistingExpensesPreference[currentUser.uid] = invData.includeExistingExpenses !== false;
+
+      await updateDoc(groupRef, {
+        membersJoinedAt,
+        memberExistingExpensesPreference,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    console.error('Error accepting group invitation:', error);
+    throw error;
+  }
+};
+
+export const declineGroupInvitation = async (invitationId: string, groupId: string) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('User not authenticated');
+
+    const invRef = doc(db, 'groupInvitations', invitationId);
+    await updateDoc(invRef, {
+      status: 'declined',
+      updatedAt: serverTimestamp(),
+    });
+
+    // Remove user from group memberIds
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (groupSnap.exists()) {
+      const gData = groupSnap.data() as GroupData;
+      const updatedMemberIds = (gData.memberIds || []).filter((id) => id !== currentUser.uid);
+      await updateDoc(groupRef, {
+        memberIds: updatedMemberIds,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    console.error('Error declining group invitation:', error);
+    throw error;
+  }
+};
+
+export const subscribeToPendingInvitations = (
+  uid: string,
+  onInvitationsUpdate: (invitations: GroupInvitation[]) => void
+) => {
+  console.log(`[Firestore] Listening for pending invitations for user UID: "${uid}"...`);
+
+  // Query all invitations for this target user (filtering pending client-side to prevent composite index requirement issues)
+  const q = query(
+    collection(db, 'groupInvitations'),
+    where('toUserId', '==', uid)
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      console.log(`[Firestore] Pending invitations snapshot fired. Docs count: ${snapshot.docs.length}`);
+      const invitations: GroupInvitation[] = [];
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() as GroupInvitation;
+        console.log(`[Firestore] Invitation doc ${docSnap.id}: status="${data.status}", group="${data.groupName}", from="${data.fromUserId}"`);
+        if (!data.status || data.status === 'pending') {
+          invitations.push({
+            invitationId: docSnap.id,
+            ...data,
+          });
+        }
+      });
+      console.log(`[Firestore] Total pending invitations passed to UI: ${invitations.length}`);
+      onInvitationsUpdate(invitations);
+    },
+    (error) => {
+      console.error('Error listening to pending invitations:', error);
+    }
+  );
+};
+
 export const subscribeToUserGroups = (
   uid: string,
   onGroupsUpdate: (groups: GroupData[]) => void
 ) => {
+  // Query all groups where memberIds contains uid
   const groupsQuery = query(
     collection(db, 'groups'),
     where('memberIds', 'array-contains', uid)
   );
 
+  // Also query accepted invitations to filter groups list
+  const invitationsQuery = query(
+    collection(db, 'groupInvitations'),
+    where('toUserId', '==', uid)
+  );
+
   return onSnapshot(
     groupsQuery,
-    (snapshot) => {
-      const groups: GroupData[] = snapshot.docs.map((docSnap) => {
+    async (snapshot) => {
+      const invSnap = await getDocs(invitationsQuery);
+      const invitationMap = new Map<string, string>(); // groupId -> status
+      invSnap.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        return {
-          groupId: docSnap.id,
-          name: data.name || 'Unnamed Group',
-          memberIds: data.memberIds || [],
-          createdBy: data.createdBy || '',
-          createdAt: data.createdAt,
-          balanceLabel: 'settled',
-          balanceAmount: '₹0',
-        };
+        invitationMap.set(data.groupId, data.status);
+      });
+
+      const groups: GroupData[] = [];
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() as GroupData;
+        const gId = docSnap.id;
+
+        // Creator always sees group. Invited users only see group if invitation status is 'accepted'
+        const isCreator = data.createdBy === uid;
+        const invStatus = invitationMap.get(gId);
+        const isAccepted = invStatus === 'accepted';
+
+        if (isCreator || isAccepted) {
+          groups.push({
+            balanceLabel: 'settled',
+            balanceAmount: formatCurrency(0),
+            ...data,
+            groupId: gId,
+          });
+        }
       });
 
       onGroupsUpdate(groups);
@@ -267,6 +571,57 @@ export const subscribeToUserGroups = (
       console.error('Error listening to groups:', error);
     }
   );
+};
+
+export const getGroupMembersInvitationStatus = async (
+  groupId: string
+): Promise<{ acceptedUsers: UserProfile[]; pendingUsers: UserProfile[] }> => {
+  try {
+    const groupRef = doc(db, 'groups', groupId);
+    const gSnap = await getDoc(groupRef);
+    if (!gSnap.exists()) return { acceptedUsers: [], pendingUsers: [] };
+
+    const groupData = gSnap.data() as GroupData;
+    const memberIds = groupData.memberIds || [];
+    const allUsers = await getAllUsersFromFirestore();
+    const userMap = new Map<string, UserProfile>();
+    allUsers.forEach((u) => userMap.set(u.uid, u));
+
+    const invQuery = query(
+      collection(db, 'groupInvitations'),
+      where('groupId', '==', groupId)
+    );
+    const invSnap = await getDocs(invQuery);
+    const invMap = new Map<string, string>(); // toUserId -> status
+    invSnap.docs.forEach((d) => {
+      const data = d.data();
+      invMap.set(data.toUserId, data.status);
+    });
+
+    const acceptedUsers: UserProfile[] = [];
+    const pendingUsers: UserProfile[] = [];
+
+    memberIds.forEach((uid) => {
+      const user = userMap.get(uid);
+      if (!user) return;
+
+      if (uid === groupData.createdBy) {
+        acceptedUsers.push(user);
+      } else {
+        const status = invMap.get(uid);
+        if (status === 'pending') {
+          pendingUsers.push(user);
+        } else {
+          acceptedUsers.push(user);
+        }
+      }
+    });
+
+    return { acceptedUsers, pendingUsers };
+  } catch (error) {
+    console.error('Error fetching group members invitation status:', error);
+    return { acceptedUsers: [], pendingUsers: [] };
+  }
 };
 
 export const subscribeToGroupDetail = (
@@ -450,6 +805,11 @@ export const subscribeUserActivityFeed = (
     mergeAndNotify();
   });
 
+  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
+    currentSettlements = snap.docs.map((d) => d.data() as SettlementData);
+    mergeAndNotify();
+  });
+
   return () => {
     unsub1();
     unsub2();
@@ -480,11 +840,29 @@ export const subscribeUserBalanceSummary = (
   let allExpenses: ExpenseData[] = [];
   let allSettlements: SettlementData[] = [];
 
-  const recalculateBalances = () => {
+  const recalculateBalances = async () => {
     let owedSum = 0;
     let oweSum = 0;
 
+    // Fetch user groups to retrieve joinedAt timestamps and includeExistingExpenses preferences
+    const userGroupsSnap = await getDocs(query(collection(db, 'groups'), where('memberIds', 'array-contains', uid)));
+    const userGroupsMap = new Map<string, GroupData>();
+    userGroupsSnap.docs.forEach((docSnap) => {
+      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+    });
+
     allExpenses.forEach((exp) => {
+      const groupData = userGroupsMap.get(exp.groupId);
+      const joinedAt = groupData?.membersJoinedAt?.[uid];
+      const includeExisting = groupData?.memberExistingExpensesPreference?.[uid] ?? true;
+
+      const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+
+      // If user chose "new only" (includeExisting = false), skip expenses created before they joined
+      if (!includeExisting && joinedAt && expTime < joinedAt) {
+        return;
+      }
+
       const splitDetails = exp.splitDetails || {};
       const isPayer = exp.paidBy === uid;
       const userShare = splitDetails[uid] || 0;

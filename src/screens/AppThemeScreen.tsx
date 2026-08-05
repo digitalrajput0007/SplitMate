@@ -15,12 +15,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 
+import { useTheme, ThemeMode } from '../context/ThemeContext';
+
 type Props = NativeStackScreenProps<RootStackParamList, 'AppSettings'>;
 
 export default function AppThemeScreen({ navigation }: Props) {
-  const [themeMode, setThemeMode] = useState<'System' | 'Light' | 'Dark'>('Light');
+  const { themeMode, setThemeMode } = useTheme();
 
-  const handleSelectTheme = (mode: 'System' | 'Light' | 'Dark') => {
+  const handleSelectTheme = (mode: ThemeMode) => {
     setThemeMode(mode);
     Alert.alert('Theme Updated', `${mode} mode has been applied to SplitMate.`);
   };

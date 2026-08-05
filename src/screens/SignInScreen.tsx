@@ -15,8 +15,8 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword } from '../services/authService';
-import { getUserProfileFromFirestore } from '../services/firestoreService';
-import { setActiveUserCurrency } from '../services/currencyService';
+import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
+import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
 
@@ -61,7 +61,6 @@ export default function SignInScreen({ navigation }: Props) {
         // Fetch profile with fast race, fallback immediately if delayed
         getUserProfileFromFirestore(user.uid).then((prof) => {
           if (prof && prof.name && prof.paymentHandle) {
-            setActiveUserCurrency(prof.preferredCurrency || 'USD');
             navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
           } else {
             navigation.reset({
@@ -107,9 +106,12 @@ export default function SignInScreen({ navigation }: Props) {
     try {
       const result = await signInWithGoogle();
       setLoading(false);
+      
+      // Google users are automatically verified
+      await setUserEmailVerifiedInFirestore(result.user.uid);
+
       const prof = await getUserProfileFromFirestore(result.user.uid);
       if (prof && prof.name && prof.paymentHandle) {
-        setActiveUserCurrency(prof.preferredCurrency || 'USD');
         navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
       } else {
         navigation.navigate('ProfileSetup', {

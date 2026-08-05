@@ -14,6 +14,8 @@ import { Colors } from './src/theme';
 
 import { Platform, StyleSheet } from 'react-native';
 
+import { ThemeProvider } from './src/context/ThemeContext';
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -32,22 +34,26 @@ export default function App() {
 
   if (Platform.OS === 'web') {
     return (
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <View style={webStyles.outerContainer}>
-          <View style={webStyles.phoneFrame}>
-            <AppNavigator />
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <View style={webStyles.outerContainer}>
+            <View style={webStyles.phoneFrame}>
+              <AppNavigator />
+            </View>
           </View>
-        </View>
-      </SafeAreaProvider>
+        </SafeAreaProvider>
+      </ThemeProvider>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="auto" />
-      <AppNavigator />
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <AppNavigator />
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 

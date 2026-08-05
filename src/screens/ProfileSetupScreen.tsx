@@ -22,35 +22,23 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
-import { getCurrencyConfig, CURRENCIES, CurrencyConfig, setActiveUserCurrency } from '../services/currencyService';
-import { saveUserProfileToFirestore, getUserProfileFromFirestore } from '../services/firestoreService';
-
-const COUNTRY_CODES = [
-  { code: '+91', country: 'IN', flag: '🇮🇳' },
-  { code: '+1', country: 'US/CA', flag: '🇺🇸' },
-  { code: '+44', country: 'UK', flag: '🇬🇧' },
-  { code: '+49', country: 'DE', flag: '🇩🇪' },
-  { code: '+61', country: 'AU', flag: '🇦🇺' },
-  { code: '+971', country: 'UAE', flag: '🇦🇪' },
-  { code: '+81', country: 'JP', flag: '🇯🇵' },
-];
+import {
+  saveUserProfileToFirestore,
+  getUserProfileFromFirestore,
+  isMobileNumberRegistered,
+} from '../services/firestoreService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
 export default function ProfileSetupScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
-  const initialCurrency = getCurrencyConfig();
 
   const [name, setName] = useState('');
   const [dobDate, setDobDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedCountryCode, setSelectedCountryCode] = useState(COUNTRY_CODES[0]);
   const [mobileNumber, setMobileNumber] = useState('');
-  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyConfig>(initialCurrency);
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
-  const [showCcModal, setShowCcModal] = useState(false);
-  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -62,7 +50,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         setMobileNumber('');
         setPaymentHandle('');
         setPhotoUrl('');
-        setSelectedCurrency(initialCurrency);
         return;
       }
 
@@ -71,7 +58,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       let resolvedHandle = '';
       let resolvedDob = '';
       let resolvedMobile = '';
-      let resolvedCurrCode = initialCurrency.code;
 
       try {
         const firestoreProf = await getUserProfileFromFirestore(activeUser.uid);
@@ -81,10 +67,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           if (firestoreProf.paymentHandle) resolvedHandle = firestoreProf.paymentHandle;
           if (firestoreProf.dob) resolvedDob = firestoreProf.dob;
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
-          if (firestoreProf.preferredCurrency) resolvedCurrCode = firestoreProf.preferredCurrency;
 
           if (firestoreProf.name && firestoreProf.paymentHandle && !route.params?.fromGoogle) {
-            setActiveUserCurrency(resolvedCurrCode);
             navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
             return;
           }
@@ -98,30 +82,18 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         resolvedName = resolvedName.charAt(0).toUpperCase() + resolvedName.slice(1);
       }
 
-      const matchingCurr = CURRENCIES.find((c) => c.code === resolvedCurrCode) || initialCurrency;
-
       setName(resolvedName);
       setPhotoUrl(resolvedPhoto);
       setDobDate(resolvedDob ? new Date(resolvedDob) : null);
       if (resolvedMobile) {
-        const foundCc = COUNTRY_CODES.find((c) => resolvedMobile.startsWith(c.code));
-        if (foundCc) {
-          setSelectedCountryCode(foundCc);
-          setMobileNumber(resolvedMobile.replace(foundCc.code, '').trim());
-        } else {
-          setMobileNumber(resolvedMobile);
-        }
+        const digits = resolvedMobile.replace(/[^0-9]/g, '').slice(-10);
+        setMobileNumber(digits);
       } else {
         setMobileNumber('');
       }
-      setSelectedCurrency(matchingCurr);
       setPaymentHandle(
         resolvedHandle ||
-          (resolvedName
-            ? matchingCurr.isIndia
-              ? `${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`
-              : `${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '')}@paypal`
-            : '')
+          (resolvedName ? `${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi` : '')
       );
     }
 
@@ -157,33 +129,55 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   };
 
   const handleCompleteProfile = async () => {
-    setSaving(true);
-    const fullMobile = `${selectedCountryCode.code} ${mobileNumber.trim()}`.trim();
-    const formattedDob = dobDate ? dobDate.toISOString().split('T')[0] : '';
+    if (!name.trim()) {
+      Alert.alert('Required Field', 'Please enter your Full Name.');
+      return;
+    }
 
-    // Instantly set default app currency based on profile setup choice
-    setActiveUserCurrency(selectedCurrency.code);
+    if (!dobDate) {
+      Alert.alert('Required Field', 'Please select your Date of Birth.');
+      return;
+    }
+
+    const cleanedMobile = mobileNumber.trim().replace(/[^0-9]/g, '');
+    if (!cleanedMobile || cleanedMobile.length !== 10) {
+      Alert.alert('Required Field', 'Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+
+    setSaving(true);
+    const fullMobile = `+91 ${cleanedMobile}`;
+    const formattedDob = dobDate.toISOString().split('T')[0];
 
     try {
-      if (name.trim()) {
-        await updateUserProfile(name.trim(), photoUrl || undefined);
+      const activeUser = auth.currentUser;
+      const isDuplicate = await isMobileNumberRegistered(cleanedMobile, activeUser?.uid);
+      if (isDuplicate) {
+        setSaving(false);
+        Alert.alert(
+          'Mobile Number Already Registered',
+          `The mobile number +91 ${cleanedMobile} is already associated with another SplitMate account. Please use a different mobile number.`
+        );
+        return;
       }
+
+      await updateUserProfile(name.trim(), photoUrl || undefined);
       if (currentUser?.uid) {
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
-          name: name.trim() || currentUser?.displayName || 'User',
+          name: name.trim(),
           email: currentUser?.email || '',
           photoUrl: photoUrl || currentUser?.photoURL || '',
-          paymentHandle: paymentHandle.trim(),
+          paymentHandle: paymentHandle.trim() || `${name.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`,
           dob: formattedDob,
           mobile: fullMobile,
-          preferredCurrency: selectedCurrency.code,
         });
       }
-    } catch (err) {
-      console.log('Profile saved locally (offline / non-blocking mode):', err);
-    } finally {
       setSaving(false);
+      navigation.navigate('ContactsPermission');
+    } catch (err) {
+      setSaving(false);
+      console.log('Profile saved locally (offline / non-blocking mode):', err);
       navigation.navigate('ContactsPermission');
     }
   };
@@ -220,7 +214,9 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         <View style={styles.formContainer}>
           {/* Full Name */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Full Name</Text>
+            <Text style={styles.fieldLabel}>
+              Full Name <Text style={{ color: Colors.error }}>*</Text>
+            </Text>
             <View style={styles.inputBox}>
               <TextInput
                 style={styles.inputText}
@@ -228,11 +224,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
                 onChangeText={(text) => {
                   setName(text);
                   if (text && !paymentHandle) {
-                    setPaymentHandle(
-                      selectedCurrency.isIndia
-                        ? `${text.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`
-                        : `${text.toLowerCase().replace(/[^a-z0-9]/g, '')}@paypal`
-                    );
+                    setPaymentHandle(`${text.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`);
                   }
                 }}
                 placeholder="e.g. Rahul Sharma"
@@ -243,7 +235,9 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
           {/* Date of Birth */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Date of Birth</Text>
+            <Text style={styles.fieldLabel}>
+              Date of Birth <Text style={{ color: Colors.error }}>*</Text>
+            </Text>
             <TouchableOpacity
               style={styles.inputBoxRow}
               onPress={() => setShowDatePicker(true)}
@@ -273,41 +267,27 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
           {/* Mobile Number */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Mobile Number</Text>
-            <TouchableOpacity
-              style={styles.inputBoxRow}
-              onPress={() => setShowCcModal(true)}
-              activeOpacity={0.85}
-            >
+            <Text style={styles.fieldLabel}>
+              Mobile Number (10 digits) <Text style={{ color: Colors.error }}>*</Text>
+            </Text>
+            <View style={styles.inputBoxRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Spacing.sm }}>
+                <Text style={{ fontSize: 16, marginRight: 4 }}>🇮🇳</Text>
+                <Text style={[styles.inputText, { fontWeight: '600' }]}>+91</Text>
+              </View>
               <TextInput
                 style={[styles.inputText, { flex: 1 }]}
-                value={`${selectedCountryCode.code} ${mobileNumber}`}
+                value={mobileNumber}
                 onChangeText={(val) => {
-                  const maxDigits = selectedCountryCode.code === '+91' ? 10 : 12;
-                  const num = val.replace(selectedCountryCode.code, '').replace(/[^0-9]/g, '').slice(0, maxDigits);
-                  setMobileNumber(num);
+                  const cleaned = val.replace(/[^0-9]/g, '').slice(0, 10);
+                  setMobileNumber(cleaned);
                 }}
-                placeholder="+91"
+                placeholder="9876543210"
                 placeholderTextColor="#A0A0A0"
-                keyboardType="phone-pad"
-                maxLength={selectedCountryCode.code.length + 13}
+                keyboardType="number-pad"
+                maxLength={10}
               />
-            </TouchableOpacity>
-          </View>
-
-          {/* Preferred Currency */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Preferred Currency</Text>
-            <TouchableOpacity
-              style={styles.inputBoxRow}
-              onPress={() => setShowCurrencyModal(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.inputText}>
-                {selectedCurrency.code} ({selectedCurrency.symbol})
-              </Text>
-              <MaterialIcons name="keyboard-arrow-down" size={24} color="#555555" />
-            </TouchableOpacity>
+            </View>
           </View>
 
           {/* Primary Continue Button matching exact blue pill in screenshot */}
@@ -325,72 +305,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* Country Code Selection Dropdown Modal */}
-      <Modal visible={showCcModal} transparent animationType="fade" onRequestClose={() => setShowCcModal(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowCcModal(false)}>
-          <View style={styles.dropdownModalCard}>
-            <Text style={styles.modalHeaderTitle}>Select Country Code</Text>
-            <ScrollView style={{ maxHeight: 300 }}>
-              {COUNTRY_CODES.map((cc) => {
-                const isSelected = cc.code === selectedCountryCode.code;
-                return (
-                  <TouchableOpacity
-                    key={cc.code}
-                    style={[styles.modalItemRow, isSelected && styles.modalItemRowSelected]}
-                    onPress={() => {
-                      setSelectedCountryCode(cc);
-                      setShowCcModal(false);
-                    }}
-                  >
-                    <Text style={styles.modalItemFlag}>{cc.flag}</Text>
-                    <Text style={styles.modalItemText}>{cc.country} ({cc.code})</Text>
-                    {isSelected && <MaterialIcons name="check" size={20} color={Colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Currency Selection Dropdown Modal */}
-      <Modal visible={showCurrencyModal} transparent animationType="fade" onRequestClose={() => setShowCurrencyModal(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setShowCurrencyModal(false)}>
-          <View style={styles.dropdownModalCard}>
-            <Text style={styles.modalHeaderTitle}>Select Preferred Currency</Text>
-            <ScrollView style={{ maxHeight: 350 }}>
-              {CURRENCIES.map((curr) => {
-                const isSelected = curr.code === selectedCurrency.code;
-                return (
-                  <TouchableOpacity
-                    key={curr.code}
-                    style={[styles.modalItemRow, isSelected && styles.modalItemRowSelected]}
-                    onPress={() => {
-                      setSelectedCurrency(curr);
-                      setActiveUserCurrency(curr.code);
-                      if (name) {
-                        setPaymentHandle(
-                          curr.isIndia
-                            ? `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`
-                            : `${name.toLowerCase().replace(/[^a-z0-9]/g, '')}@paypal`
-                        );
-                      }
-                      setShowCurrencyModal(false);
-                    }}
-                  >
-                    <View style={styles.currencyModalLeft}>
-                      <Text style={styles.modalItemTextBold}>{curr.code} ({curr.symbol})</Text>
-                      <Text style={styles.modalItemSub}>{curr.name}</Text>
-                    </View>
-                    {isSelected && <MaterialIcons name="check" size={20} color={Colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </SafeAreaView>
   );
 }

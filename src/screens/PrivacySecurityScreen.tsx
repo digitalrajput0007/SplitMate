@@ -11,21 +11,55 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { useNavigation } from '@react-navigation/native';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../constants/theme';
 
 export default function PrivacySecurityScreen() {
   const navigation = useNavigation();
 
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
 
-  const handleBiometricToggle = (val: boolean) => {
-    setBiometricEnabled(val);
-    Alert.alert(
-      val ? 'Biometric Lock Enabled' : 'Biometric Lock Disabled',
-      val
-        ? 'SplitMate will now require Fingerprint / Face ID authentication whenever the app opens.'
-        : 'Biometric security lock has been turned off.'
-    );
+  const handleBiometricToggle = async (val: boolean) => {
+    if (authenticating) return;
+    setAuthenticating(true);
+
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+      if (!hasHardware || !isEnrolled) {
+        setAuthenticating(false);
+        Alert.alert(
+          'Biometrics Unavailable',
+          'Biometric authentication (Fingerprint / Face ID) is not set up or supported on this device.'
+        );
+        return;
+      }
+
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: val ? 'Verify identity to enable Biometric Lock' : 'Verify identity to disable Biometric Lock',
+        cancelLabel: 'Cancel',
+        disableDeviceFallback: false,
+      });
+
+      setAuthenticating(false);
+
+      if (result.success) {
+        setBiometricEnabled(val);
+        Alert.alert(
+          val ? 'Biometric Lock Enabled' : 'Biometric Lock Disabled',
+          val
+            ? 'SplitMate will now require Fingerprint / Face ID authentication whenever the app opens.'
+            : 'Biometric security lock has been turned off.'
+        );
+      } else {
+        Alert.alert('Authentication Failed', 'Identity verification failed. Biometric settings remain unchanged.');
+      }
+    } catch (e: any) {
+      setAuthenticating(false);
+      Alert.alert('Authentication Error', e?.message || 'An error occurred during verification.');
+    }
   };
 
   return (

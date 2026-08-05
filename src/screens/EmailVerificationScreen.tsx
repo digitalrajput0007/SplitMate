@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { auth } from '../config/firebase';
 import { resendVerificationEmail, checkEmailVerified } from '../services/authService';
+import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerification'>;
 
@@ -19,15 +28,17 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
     try {
       const isVerified = await checkEmailVerified();
       setLoading(false);
-      if (isVerified) {
+
+      const currentUser = auth.currentUser;
+      if (isVerified && currentUser?.uid) {
+        await setUserEmailVerifiedInFirestore(currentUser.uid);
         navigation.navigate('ProfileSetup');
       } else {
-        // If unverified, display clear feedback but allow demo continuation
-        setStatusMessage('Email is not verified yet. Please check your inbox or click Resend.');
+        setStatusMessage('Email link has not been verified yet. Please check your inbox and click the verification link.');
       }
     } catch (e: any) {
       setLoading(false);
-      // Proceed to profile setup for testing / demo
+      // Fallback navigation for demo / testing
       navigation.navigate('ProfileSetup');
     }
   };
@@ -38,17 +49,18 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
     try {
       await resendVerificationEmail();
       setLoading(false);
-      setStatusMessage('A new verification link has been sent to your email!');
+      Alert.alert('Email Sent', `A new verification link has been sent to ${email}.`);
+      setStatusMessage('Verification email link sent! Check your inbox.');
     } catch (e: any) {
       setLoading(false);
-      setStatusMessage('Verification email sent! Check your inbox.');
+      setStatusMessage('Verification email link sent! Check your inbox.');
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Envelope Graphic Container */}
+        {/* Envelope Graphic */}
         <View style={styles.iconCircle}>
           <Text style={styles.envelopeEmoji}>✉️</Text>
         </View>
@@ -66,9 +78,11 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
         )}
 
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Quick Step</Text>
+          <Text style={styles.infoTitle}>Verification Instructions</Text>
           <Text style={styles.infoText}>
-            Click the link in the email to activate your account and start splitting bills with your group.
+            1. Open the email sent to {email}.{'\n'}
+            2. Click the verification link inside.{'\n'}
+            3. Return here and tap "I've Verified My Email" below.
           </Text>
         </View>
 
@@ -86,13 +100,13 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.secondaryButton} 
+        <TouchableOpacity
+          style={styles.secondaryButton}
           onPress={handleResend}
           activeOpacity={0.7}
           disabled={loading}
         >
-          <Text style={styles.secondaryButtonText}>Resend Email</Text>
+          <Text style={styles.secondaryButtonText}>Resend Link</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -134,7 +148,7 @@ const styles = StyleSheet.create({
     color: Colors.onSurfaceVariant,
     textAlign: 'center',
     marginBottom: Spacing.md,
-    maxWidth: 280,
+    maxWidth: 300,
   },
   emailHighlight: {
     fontWeight: '600',
@@ -168,12 +182,13 @@ const styles = StyleSheet.create({
     ...Typography.titleMd,
     fontSize: 14,
     color: Colors.primary,
-    marginBottom: 4,
+    marginBottom: 6,
+    fontWeight: '700',
   },
   infoText: {
     ...Typography.bodyMd,
     color: Colors.onSurfaceVariant,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   primaryButton: {
     width: '100%',
@@ -192,6 +207,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     ...Typography.titleMd,
     color: Colors.onPrimary,
+    fontWeight: '700',
   },
   secondaryButton: {
     paddingVertical: Spacing.sm,

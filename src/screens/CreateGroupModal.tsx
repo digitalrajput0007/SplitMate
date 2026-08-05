@@ -8,12 +8,12 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
-  Switch,
   Image,
-  StatusBar as RNStatusBar,
+  FlatList,
   Platform,
+  Switch,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -21,372 +21,718 @@ import * as Contacts from 'expo-contacts';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
-import { createGroupInFirestore, getAllUsersFromFirestore, UserProfile } from '../services/firestoreService';
+import {
+  createGroupInFirestore,
+  getAllUsersFromFirestore,
+  getSavedUserContactsFromFirestore,
+  UserProfile,
+} from '../services/firestoreService';
+import { auth } from '../config/firebase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
 
-interface ContactOption {
+export type GroupTypeOption = 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Other';
+
+interface ContactItem {
   id: string;
   name: string;
   subText: string;
+  phoneNumber?: string;
   photoUrl?: string;
-  isSelectable: boolean;
+  uid?: string;
+  initial: string;
+  avatarBg: string;
 }
 
-const GROUP_TYPES = [
+const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = [
   { id: 'Trip', label: 'Trip', icon: 'flight' },
-  { id: 'Home', label: 'Home', icon: 'home' },
-  { id: 'Couple', label: 'Couple', icon: 'favorite-border' },
+  { id: 'Family', label: 'Family', icon: 'home' },
+  { id: 'Couple', label: 'Couple', icon: 'favorite' },
+  { id: 'Flatmate', label: 'Flatmate', icon: 'apartment' },
   { id: 'Other', label: 'Other', icon: 'more-horiz' },
-] as const;
+];
 
-const RECENT_MOCK_CONTACTS: ContactOption[] = [
-  {
-    id: 'rahul_101',
-    name: 'Rahul Sharma',
-    subText: 'rahul.s@example.com',
-    photoUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCS1e9KHtAYgys727oR61Z3PA-kq2nivAVMulfNx2O6lVC2j0BkAibfnJU8rTEwstfe2Ol-cgYT0VOdarijw4wSyqLN04Pnw_h9OyiVY_KpaQ3zQXWudQMgOQpvXEsVetCq3NzqII8nTp7GUG8qzw-bIU-UDBvEt2GIcm1L4jFzxBKTewjLIn6FJLZNqgmlKq0bJcSJMFSr76WFl7WNylItewYQZi-bTADelWd-OyOyeROPkosYfFwBhA',
-    isSelectable: true,
-  },
-  {
-    id: 'priya_102',
-    name: 'Priya Patel',
-    subText: '+91 98765 43210',
-    isSelectable: true,
-  },
-  {
-    id: 'sneha_103',
-    name: 'Sneha Desai',
-    subText: 'sneha.d@example.com',
-    photoUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBhegNDwSuoRoPwyjkUHBB_it0WlRFsrpPwCO-UmhbvO0SdnXkqgvToG33dypGnM9INXwxUZO40MyB2JuBuuBX9rQl1JkKQixkHvpMdPe7XlI8MEOLIdh7fjMLRASL8c3r5VfUmtSIE3r43Cs-a8McezOsneQljx_k3K_r3F7V-z7-4urqDhrW0zWCupEbO41jp3EiTk5ahPSlYd7LngM04YR0i1HKV_lwCVSjRtN4WUwULFLETmsyY3w',
-    isSelectable: true,
-  },
+const AVATAR_COLORS = [
+  { bg: Colors.primaryContainer, text: Colors.onPrimaryContainer },
+  { bg: Colors.surfaceContainerHighest, text: Colors.onSurface },
+  { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer },
+  { bg: Colors.primaryFixed, text: Colors.onPrimaryFixed },
 ];
 
 export default function CreateGroupModal({ navigation }: Props) {
-  const [groupName, setGroupName] = useState('');
-  const [groupType, setGroupType] = useState<'Trip' | 'Home' | 'Couple' | 'Other'>('Trip');
-  
-  // Dates State
-  const [enableDates, setEnableDates] = useState(true);
-  const [startDate, setStartDate] = useState<Date>(new Date(2023, 9, 27)); // 27-10-2023
-  const [endDate, setEndDate] = useState<Date>(new Date(2023, 10, 5));   // 05-11-2023
-  const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
+  const currentUser = auth.currentUser;
 
-  // Search & Contacts State
+  // Screen Flow Steps:
+  // Screen 1 (Basics) -> Screen 2 (Add Members) -> Screen 3 (Confirm) -> Screen 4 (Success)
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  // Screen 1: Group Basics State
+  const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+  const [groupName, setGroupName] = useState('');
+  const [groupType, setGroupType] = useState<GroupTypeOption>('Trip');
+
+  // Conditional Fields
+  const [startDate, setStartDate] = useState<Date>(new Date(2026, 7, 10)); // Aug 10
+  const [endDate, setEndDate] = useState<Date>(new Date(2026, 7, 15));   // Aug 15
+  const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
+  const [familyName, setFamilyName] = useState('');
+  const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
+
+  // Screen 2: Contacts & Member Selection State
+  const [allContacts, setAllContacts] = useState<ContactItem[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<ContactItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [contactList, setContactList] = useState<ContactOption[]>(RECENT_MOCK_CONTACTS);
-  const [filteredContacts, setFilteredContacts] = useState<ContactOption[]>(RECENT_MOCK_CONTACTS);
-  const [selectedIds, setSelectedIds] = useState<string[]>(['rahul_101']);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Invite custom phone
+  const [customPhone, setCustomPhone] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [showPhoneInvite, setShowPhoneInvite] = useState(false);
+
+  // Screen 3 & 4 State
   const [creating, setCreating] = useState(false);
+  const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadLiveContacts();
+    loadContactsList();
   }, []);
 
-  const loadLiveContacts = async () => {
+  const loadContactsList = async () => {
     try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status === 'granted') {
-        const { data } = await Contacts.getContactsAsync({
-          fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails, Contacts.Fields.Image],
+      const list: ContactItem[] = [];
+
+      // 1. Fetch only saved user contacts from Firestore (added contacts on platform)
+      if (currentUser?.uid) {
+        const savedUsers = await getSavedUserContactsFromFirestore(currentUser.uid);
+        savedUsers.forEach((u, idx) => {
+          const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+          list.push({
+            id: u.uid,
+            name: u.name,
+            subText: u.mobile ? `+91 ${u.mobile}` : u.email,
+            phoneNumber: u.mobile,
+            photoUrl: u.photoUrl,
+            uid: u.uid,
+            initial: u.name.charAt(0).toUpperCase(),
+            avatarBg: color.bg,
+          });
         });
-
-        const onboarded = await getAllUsersFromFirestore();
-
-        const phonebookContacts: ContactOption[] = data
-          .filter((c) => c.phoneNumbers && c.phoneNumbers.length > 0)
-          .map((c) => ({
-            id: c.id || Math.random().toString(),
-            name: c.name || 'Unknown Contact',
-            subText: c.phoneNumbers?.[0]?.number || c.emails?.[0]?.email || '',
-            photoUrl: c.imageAvailable && c.image?.uri ? c.image.uri : undefined,
-            isSelectable: true,
-          }));
-
-        // Merge onboarded users & phonebook with mock recent contacts
-        const combined = [...RECENT_MOCK_CONTACTS, ...phonebookContacts];
-        const unique = Array.from(new Map(combined.map((item) => [item.subText || item.name, item])).values());
-        setContactList(unique);
-        setFilteredContacts(unique);
       }
+
+      setAllContacts(list);
+      setFilteredContacts(list);
+      setSelectedIds(new Set());
     } catch (e) {
-      console.log('Error loading contacts in CreateGroup:', e);
+      console.log('Error loading contacts:', e);
     }
   };
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      setFilteredContacts(contactList);
-      return;
-    }
-    const lower = query.toLowerCase();
-    setFilteredContacts(
-      contactList.filter(
-        (c) => c.name.toLowerCase().includes(lower) || c.subText.toLowerCase().includes(lower)
-      )
-    );
-  };
-
-  const toggleSelect = (id: string) => {
-    if (selectedIds.includes(id)) {
-      setSelectedIds(selectedIds.filter((x) => x !== id));
-    } else {
-      setSelectedIds([...selectedIds, id]);
-    }
-  };
-
-  const [groupPhotoUri, setGroupPhotoUri] = useState<string | null>(null);
 
   const handlePickPhoto = async () => {
     try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow photo library access.');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType ? ImagePicker.MediaType.Images : (ImagePicker as any).MediaTypeOptions?.Images || 'images',
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.7,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setGroupPhotoUri(result.assets[0].uri);
+        setGroupPhoto(result.assets[0].uri);
       }
     } catch (e) {
-      console.log('Error picking group image:', e);
+      console.log('Image picker error:', e);
     }
   };
 
-  const handleCreateGroup = async () => {
-    if (!groupName.trim()) {
-      Alert.alert('Group Name Required', 'Please enter your group name (e.g. Trip to Manali).');
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    if (!text.trim()) {
+      setFilteredContacts(allContacts);
+    } else {
+      const lower = text.toLowerCase();
+      setFilteredContacts(
+        allContacts.filter(
+          (c) => c.name.toLowerCase().includes(lower) || c.subText.toLowerCase().includes(lower)
+        )
+      );
+    }
+  };
+
+  const toggleContact = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setSelectedIds(next);
+  };
+
+  const handleAddCustomPhone = () => {
+    const norm = customPhone.replace(/[^0-9]/g, '').slice(-10);
+    if (norm.length !== 10) {
+      Alert.alert('Invalid Number', 'Please enter a valid 10-digit Indian phone number.');
       return;
     }
 
+    const color = AVATAR_COLORS[allContacts.length % AVATAR_COLORS.length];
+    const newContact: ContactItem = {
+      id: `custom_${norm}`,
+      name: customName.trim() || `+91 ${norm}`,
+      subText: `+91 ${norm}`,
+      phoneNumber: norm,
+      initial: (customName.trim() || 'C').charAt(0).toUpperCase(),
+      avatarBg: color.bg,
+    };
+
+    const updated = [newContact, ...allContacts];
+    setAllContacts(updated);
+    setFilteredContacts(updated);
+
+    const nextSelected = new Set(selectedIds);
+    nextSelected.add(newContact.id);
+    setSelectedIds(nextSelected);
+
+    setCustomPhone('');
+    setCustomName('');
+    setShowPhoneInvite(false);
+  };
+
+  const handleBasicsNext = () => {
+    if (!groupName.trim()) {
+      Alert.alert('Group Name Required', 'Please enter a group name before proceeding.');
+      return;
+    }
+    setCurrentStep(2);
+  };
+
+  const handleMembersNext = () => {
+    setCurrentStep(3);
+  };
+
+  const handleConfirmCreate = async () => {
     setCreating(true);
-    const formattedStart = startDate.toISOString().split('T')[0];
-    const formattedEnd = endDate.toISOString().split('T')[0];
+    try {
+      const selectedContactsList = allContacts.filter((c) => selectedIds.has(c.id));
+      const memberUids = selectedContactsList.map((c) => c.uid || c.id);
 
-    // Trigger Firestore creation in non-blocking manner and navigate back instantly
-    createGroupInFirestore(groupName.trim(), selectedIds, {
-      groupType,
-      enableDates,
-      startDate: formattedStart,
-      endDate: formattedEnd,
-    }).catch((error) => console.error('Background Group Creation Notice:', error));
+      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
 
-    setCreating(false);
-    navigation.goBack();
+      const newId = await createGroupInFirestore(groupName.trim(), memberUids, {
+        groupType,
+        photoUrl: groupPhoto || undefined,
+        familyName: groupType === 'Family' && familyName.trim() ? familyName.trim() : undefined,
+        setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
+        enableDates: groupType === 'Trip',
+        startDate: formattedStart,
+        endDate: formattedEnd,
+      });
+
+      setCreatedGroupId(newId);
+      setCreating(false);
+      setCurrentStep(4);
+    } catch (e: any) {
+      setCreating(false);
+      Alert.alert('Error', e.message || 'Failed to create group.');
+    }
   };
 
-  const formatDateString = (d: Date) => {
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+  const formatDateShort = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
+  const selectedContactsList = allContacts.filter((c) => selectedIds.has(c.id));
 
+  // =============================================================
+  // SCREEN 4: GROUP CREATED SUCCESS (Stitch ID: a0880565aed540c7863bf4d46c0f9569)
+  // =============================================================
+  if (currentStep === 4) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.successCanvas}>
+          {/* Success Icon */}
+          <View style={styles.successIconCircle}>
+            <MaterialIcons name="check-circle" size={64} color={Colors.primary} />
+          </View>
+
+          {/* Typography Stack */}
+          <Text style={styles.successHeadline}>Group created!</Text>
+          <Text style={styles.successTitle}>{groupName || 'Goa Trip'} is ready. What's next?</Text>
+          <Text style={styles.successSubtitle}>Add the first expense to get started</Text>
+
+          {/* Action Stack */}
+          <View style={styles.actionStack}>
+            {/* Primary Action */}
+            <TouchableOpacity
+              style={styles.stitchPrimaryBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                navigation.replace('AddExpense', { groupId: createdGroupId || undefined });
+              }}
+            >
+              <MaterialIcons name="add" size={20} color={Colors.onPrimary} style={{ marginRight: 8 }} />
+              <Text style={styles.stitchPrimaryBtnText}>Add Expense</Text>
+            </TouchableOpacity>
+
+            {/* Secondary Action */}
+            <TouchableOpacity
+              style={styles.stitchSecondaryBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                navigation.replace('InviteContacts');
+              }}
+            >
+              <MaterialIcons name="person-add" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
+              <Text style={styles.stitchSecondaryBtnText}>Invite more people</Text>
+            </TouchableOpacity>
+
+            {/* Tertiary Action */}
+            <TouchableOpacity
+              style={styles.stitchTertiaryBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                navigation.goBack();
+              }}
+            >
+              <Text style={styles.stitchTertiaryBtnText}>Skip for now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // =============================================================
+  // SCREEN 3: CONFIRM GROUP DETAILS (Stitch ID: ac56abc04ebd4b7b9c8010961018c8c5)
+  // =============================================================
+  if (currentStep === 3) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* TopAppBar */}
+        <View style={styles.topAppBar}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => setCurrentStep(2)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
+          </TouchableOpacity>
+          <Text style={styles.topAppBarTitleCenter}>Confirm Group Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Main Content */}
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.confirmMainContent}>
+          <View style={styles.confirmCard}>
+            {/* Header Section */}
+            <View style={styles.confirmHeader}>
+              <Text style={styles.confirmHeadlineMobile}>Confirm Group Details</Text>
+              <Text style={styles.confirmBodyVariant}>
+                Please review the details below before creating the group.
+              </Text>
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Row 1: Name */}
+            <View style={styles.confirmRow}>
+              <View style={styles.confirmCol}>
+                <Text style={styles.confirmLabelUppercase}>GROUP NAME</Text>
+                <Text style={styles.confirmValueTitle}>{groupName || 'Goa Trip'}</Text>
+              </View>
+              <View style={styles.checkCircleBadge}>
+                <MaterialIcons name="check-circle" size={24} color={Colors.onSecondaryContainer} />
+              </View>
+            </View>
+
+            {/* Row 2: Type & Dates */}
+            <View style={styles.confirmRowGap}>
+              <View style={styles.confirmColFlex}>
+                <Text style={styles.confirmLabelUppercase}>TYPE</Text>
+                <View style={styles.pillBadge}>
+                  <Text style={styles.pillBadgeText}>{groupType.toUpperCase()}</Text>
+                </View>
+              </View>
+
+              {groupType === 'Trip' && (
+                <View style={styles.confirmColFlex}>
+                  <Text style={styles.confirmLabelUppercase}>DATES</Text>
+                  <View style={styles.pillBadge}>
+                    <Text style={styles.pillBadgeText}>
+                      {formatDateShort(startDate)} - {formatDateShort(endDate)}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {groupType === 'Family' && familyName.trim() !== '' && (
+                <View style={styles.confirmColFlex}>
+                  <Text style={styles.confirmLabelUppercase}>FAMILY</Text>
+                  <View style={styles.pillBadge}>
+                    <Text style={styles.pillBadgeText}>{familyName}</Text>
+                  </View>
+                </View>
+              )}
+
+              {groupType === 'Flatmate' && (
+                <View style={styles.confirmColFlex}>
+                  <Text style={styles.confirmLabelUppercase}>MONTHLY SPLIT</Text>
+                  <View style={styles.pillBadge}>
+                    <Text style={styles.pillBadgeText}>{setupMonthlySplit ? 'ENABLED' : 'DISABLED'}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Row 3: Members */}
+            <View style={styles.confirmMembersCol}>
+              <View style={styles.confirmMembersHeader}>
+                <Text style={styles.confirmLabelUppercase}>MEMBERS</Text>
+                <Text style={styles.confirmMembersCountText}>
+                  {selectedContactsList.length + 1} Members
+                </Text>
+              </View>
+              <View style={styles.avatarRow}>
+                {/* User avatar */}
+                <View style={[styles.avatarCircle, { backgroundColor: Colors.primaryFixed }]}>
+                  <Text style={[styles.avatarCircleText, { color: Colors.onPrimaryFixed }]}>You</Text>
+                </View>
+                {/* Selected members avatars */}
+                {selectedContactsList.slice(0, 5).map((item) => (
+                  <View key={item.id} style={[styles.avatarCircle, { backgroundColor: item.avatarBg }]}>
+                    <Text style={styles.avatarCircleText}>{item.initial}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.confirmActionsRow}>
+            <TouchableOpacity
+              style={styles.confirmEditBtn}
+              onPress={() => setCurrentStep(1)}
+              disabled={creating}
+            >
+              <Text style={styles.confirmEditBtnText}>Edit</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.confirmPrimaryBtn, creating && styles.disabledBtn]}
+              onPress={handleConfirmCreate}
+              disabled={creating}
+            >
+              {creating ? (
+                <ActivityIndicator color={Colors.onPrimary} size="small" />
+              ) : (
+                <Text style={styles.confirmPrimaryBtnText}>Confirm</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // =============================================================
+  // SCREEN 2: ADD MEMBERS (Stitch ID: 3451a619c98e41f9ac0523677311dd42)
+  // =============================================================
+  if (currentStep === 2) {
+    return (
+      <SafeAreaView style={styles.container}>
+        {/* TopAppBar */}
+        <View style={styles.topAppBar}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => setCurrentStep(1)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MaterialIcons name="arrow-back" size={24} color={Colors.onSurfaceVariant} />
+          </TouchableOpacity>
+          <Text style={styles.topAppBarTitlePrimary} numberOfLines={1}>
+            Add members to {groupName || 'Goa Trip'}
+          </Text>
+          <TouchableOpacity style={styles.iconBtn}>
+            <MaterialIcons name="more-vert" size={24} color={Colors.onSurfaceVariant} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Main Content */}
+        <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md }}>
+          {/* Search Field */}
+          <View style={styles.searchBox}>
+            <MaterialIcons name="search" size={20} color={Colors.outline} style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search contacts"
+              placeholderTextColor={Colors.onSurfaceVariant}
+              value={searchQuery}
+              onChangeText={handleSearch}
+            />
+            {searchQuery !== '' && (
+              <TouchableOpacity onPress={() => handleSearch('')}>
+                <MaterialIcons name="close" size={18} color={Colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Contact List Container Card */}
+          <View style={styles.contactsCardContainer}>
+            <FlatList
+              data={filteredContacts}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: 0 }}
+              renderItem={({ item }) => {
+                const isChecked = selectedIds.has(item.id);
+                return (
+                  <TouchableOpacity
+                    style={styles.contactListItem}
+                    onPress={() => toggleContact(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.contactLeftCol}>
+                      <View style={[styles.avatarCircle, { backgroundColor: item.avatarBg }]}>
+                        <Text style={styles.avatarCircleText}>{item.initial}</Text>
+                      </View>
+                      <View style={{ marginLeft: Spacing.md }}>
+                        <Text style={styles.contactItemName}>{item.name}</Text>
+                        <Text style={styles.contactItemSub}>{item.subText}</Text>
+                      </View>
+                    </View>
+
+                    <View style={[styles.customCheckbox, isChecked && styles.customCheckboxChecked]}>
+                      {isChecked && <MaterialIcons name="check" size={14} color={Colors.onPrimary} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
+              ListFooterComponent={
+                <View>
+                  {/* Integrated Invite row */}
+                  <TouchableOpacity
+                    style={styles.integratedInviteRow}
+                    onPress={() => navigation.navigate('InviteContacts')}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.dottedPhoneCircle}>
+                      <MaterialIcons name="person-add" size={20} color={Colors.primary} />
+                    </View>
+                    <Text style={styles.integratedInviteText}>Invite new members</Text>
+                  </TouchableOpacity>
+
+                  {showPhoneInvite && (
+                    <View style={styles.phoneInviteCard}>
+                      <Text style={styles.phoneInviteTitle}>Enter Indian Mobile Number (+91)</Text>
+                      <TextInput
+                        style={styles.textInputFull}
+                        placeholder="Member Name (Optional)"
+                        placeholderTextColor={Colors.onSurfaceVariant}
+                        value={customName}
+                        onChangeText={setCustomName}
+                      />
+                      <View style={[styles.phoneInputRow, { marginTop: 8 }]}>
+                        <Text style={styles.phonePrefix}>+91</Text>
+                        <TextInput
+                          style={styles.phoneInputText}
+                          placeholder="10-digit mobile number"
+                          placeholderTextColor={Colors.onSurfaceVariant}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          value={customPhone}
+                          onChangeText={setCustomPhone}
+                        />
+                      </View>
+                      <TouchableOpacity style={styles.addMemberSubmitBtn} onPress={handleAddCustomPhone}>
+                        <Text style={styles.addMemberSubmitText}>Add Member</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              }
+            />
+          </View>
+        </View>
+
+        {/* Bottom Action Area with Pill Badge + Full-width Create Group Button */}
+        <View style={styles.bottomActionAreaCenter}>
+          <View style={styles.countPillBadge}>
+            <Text style={styles.countPillText}>
+              {selectedIds.size} {selectedIds.size === 1 ? 'member' : 'members'} selected
+            </Text>
+          </View>
+
+          <TouchableOpacity style={styles.bottomPrimaryBtn} onPress={handleMembersNext} activeOpacity={0.85}>
+            <Text style={styles.bottomPrimaryBtnText}>Create Group</Text>
+            <MaterialIcons name="arrow-forward" size={20} color={Colors.onPrimary} style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // =============================================================
+  // SCREEN 1: CREATE GROUP BASICS (Stitch ID: de45dbe388304e60bec686c33551b919)
+  // =============================================================
   return (
     <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor="#FFFFFF" barStyle="dark-content" translucent />
-
-      {/* Top Header */}
-      <View style={[styles.topBar, { paddingTop: topPadding }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color="#273896" />
+      {/* TopAppBar */}
+      <View style={styles.topAppBar}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Create Group</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.topAppBarTitle}>Create a Group</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* NAME YOUR GROUP */}
-        <Text style={styles.sectionHeaderLabel}>NAME YOUR GROUP</Text>
-        <View style={styles.nameGroupRow}>
-          <TouchableOpacity style={styles.addPhotoBtn} onPress={handlePickPhoto} activeOpacity={0.8}>
-            {groupPhotoUri ? (
-              <Image source={{ uri: groupPhotoUri }} style={styles.groupPhotoImg} />
+      {/* Main Content */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.basicsMainContent}>
+        {/* Photo Upload */}
+        <View style={styles.photoUploadCenter}>
+          <TouchableOpacity style={styles.photoCircleContainer} onPress={handlePickPhoto} activeOpacity={0.8}>
+            {groupPhoto ? (
+              <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
             ) : (
-              <>
-                <MaterialIcons name="add-a-photo" size={22} color="#757684" />
-                <Text style={styles.addPhotoLabel}>ADD</Text>
-              </>
+              <MaterialIcons name="photo-camera" size={28} color={Colors.onSurfaceVariant} />
             )}
+            <View style={styles.photoAddBadge}>
+              <MaterialIcons name="add" size={12} color={Colors.onPrimary} />
+            </View>
           </TouchableOpacity>
-
-          <View style={styles.nameInputBox}>
-            <MaterialIcons name="person-add-alt" size={20} color="#757684" style={{ marginRight: 8 }} />
-            <TextInput
-              style={styles.nameTextInput}
-              value={groupName}
-              onChangeText={setGroupName}
-              placeholder="e.g., Trip to Manali"
-              placeholderTextColor="#A0A0A0"
-            />
-          </View>
         </View>
 
-        {/* CHOOSE GROUP TYPE */}
-        <Text style={styles.sectionHeaderLabel}>CHOOSE GROUP TYPE</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupTypeScroll}>
-          {GROUP_TYPES.map((t) => {
-            const isSelected = groupType === t.id;
-            return (
-              <TouchableOpacity
-                key={t.id}
-                style={[styles.groupTypePill, isSelected ? styles.groupTypePillSelected : styles.groupTypePillUnselected]}
-                onPress={() => setGroupType(t.id)}
-                activeOpacity={0.8}
-              >
-                <MaterialIcons name={t.icon} size={18} color={isSelected ? '#273896' : '#454652'} />
-                <Text style={[styles.groupTypePillText, { color: isSelected ? '#273896' : '#454652' }]}>
-                  {t.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* ENABLE DATES CARD */}
-        <View style={styles.datesCard}>
-          <View style={styles.datesCardHeader}>
-            <View>
-              <Text style={styles.datesCardTitle}>Enable dates</Text>
-              <Text style={styles.datesCardSub}>Track expenses for a specific period</Text>
-            </View>
-            <Switch
-              value={enableDates}
-              onValueChange={setEnableDates}
-              trackColor={{ false: '#D1D5DB', true: '#273896' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-
-          {enableDates && (
-            <View style={styles.datesRow}>
-              {/* Start Date */}
-              <View style={styles.dateFieldFlex}>
-                <Text style={styles.dateFieldLabel}>START DATE</Text>
-                <TouchableOpacity
-                  style={styles.datePickerInput}
-                  onPress={() => setPickerMode('start')}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.dateInputText}>{formatDateString(startDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={18} color="#1A1C1C" />
-                </TouchableOpacity>
-              </View>
-
-              {/* End Date */}
-              <View style={styles.dateFieldFlex}>
-                <Text style={styles.dateFieldLabel}>END DATE</Text>
-                <TouchableOpacity
-                  style={styles.datePickerInput}
-                  onPress={() => setPickerMode('end')}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.dateInputText}>{formatDateString(endDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={18} color="#1A1C1C" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {pickerMode && typeof DateTimePicker === 'function' && (
-            <DateTimePicker
-              value={pickerMode === 'start' ? startDate : endDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(event: any, selectedDate?: Date) => {
-                const currentMode = pickerMode;
-                setPickerMode(null);
-                if (selectedDate) {
-                  if (currentMode === 'start') setStartDate(selectedDate);
-                  else setEndDate(selectedDate);
-                }
-              }}
-            />
-          )}
-        </View>
-
-        {/* INVITE FRIENDS HEADER */}
-        <View style={styles.inviteHeaderRow}>
-          <Text style={styles.sectionHeaderLabel}>INVITE FRIENDS</Text>
-          <Text style={styles.selectedCountText}>{selectedIds.length} Selected</Text>
-        </View>
-
-        {/* SEARCH BAR */}
-        <View style={styles.searchBoxContainer}>
-          <MaterialIcons name="search" size={22} color="#757684" style={{ marginRight: 8 }} />
+        {/* Input Field: Group Name */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Group name</Text>
           <TextInput
-            style={styles.searchInputText}
-            value={searchQuery}
-            onChangeText={handleSearch}
-            placeholder="Name, email, or phone number"
-            placeholderTextColor="#A0A0A0"
+            style={styles.textInputFull}
+            placeholder="e.g., Goa Trip"
+            placeholderTextColor={Colors.outline}
+            value={groupName}
+            onChangeText={setGroupName}
           />
         </View>
 
-        {/* RECENT CONTACTS CARD LIST */}
-        <View style={styles.recentContactsCard}>
-          <Text style={styles.recentCardHeader}>RECENT CONTACTS</Text>
-          {filteredContacts.map((c, index) => {
-            const isSelected = selectedIds.includes(c.id);
-            const avatarLetter = c.name.charAt(0).toUpperCase();
-
-            return (
-              <TouchableOpacity
-                key={c.id}
-                style={[
-                  styles.contactRowItem,
-                  index !== filteredContacts.length - 1 && styles.contactRowBorder,
-                ]}
-                onPress={() => toggleSelect(c.id)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.contactLeftInfo}>
-                  <View style={styles.contactAvatarCircle}>
-                    {c.photoUrl ? (
-                      <Image source={{ uri: c.photoUrl }} style={styles.contactAvatarImg} />
-                    ) : (
-                      <Text style={styles.contactAvatarLetter}>{avatarLetter}</Text>
-                    )}
-                  </View>
-                  <View>
-                    <Text style={styles.contactItemName}>{c.name}</Text>
-                    <Text style={styles.contactItemSub}>{c.subText}</Text>
-                  </View>
-                </View>
-
-                <MaterialIcons
-                  name={isSelected ? 'check-circle' : 'radio-button-unchecked'}
-                  size={24}
-                  color={isSelected ? '#273896' : '#C5C5D4'}
-                />
-              </TouchableOpacity>
-            );
-          })}
+        {/* Group Type Selection — Single Horizontal Row */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Group type</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.singleRowTypeContainer}>
+            {GROUP_TYPES.map((t) => {
+              const isSelected = groupType === t.id;
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    styles.singleRowTypeCard,
+                    isSelected ? styles.typeGridBtnSelected : styles.typeGridBtnUnselected,
+                  ]}
+                  onPress={() => setGroupType(t.id)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons
+                    name={t.icon}
+                    size={18}
+                    color={isSelected ? Colors.onPrimary : Colors.onSurfaceVariant}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.singleRowTypeLabel, isSelected ? styles.typeGridTextSelected : styles.typeGridTextUnselected]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
+
+        {/* Conditional Fields for Selected Group Type (Rendered BELOW Group Type) */}
+        {groupType === 'Trip' && (
+          <View style={styles.inputGroup}>
+            <View style={styles.datesRow}>
+              <View style={styles.dateCol}>
+                <Text style={styles.inputLabel}>Start date</Text>
+                <TouchableOpacity
+                  style={styles.dateInputBox}
+                  onPress={() => setPickerMode('start')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dateInputText}>{formatDateShort(startDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={Colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.dateCol}>
+                <Text style={styles.inputLabel}>End date</Text>
+                <TouchableOpacity
+                  style={styles.dateInputBox}
+                  onPress={() => setPickerMode('end')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dateInputText}>{formatDateShort(endDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={Colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {pickerMode && (
+              <DateTimePicker
+                value={pickerMode === 'start' ? startDate : endDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(event, selected) => {
+                  setPickerMode(null);
+                  if (selected) {
+                    if (pickerMode === 'start') setStartDate(selected);
+                    else setEndDate(selected);
+                  }
+                }}
+              />
+            )}
+          </View>
+        )}
+
+        {groupType === 'Family' && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Family name (Optional)</Text>
+            <TextInput
+              style={styles.textInputFull}
+              placeholder="e.g., The Sharma Household"
+              placeholderTextColor={Colors.outline}
+              value={familyName}
+              onChangeText={setFamilyName}
+            />
+          </View>
+        )}
+
+        {groupType === 'Flatmate' && (
+          <View style={[styles.inputGroup, styles.switchCard]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>Setup monthly split?</Text>
+              <Text style={styles.switchSubtitle}>Automate recurring rent & utility bills</Text>
+            </View>
+            <Switch
+              value={setupMonthlySplit}
+              onValueChange={setSetupMonthlySplit}
+              trackColor={{ false: Colors.surfaceContainerHighest, true: Colors.primaryContainer }}
+              thumbColor={setupMonthlySplit ? Colors.primary : Colors.outline}
+            />
+          </View>
+        )}
       </ScrollView>
 
-      {/* CREATE GROUP BOTTOM BUTTON */}
-      <View style={styles.bottomBarContainer}>
-        <TouchableOpacity
-          style={[styles.createGroupBtn, creating && styles.disabledBtn]}
-          onPress={handleCreateGroup}
-          activeOpacity={0.85}
-          disabled={creating}
-        >
-          {creating ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
-          ) : (
-            <View style={styles.btnContentRow}>
-              <MaterialIcons name="check" size={20} color="#FFFFFF" />
-              <Text style={styles.createGroupBtnText}>Create Group</Text>
-            </View>
-          )}
+      {/* Bottom Action Area */}
+      <View style={styles.bottomActionArea}>
+        <TouchableOpacity style={styles.bottomPrimaryBtn} onPress={handleBasicsNext}>
+          <Text style={styles.bottomPrimaryBtnText}>Next</Text>
+          <MaterialIcons name="arrow-forward" size={20} color={Colors.onPrimary} />
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -396,280 +742,629 @@ export default function CreateGroupModal({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.background,
   },
-  topBar: {
+  topAppBar: {
+    height: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.containerMargin,
+    backgroundColor: Colors.surface,
+  },
+  iconBtn: {
+    padding: Spacing.sm,
+    borderRadius: 20,
+  },
+  topAppBarTitle: {
+    flex: 1,
+    marginLeft: Spacing.md,
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+  },
+  topAppBarTitlePrimary: {
+    flex: 1,
+    marginLeft: Spacing.sm,
+    ...Typography.titleMd,
+    color: Colors.primary,
+  },
+  topAppBarTitleCenter: {
+    flex: 1,
+    textAlign: 'center',
+    ...Typography.titleMd,
+    color: Colors.primary,
+  },
+  basicsMainContent: {
+    paddingHorizontal: Spacing.containerMargin,
+    paddingBottom: 120,
+  },
+  photoUploadCenter: {
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  photoCircleContainer: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.surfaceContainerHighest,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.card,
+  },
+  photoCircleImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
+  },
+  photoAddBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    borderWidth: 2,
+    borderColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputGroup: {
+    marginBottom: Spacing.md,
+  },
+  inputLabel: {
+    ...Typography.labelMd,
+    color: Colors.onSurfaceVariant,
+    marginBottom: Spacing.xs,
+    textTransform: 'uppercase',
+  },
+  textInputFull: {
+    width: '100%',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    backgroundColor: Colors.surfaceContainerLowest,
+    ...Typography.bodyLg,
+    color: Colors.onSurface,
+  },
+  groupTypeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  singleRowTypeContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingRight: Spacing.md,
+  },
+  singleRowTypeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.card,
+  },
+  singleRowTypeLabel: {
+    ...Typography.bodyMd,
+    fontWeight: '600',
+  },
+  typeGridBtn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.lg,
+    minWidth: '45%',
+    flex: 1,
+    ...Shadows.card,
+  },
+  typeGridBtnSelected: {
+    backgroundColor: Colors.primary,
+  },
+  typeGridBtnUnselected: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+  },
+  typeGridBtnFullWidth: {
+    minWidth: '100%',
+  },
+  typeGridBtnLabel: {
+    ...Typography.bodyMd,
+    fontWeight: '500',
+  },
+  typeGridTextSelected: {
+    color: Colors.onPrimary,
+  },
+  typeGridTextUnselected: {
+    color: Colors.onSurface,
+  },
+  datesRow: {
+    flexDirection: 'row',
+    gap: Spacing.gutter,
+  },
+  dateCol: {
+    flex: 1,
+  },
+  dateInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    backgroundColor: Colors.surfaceContainerLowest,
   },
-  backBtn: {
+  dateInputText: {
+    ...Typography.bodyMd,
+    color: Colors.onSurface,
+  },
+  switchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+  },
+  switchTitle: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+  },
+  switchSubtitle: {
+    ...Typography.bodySm,
+    color: Colors.onSurfaceVariant,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    ...Typography.bodyLg,
+    color: Colors.onSurface,
+  },
+  phoneInviteToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryContainer,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  phoneInviteToggleText: {
+    flex: 1,
+    ...Typography.labelMd,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  phoneInviteCard: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  phoneInviteTitle: {
+    ...Typography.labelMd,
+    color: Colors.onSurface,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  phoneInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    borderRadius: BorderRadius.lg,
+    paddingHorizontal: Spacing.md,
+  },
+  phonePrefix: {
+    ...Typography.bodyLg,
+    color: Colors.primary,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  phoneInputText: {
+    flex: 1,
+    paddingVertical: 10,
+    ...Typography.bodyLg,
+    color: Colors.onSurface,
+  },
+  addMemberSubmitBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  addMemberSubmitText: {
+    ...Typography.labelMd,
+    color: Colors.onPrimary,
+    fontWeight: '700',
+  },
+  counterRow: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  selectedCountLabel: {
+    ...Typography.labelMd,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  contactsCardContainer: {
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: '#F2F2F7',
+    marginTop: Spacing.md,
+    overflow: 'hidden',
+    ...Shadows.card,
+  },
+  integratedInviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    backgroundColor: Colors.surfaceContainerLowest,
+  },
+  dottedPhoneCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  integratedInviteText: {
+    ...Typography.titleMd,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  bottomActionAreaCenter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.containerMargin,
+    paddingBottom: Spacing.lg,
+    paddingTop: Spacing.sm,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+  },
+  countPillBadge: {
+    backgroundColor: Colors.primaryContainer + '88',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
+  countPillText: {
+    ...Typography.labelMd,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  contactListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceVariant,
+    backgroundColor: Colors.surfaceContainerLowest,
+  },
+  contactLeftCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topBarTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#273896',
-    textAlign: 'center',
-  },
-  scroll: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-  },
-  sectionHeaderLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6B7280',
-    letterSpacing: 0.5,
-    marginTop: 16,
-    marginBottom: 10,
-  },
-  nameGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  addPhotoBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#D1D5DB',
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  addPhotoLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  nameInputBox: {
-    flex: 1,
-    height: 52,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  nameTextInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1F2937',
-  },
-  groupTypeScroll: {
-    flexDirection: 'row',
-    gap: 10,
-    paddingBottom: 4,
-  },
-  groupTypePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  groupTypePillSelected: {
-    backgroundColor: '#E0E0FF',
-    borderColor: '#273896',
-  },
-  groupTypePillUnselected: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D1D5DB',
-  },
-  groupTypePillText: {
-    fontSize: 14,
+  avatarCircleText: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
     fontWeight: '600',
-  },
-  datesCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    gap: 16,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-  },
-  datesCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  datesCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  datesCardSub: {
-    fontSize: 13,
-    color: '#6B7280',
-    marginTop: 2,
-  },
-  datesRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  dateFieldFlex: {
-    flex: 1,
-    gap: 4,
-  },
-  dateFieldLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-  },
-  datePickerInput: {
-    height: 44,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  dateInputText: {
-    fontSize: 14,
-    color: '#1F2937',
-    fontWeight: '500',
-  },
-  inviteHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  selectedCountText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#273896',
-  },
-  searchBoxContainer: {
-    height: 48,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  searchInputText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1F2937',
-  },
-  recentContactsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-  },
-  recentCardHeader: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#6B7280',
-    backgroundColor: '#F9FAFB',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    letterSpacing: 0.5,
-  },
-  contactRowItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  contactRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  contactLeftInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  contactAvatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#959EFD',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  contactAvatarImg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  contactAvatarLetter: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
   contactItemName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
+    ...Typography.titleMd,
+    color: Colors.onSurface,
   },
   contactItemSub: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 2,
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
   },
-  bottomBarContainer: {
+  customCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customCheckboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  confirmMainContent: {
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xxl,
+    paddingHorizontal: Spacing.containerMargin,
+    alignItems: 'center',
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#F2F2F7',
+    ...Shadows.card,
+  },
+  confirmHeader: {
+    alignItems: 'center',
+  },
+  confirmHeadlineMobile: {
+    ...Typography.headlineLgMobile,
+    color: Colors.onSurface,
+    textAlign: 'center',
+  },
+  confirmBodyVariant: {
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.surfaceVariant,
+    marginVertical: Spacing.md,
+    width: '100%',
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  confirmRowGap: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  confirmCol: {
+    flexDirection: 'column',
+  },
+  confirmColFlex: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  confirmLabelUppercase: {
+    ...Typography.labelMd,
+    color: Colors.onSurfaceVariant,
+    textTransform: 'uppercase',
+  },
+  confirmValueTitle: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+  },
+  checkCircleBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pillBadge: {
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceContainerHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.sm,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  pillBadgeText: {
+    ...Typography.labelMd,
+    color: Colors.onSurface,
+  },
+  confirmMembersCol: {
+    flexDirection: 'column',
+    marginTop: Spacing.xs,
+  },
+  confirmMembersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: Spacing.sm,
+  },
+  confirmMembersCountText: {
+    ...Typography.labelMd,
+    color: Colors.primary,
+  },
+  avatarRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  confirmActionsRow: {
+    width: '100%',
+    maxWidth: 360,
+    marginTop: Spacing.xl,
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  confirmEditBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  confirmEditBtnText: {
+    ...Typography.titleMd,
+    color: Colors.primary,
+  },
+  confirmPrimaryBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.button,
+  },
+  confirmPrimaryBtnText: {
+    ...Typography.titleMd,
+    color: Colors.onPrimary,
+  },
+  bottomActionArea: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    padding: Spacing.containerMargin,
+    backgroundColor: Colors.surface,
     borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
+    borderTopColor: Colors.surfaceVariant,
   },
-  createGroupBtn: {
-    height: 50,
-    borderRadius: 10,
-    backgroundColor: '#273896',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 3,
-  },
-  disabledBtn: {
-    opacity: 0.6,
-  },
-  btnContentRow: {
+  bottomPrimaryBtn: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
+    ...Shadows.button,
   },
-  createGroupBtnText: {
-    fontSize: 16,
+  bottomPrimaryBtnText: {
+    ...Typography.titleMd,
+    color: Colors.onPrimary,
+  },
+  successCanvas: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.containerMargin,
+    maxWidth: 400,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  successIconCircle: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: Colors.primaryFixed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.xl,
+    ...Shadows.card,
+  },
+  successHeadline: {
+    ...Typography.headlineLgMobile,
+    color: Colors.primary,
+    textAlign: 'center',
+  },
+  successTitle: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+  },
+  successSubtitle: {
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xxl,
+  },
+  actionStack: {
+    width: '100%',
+    flexDirection: 'column',
+    gap: Spacing.md,
+  },
+  stitchPrimaryBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.card,
+  },
+  stitchPrimaryBtnText: {
+    ...Typography.labelMd,
+    color: Colors.onPrimary,
     fontWeight: '700',
-    color: '#FFFFFF',
+  },
+  stitchSecondaryBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+  },
+  stitchSecondaryBtnText: {
+    ...Typography.labelMd,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  stitchTertiaryBtn: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    marginTop: Spacing.xs,
+  },
+  stitchTertiaryBtnText: {
+    ...Typography.labelMd,
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  disabledBtn: {
+    opacity: 0.7,
   },
 });

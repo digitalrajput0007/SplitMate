@@ -210,18 +210,7 @@ export default function AccountScreen() {
               <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AppSettings')}>
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="payments" size={20} color={Colors.primary} />
-              </View>
-              <Text style={styles.menuText}>Currency</Text>
-              <View style={styles.rightValueRow}>
-                <Text style={styles.rightValue}>{currencyConfig.code}</Text>
-                <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
-              </View>
-            </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 

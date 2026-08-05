@@ -21,8 +21,11 @@ import {
   subscribeToGroupDetail,
   updateGroupInFirestore,
   deleteGroupFromFirestore,
+  getGroupMembersInvitationStatus,
   GroupData,
+  UserProfile,
 } from '../services/firestoreService';
+import { AddGroupMemberModal } from './AddGroupMemberModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupSettings'>;
 
@@ -42,7 +45,16 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [group, setGroup] = useState<GroupData | null>(null);
   const [groupName, setGroupName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<NonNullable<GroupData['category']>>('Travel');
+  const [acceptedUsers, setAcceptedUsers] = useState<UserProfile[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
   const [saving, setSaving] = useState(false);
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+
+  const loadMembersStatus = async (gId: string) => {
+    const res = await getGroupMembersInvitationStatus(gId);
+    setAcceptedUsers(res.acceptedUsers);
+    setPendingUsers(res.pendingUsers);
+  };
 
   useEffect(() => {
     if (groupId) {
@@ -51,6 +63,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           setGroup(data);
           setGroupName(data.name || '');
           if (data.category) setSelectedCategory(data.category);
+          loadMembersStatus(groupId);
         }
       });
       return () => unsub();
@@ -187,10 +200,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Section 2: Members Section */}
         <View style={styles.section}>
           <View style={styles.membersHeaderRow}>
-            <Text style={styles.sectionHeaderTitle}>Members ({memberList.length})</Text>
+            <Text style={styles.sectionHeaderTitle}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
             <TouchableOpacity
               style={styles.addMemberBtn}
-              onPress={() => (navigation as any).navigate('MainTabs', { screen: 'ContactsTab' })}
+              onPress={() => setShowAddMemberModal(true)}
               activeOpacity={0.8}
             >
               <MaterialIcons name="person-add" size={18} color={Colors.primary} />
@@ -198,34 +211,44 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
 
+          {/* Pending Invitations Sub-Section ("Waiting for: ...") */}
+          {pendingUsers.length > 0 && (
+            <View style={{ marginBottom: Spacing.sm }}>
+              <Text style={styles.pendingHeaderLabel}>
+                Waiting for ({pendingUsers.length}): {pendingUsers.map((u) => u.name).join(', ')}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.membersCardContainer}>
-            {memberList.map((id, index) => {
-              const isMe = id === currentUser?.uid;
-              const roleLabel = isMe ? 'Admin' : 'Member';
-              const nameText = isMe ? 'Rahul Sharma (You)' : index === 1 ? 'Priya Patel' : index === 2 ? 'Amit Kumar' : 'Neha Gupta';
+            {/* Accepted Members */}
+            {acceptedUsers.map((u, index) => {
+              const isMe = u.uid === currentUser?.uid;
+              const isCreator = u.uid === group?.createdBy;
+              const roleLabel = isCreator ? 'Admin' : 'Member';
 
               return (
                 <View
-                  key={id}
+                  key={u.uid}
                   style={[
                     styles.memberRowItem,
-                    index !== memberList.length - 1 && styles.memberRowBorder,
+                    (index !== acceptedUsers.length - 1 || pendingUsers.length > 0) && styles.memberRowBorder,
                   ]}
                 >
                   <View style={styles.memberLeftInfo}>
                     <View style={styles.memberAvatarCircle}>
-                      <Text style={styles.memberAvatarText}>{nameText.charAt(0).toUpperCase()}</Text>
+                      <Text style={styles.memberAvatarText}>{u.name.charAt(0).toUpperCase()}</Text>
                     </View>
                     <View>
-                      <Text style={styles.memberItemName}>{nameText}</Text>
-                      <Text style={styles.memberRoleText}>{roleLabel}</Text>
+                      <Text style={styles.memberItemName}>{u.name} {isMe ? '(You)' : ''}</Text>
+                      <Text style={styles.memberRoleText}>{roleLabel} • Active</Text>
                     </View>
                   </View>
 
                   {!isMe && (
                     <TouchableOpacity
                       style={styles.removeIconBtn}
-                      onPress={() => Alert.alert('Remove Member', `Remove ${nameText} from this group?`)}
+                      onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
                     >
                       <MaterialIcons name="person-remove" size={20} color={Colors.error} />
                     </TouchableOpacity>
@@ -233,6 +256,30 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 </View>
               );
             })}
+
+            {/* Pending Members */}
+            {pendingUsers.map((u, index) => (
+              <View
+                key={u.uid}
+                style={[
+                  styles.memberRowItem,
+                  index !== pendingUsers.length - 1 && styles.memberRowBorder,
+                  { backgroundColor: Colors.surfaceContainerHighest + '44' },
+                ]}
+              >
+                <View style={styles.memberLeftInfo}>
+                  <View style={[styles.memberAvatarCircle, { backgroundColor: Colors.outlineVariant }]}>
+                    <Text style={styles.memberAvatarText}>{u.name.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.memberItemName}>{u.name}</Text>
+                    <Text style={{ ...Typography.labelMd, color: Colors.outline, fontWeight: '600' }}>
+                      Invitation Pending ⏳
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -248,6 +295,17 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <AddGroupMemberModal
+        visible={showAddMemberModal}
+        groupId={groupId}
+        groupName={groupName || 'Group'}
+        existingMemberIds={group?.memberIds || []}
+        onClose={() => setShowAddMemberModal(false)}
+        onMemberAdded={() => {
+          // Realtime snapshot listener automatically refreshes group state
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -363,7 +421,12 @@ const styles = StyleSheet.create({
   addMemberText: {
     ...Typography.labelMd,
     color: Colors.primary,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  pendingHeaderLabel: {
+    ...Typography.bodyMd,
+    color: Colors.primary,
+    fontWeight: '700',
   },
   membersCardContainer: {
     backgroundColor: Colors.surfaceContainerLowest,

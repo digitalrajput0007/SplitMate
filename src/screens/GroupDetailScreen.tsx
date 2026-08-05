@@ -16,7 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
-import { getCurrencyConfig, formatCurrency } from '../services/currencyService';
+import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToGroupExpenses,
   subscribeToGroupDetail,
@@ -29,7 +29,6 @@ import {
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
 export default function GroupDetailScreen({ navigation, route }: Props) {
-  const currencyConfig = getCurrencyConfig();
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
 
@@ -66,13 +65,23 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
   const groupTitle = group?.name || route.params?.groupName || 'Trip to Goa';
 
-  // Calculate Balances
+  // Calculate Balances with joinedAt and includeExistingExpenses filtering
   let totalGroupSpent = 0;
   let userTotalPaid = 0;
   let userTotalOwedShare = 0;
 
+  const myJoinedAt = group?.membersJoinedAt?.[currentUid];
+  const myIncludeExisting = group?.memberExistingExpensesPreference?.[currentUid] ?? true;
+
   expenses.forEach((exp) => {
     totalGroupSpent += exp.amount;
+
+    const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+
+    // Skip retroactive share calculation if user joined with "new only" mode
+    if (!myIncludeExisting && myJoinedAt && expTime < myJoinedAt) {
+      return;
+    }
 
     if (exp.paidBy === currentUid) {
       userTotalPaid += exp.amount;

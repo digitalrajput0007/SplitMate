@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
-import { UserProfile, getAllUsersFromFirestore } from '../services/firestoreService';
-import { useNavigation } from '@react-navigation/native';
+import { UserProfile, getSavedUserContactsFromFirestore } from '../services/firestoreService';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -33,9 +33,11 @@ export default function ContactsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchAddedContacts();
-  }, [currentUser]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchAddedContacts();
+    }, [currentUser])
+  );
 
   const fetchAddedContacts = async () => {
     setLoading(true);
@@ -46,11 +48,9 @@ export default function ContactsScreen() {
         setLoading(false);
         return;
       }
-      const allUsers = await getAllUsersFromFirestore();
-      // Filter active added friends/contacts excluding self
-      const friends = allUsers.filter((u) => u.uid !== currentUser.uid);
-      setAddedContacts(friends);
-      setFilteredContacts(friends);
+      const savedContacts = await getSavedUserContactsFromFirestore(currentUser.uid);
+      setAddedContacts(savedContacts);
+      setFilteredContacts(savedContacts);
     } catch (e) {
       console.log('Error loading added contacts:', e);
     } finally {

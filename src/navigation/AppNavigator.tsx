@@ -170,7 +170,6 @@ function MainTabNavigator() {
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { getUserProfileFromFirestore } from '../services/firestoreService';
-import { setActiveUserCurrency } from '../services/currencyService';
 
 export default function AppNavigator() {
   const [initializing, setInitializing] = React.useState(true);
@@ -183,9 +182,6 @@ export default function AppNavigator() {
       if (authUser) {
         try {
           const prof = await getUserProfileFromFirestore(authUser.uid);
-          if (prof?.preferredCurrency) {
-            setActiveUserCurrency(prof.preferredCurrency);
-          }
           if (prof && prof.name && prof.paymentHandle) {
             setInitialRoute('MainTabs');
           } else {
@@ -235,7 +231,7 @@ export default function AppNavigator() {
         <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
         <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
-        <Stack.Screen name="AppTheme" component={AppThemeScreen} />
+        <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />

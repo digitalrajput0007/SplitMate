@@ -1,6 +1,6 @@
 // Centralized SplitMate Design System — Grounded in Stitch Design Guidelines
 
-export const Colors = {
+export const LightColors = {
   // Primary Palette
   primary: '#24389C',
   onPrimary: '#FFFFFF',
@@ -62,6 +62,41 @@ export const Colors = {
   positiveContainer: '#DCFCE7',
   positiveText: '#166534',
 };
+
+export const DarkColors = {
+  ...LightColors,
+  primary: '#5C6BC0',
+  onPrimary: '#FFFFFF',
+  primaryContainer: '#1F2937',
+  onPrimaryContainer: '#E0E7FF',
+  primaryFixed: '#374151',
+  primaryFixedDim: '#1F2937',
+  onPrimaryFixed: '#F3F4F6',
+  onPrimaryFixedVariant: '#9CA3AF',
+  inversePrimary: '#3F51B5',
+
+  surface: '#121212',
+  surfaceDim: '#121212',
+  surfaceBright: '#242424',
+  surfaceContainerLowest: '#1E1E1E',
+  surfaceContainerLow: '#242424',
+  surfaceContainer: '#2C2C2C',
+  surfaceContainerHigh: '#333333',
+  surfaceContainerHighest: '#3B3B3B',
+  surfaceVariant: '#374151',
+  onSurface: '#F3F4F6',
+  onSurfaceVariant: '#9CA3AF',
+  inverseSurface: '#F3F4F6',
+
+  background: '#121212',
+  onBackground: '#F3F4F6',
+
+  outline: '#6B7280',
+  outlineVariant: '#374151',
+  divider: '#2D3748',
+};
+
+export const Colors = LightColors;
 
 export const Typography = {
   fontFamily: 'Inter_400Regular',
