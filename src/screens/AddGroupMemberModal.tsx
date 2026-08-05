@@ -134,6 +134,7 @@ export function AddGroupMemberModal({
       );
       setSelectedUser(null);
       setSearchQuery('');
+      setIncludeExistingExpenses(false);
       onMemberAdded();
       onClose();
     } catch (e: any) {
@@ -243,7 +244,7 @@ export function AddGroupMemberModal({
 
             {selectedUser && (
               <View style={styles.preferenceSection}>
-                <Text style={[styles.stepTitle, { color: colors.onSurface }]}>Splitting Preference</Text>
+                <Text style={[styles.stepTitle, { color: colors.onSurface }]}>Previous Expense Handling</Text>
 
                 <TouchableOpacity
                   style={[
@@ -260,8 +261,13 @@ export function AddGroupMemberModal({
                       color={!includeExistingExpenses ? colors.primary : colors.outlineVariant}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Split only new expenses</Text>
-                      <Text style={[styles.optionSub, { color: colors.onSurfaceVariant }]}>Recommended for new members</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Only future expenses</Text>
+                        <View style={[styles.badge, { backgroundColor: colors.positiveContainer }]}>
+                          <Text style={[styles.badgeText, { color: colors.positiveText }]}>Recommended</Text>
+                        </View>
+                      </View>
+                      <Text style={[styles.optionSub, { color: colors.onSurfaceVariant }]}>Member only splits bills added from now on.</Text>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -281,10 +287,10 @@ export function AddGroupMemberModal({
                       color={includeExistingExpenses ? colors.primary : colors.outlineVariant}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Split all group expenses</Text>
+                      <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Include previous expenses</Text>
                       {totalExistingExpenses > 0 && (
                         <Text style={[styles.impactText, { color: colors.primary }]}>
-                          Will owe approx {formatCurrency(estimatedSharePerUser)} from past bills
+                          Member will owe approx {formatCurrency(estimatedSharePerUser)} from {formatCurrency(totalExistingExpenses)} in past bills.
                         </Text>
                       )}
                     </View>
