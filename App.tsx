@@ -16,6 +16,32 @@ import { Platform, StyleSheet } from 'react-native';
 
 import { ThemeProvider } from './src/context/ThemeContext';
 
+import { useTheme } from './src/context/ThemeContext';
+
+function MainAppContent() {
+  const { colors, isDark } = useTheme();
+
+  if (Platform.OS === 'web') {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <View style={webStyles.outerContainer}>
+          <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
+            <AppNavigator />
+          </View>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <AppNavigator />
+    </SafeAreaProvider>
+  );
+}
+
 export default function App() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -32,27 +58,9 @@ export default function App() {
     );
   }
 
-  if (Platform.OS === 'web') {
-    return (
-      <ThemeProvider>
-        <SafeAreaProvider>
-          <StatusBar style="auto" />
-          <View style={webStyles.outerContainer}>
-            <View style={webStyles.phoneFrame}>
-              <AppNavigator />
-            </View>
-          </View>
-        </SafeAreaProvider>
-      </ThemeProvider>
-    );
-  }
-
   return (
     <ThemeProvider>
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <AppNavigator />
-      </SafeAreaProvider>
+      <MainAppContent />
     </ThemeProvider>
   );
 }

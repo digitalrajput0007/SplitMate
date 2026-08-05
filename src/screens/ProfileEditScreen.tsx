@@ -32,7 +32,9 @@ export default function ProfileEditScreen({ navigation }: Props) {
   const [mobile, setMobile] = useState('');
   const [dob, setDob] = useState('15-08-1995');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [initialPhotoUrl, setInitialPhotoUrl] = useState(currentUser?.photoURL || '');
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     const activeUser = auth.currentUser;
@@ -41,16 +43,24 @@ export default function ProfileEditScreen({ navigation }: Props) {
     setName(activeUser.displayName || '');
     setEmail(activeUser.email || '');
     setPhotoUrl(activeUser.photoURL || '');
+    setInitialPhotoUrl(activeUser.photoURL || '');
 
-    getUserProfileFromFirestore(activeUser.uid).then((data) => {
-      if (data) {
-        if (data.name) setName(data.name);
-        if (data.email) setEmail(data.email);
-        if (data.photoUrl) setPhotoUrl(data.photoUrl);
-        if (data.mobile) setMobile(data.mobile);
-        if (data.dob) setDob(data.dob);
-      }
-    });
+    getUserProfileFromFirestore(activeUser.uid)
+      .then((data) => {
+        if (data) {
+          if (data.name) setName(data.name);
+          if (data.email) setEmail(data.email);
+          if (data.photoUrl) {
+            setPhotoUrl(data.photoUrl);
+            setInitialPhotoUrl(data.photoUrl);
+          }
+          if (data.mobile) setMobile(data.mobile);
+          if (data.dob) setDob(data.dob);
+        }
+      })
+      .catch((err) => {
+        console.error('Error fetching profile:', err);
+      });
   }, [auth.currentUser?.uid]);
 
   const handlePickImage = async () => {
@@ -63,10 +73,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setPhotoUrl(result.assets[0].uri);
+        const newUri = result.assets[0].uri;
+        setUploadingPhoto(true);
+        // Simulate image processing/upload delay
+        setTimeout(() => {
+          setPhotoUrl(newUri);
+          setUploadingPhoto(false);
+        }, 800);
       }
     } catch (e: any) {
-      Alert.alert('Image Error', e.message || 'Failed to select image.');
+      setUploadingPhoto(false);
+      Alert.alert('Couldn\'t save settings, please try again');
     }
   };
 
@@ -78,14 +95,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
 
     setSaving(true);
     try {
-      await updateUserProfile(name.trim(), photoUrl.trim() || undefined);
+      // Don't re-upload / re-update photo if unchanged
+      const finalPhotoUrl = photoUrl === initialPhotoUrl ? initialPhotoUrl : photoUrl;
+
+      await updateUserProfile(name.trim(), finalPhotoUrl.trim() || undefined);
 
       if (currentUser?.uid) {
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
           name: name.trim(),
           email: email.trim() || currentUser.email || '',
-          photoUrl: photoUrl.trim(),
+          photoUrl: finalPhotoUrl.trim(),
           mobile: mobile,
           dob: dob,
         });
@@ -95,7 +115,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
       navigation.goBack();
     } catch (error: any) {
       console.error('Error saving profile:', error);
-      Alert.alert('Error', error.message || 'Failed to update profile.');
+      Alert.alert('Error', 'Couldn\'t save settings, please try again');
     } finally {
       setSaving(false);
     }
@@ -104,14 +124,14 @@ export default function ProfileEditScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
-  const initials = name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'SR';
+  const initials = name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
   return (
     <SafeAreaView style={styles.container}>
       <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
       <View style={[styles.topBar, { paddingTop: topPadding }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Personal Information</Text>
         <View style={{ width: 40 }} />
@@ -119,18 +139,24 @@ export default function ProfileEditScreen({ navigation }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
-          <TouchableOpacity style={styles.avatarSection} onPress={handlePickImage} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.avatarSection} onPress={handlePickImage} activeOpacity={0.8} disabled={uploadingPhoto}>
             <View style={styles.avatarCircle}>
-              {photoUrl ? (
+              {uploadingPhoto ? (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                </View>
+              ) : photoUrl ? (
                 <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
               ) : (
                 <Text style={styles.avatarText}>{initials}</Text>
               )}
               <View style={styles.cameraBadge}>
-                <MaterialIcons name="camera-alt" size={16} color="#FFFFFF" />
+                <MaterialIcons name="edit" size={14} color="#FFFFFF" />
               </View>
             </View>
-            <Text style={styles.avatarHint}>Tap to Change Profile Photo</Text>
+            <Text style={styles.avatarHint}>
+              {uploadingPhoto ? 'Uploading photo...' : 'Tap edit icon to change profile photo'}
+            </Text>
           </TouchableOpacity>
 
           <OutlinedInput
@@ -213,6 +239,14 @@ const styles = StyleSheet.create({
   },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { ...Typography.headlineLg, color: Colors.onPrimaryContainer },
+  uploadingOverlay: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.surfaceContainerHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cameraBadge: {
     position: 'absolute',
     bottom: 0,

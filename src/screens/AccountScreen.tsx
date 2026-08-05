@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import {
   View,
   Text,
@@ -11,18 +11,21 @@ import {
   Modal,
   StatusBar as RNStatusBar,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
 import { signOutUser } from '../services/authService';
 import { getUserProfileFromFirestore, getAllUsersFromFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
+import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import AppLogo from '../components/AppLogo';
+import { M3Skeleton } from '../components/M3Skeleton';
 import QRCode from 'react-native-qrcode-svg';
 
 let CameraView: any = View;
@@ -42,6 +45,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function AccountScreen() {
   const navigation = useNavigation<NavigationProp>();
   const currencyConfig = getCurrencyConfig();
+  const { themeMode, colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -50,14 +54,18 @@ export default function AccountScreen() {
   const [displayMobile, setDisplayMobile] = useState('');
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [profileLoading, setProfileLoading] = useState(true);
+
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [activeQrTab, setActiveQrTab] = useState<'my' | 'scan'>('my');
   const [scannedUser, setScannedUser] = useState<any | null>(null);
   const [scannedNotFound, setScannedNotFound] = useState(false);
   const [addingContact, setAddingContact] = useState(false);
   const [scannedLock, setScannedLock] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [helpModalVisible, setHelpModalVisible] = useState(false);
 
-  useEffect(() => {
+  const fetchUserData = useCallback(async () => {
     const activeUser = auth.currentUser;
     if (!activeUser?.uid) {
       setDisplayName('User');
@@ -65,13 +73,15 @@ export default function AccountScreen() {
       setPaymentHandle('');
       setPhotoUrl('');
       setDisplayMobile('');
+      setProfileLoading(false);
       return;
     }
     setDisplayName(activeUser.displayName || activeUser.email?.split('@')[0] || 'User');
     setDisplayEmail(activeUser.email || '');
     setPhotoUrl(activeUser.photoURL || '');
 
-    getUserProfileFromFirestore(activeUser.uid).then((prof) => {
+    try {
+      const prof = await getUserProfileFromFirestore(activeUser.uid);
       if (prof) {
         if (prof.name) setDisplayName(prof.name);
         if (prof.email) setDisplayEmail(prof.email);
@@ -79,21 +89,30 @@ export default function AccountScreen() {
         if (prof.photoUrl) setPhotoUrl(prof.photoUrl);
         if (prof.mobile) setDisplayMobile(prof.mobile);
       }
-    });
-  }, [auth.currentUser?.uid]);
+    } catch (err) {
+      console.error('Firestore fetch error in AccountScreen:', err);
+      Alert.alert('Error', 'Network error, check your connection');
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserData();
+    }, [fetchUserData])
+  );
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scannedLock || scannedUser || scannedNotFound) return;
     setScannedLock(true);
 
     try {
-      // Clean and extract mobile digits from QR data payload
       const cleanedData = data.trim();
       let extractedMobile = cleanedData.replace(/[^0-9]/g, '').slice(-10);
 
       const allUsers = await getAllUsersFromFirestore();
 
-      // Verify if mobile number exists in Firestore system
       const matchedUser = allUsers.find((u) => {
         if (!u.mobile) return false;
         const normalized = u.mobile.replace(/[^0-9]/g, '').slice(-10);
@@ -123,29 +142,18 @@ export default function AccountScreen() {
     }, 600);
   };
 
-  const handleLogout = async () => {
-    const doLogout = async () => {
-      try {
-        await signOutUser();
-        navigation.reset({ index: 0, routes: [{ name: 'SignIn' }] });
-      } catch (e: any) {
-        if (Platform.OS === 'web') {
-          window.alert('Logout Error: ' + e.message);
-        } else {
-          Alert.alert('Logout Error', e.message);
-        }
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm('Are you sure you want to sign out of SplitMate?')) {
-        await doLogout();
-      }
-    } else {
-      Alert.alert('Sign Out', 'Are you sure you want to sign out of SplitMate?', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: doLogout },
-      ]);
+  const confirmLogout = async () => {
+    setLogoutModalVisible(false);
+    try {
+      await signOutUser();
+      setDisplayName('User');
+      setDisplayEmail('');
+      setDisplayMobile('');
+      setPaymentHandle('');
+      setPhotoUrl('');
+      navigation.reset({ index: 0, routes: [{ name: 'SignIn' }] });
+    } catch (e: any) {
+      Alert.alert('Logout Error', 'Couldn\'t sign out, please try again');
     }
   };
 
@@ -163,173 +171,234 @@ export default function AccountScreen() {
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]} showsVerticalScrollIndicator={false}>
-        {/* Top Header */}
         <View style={styles.topHeader}>
-          <Text style={styles.headerTitle}>Account</Text>
-          <TouchableOpacity style={styles.qrBtn} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
-            <MaterialIcons name="qr-code-2" size={24} color={Colors.primary} />
+          <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Account</Text>
+          <TouchableOpacity style={[styles.qrBtn, { backgroundColor: colors.primaryFixed }]} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
+            <MaterialIcons name="qr-code-2" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Profile Card */}
-        <View style={styles.userCard}>
-          <View style={styles.avatarCircle}>
-            {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-            ) : (
-              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-            )}
+        {profileLoading ? (
+          <View style={[styles.userCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <M3Skeleton width={56} height={56} style={{ borderRadius: 28 }} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <M3Skeleton width="60%" height={18} />
+              <M3Skeleton width="80%" height={14} />
+              <M3Skeleton width="40%" height={14} />
+            </View>
           </View>
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{displayName}</Text>
-            <Text style={styles.userEmail}>{displayEmail}</Text>
-            <Text style={styles.userHandle}>
-              {paymentHandle ? `${currencyConfig.paymentHandleLabel.split(' ')[0]}: ${paymentHandle}` : 'No payment handle added'}
-            </Text>
+        ) : (
+          <View style={[styles.userCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
+              ) : (
+                <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{displayName.charAt(0).toUpperCase()}</Text>
+              )}
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={[styles.userName, { color: colors.onSurface }]}>{displayName}</Text>
+              <Text style={[styles.userEmail, { color: colors.onSurfaceVariant }]}>{displayEmail}</Text>
+              <Text style={[styles.userHandle, { color: colors.primary }]}>
+                {paymentHandle ? `${currencyConfig.paymentHandleLabel.split(' ')[0]}: ${paymentHandle}` : 'No payment handle added'}
+              </Text>
+            </View>
           </View>
-          <TouchableOpacity
-            style={styles.editProfileBtn}
-            onPress={() => navigation.navigate('ProfileEdit')}
-          >
-            <MaterialIcons name="edit" size={20} color={Colors.primary} />
-          </TouchableOpacity>
-        </View>
+        )}
 
-        {/* Section 1: Account Settings */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>Account Settings</Text>
-          <View style={styles.menuGroup}>
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('ProfileEdit')}>
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="person-outline" size={20} color={Colors.primary} />
+          <Text style={[styles.sectionHeader, { color: colors.onSurfaceVariant }]}>Account Settings</Text>
+          <View style={[styles.menuGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('ProfileEdit')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="person-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Personal Information</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Personal Information</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
-
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('PaymentMethods')}>
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="account-balance-wallet" size={20} color={Colors.primary} />
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('PaymentMethods')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="account-balance-wallet" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Payment Methods & UPI</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Payment Methods & UPI</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Section 2: Preferences */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>Preferences</Text>
           <View style={styles.menuGroup}>
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('NotificationSettings')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('NotificationSettings')}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="notifications-none" size={20} color={Colors.primary} />
+                <MaterialIcons name="notifications-none" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Notifications</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('RecurringExpenses')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('RecurringExpenses')}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="autorenew" size={20} color={Colors.primary} />
+                <MaterialIcons name="autorenew" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Recurring Expenses & Subs</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('PrivacySecurity')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('PrivacySecurity')}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="security" size={20} color={Colors.primary} />
+                <MaterialIcons name="security" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Privacy & Security</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
-            </TouchableOpacity>
-
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('AppTheme')}>
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="palette" size={20} color={Colors.primary} />
-              </View>
-              <Text style={styles.menuText}>App Theme</Text>
-              <View style={styles.rightValueRow}>
-                <Text style={styles.rightValue}>Light</Text>
-                <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
-              </View>
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Section 3: Support */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>Support</Text>
           <View style={styles.menuGroup}>
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('HelpSupport')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => setHelpModalVisible(true)}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="help-outline" size={20} color={Colors.primary} />
+                <MaterialIcons name="help-outline" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Help Center & FAQ</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => navigation.navigate('ContactUs')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('ContactUs')}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="mail-outline" size={20} color={Colors.primary} />
+                <MaterialIcons name="mail-outline" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Contact Us</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={handleShareApp}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleShareApp}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="share" size={20} color={Colors.primary} />
+                <MaterialIcons name="share" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Invite Friends</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity style={styles.menuItem} onPress={() => Alert.alert('Rate SplitMate', 'Thank you for rating SplitMate 5 stars!')}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => Alert.alert('Rate SplitMate', 'Thank you for rating SplitMate 5 stars!')}
+              activeOpacity={0.7}
+            >
               <View style={styles.iconCircle}>
-                <MaterialIcons name="star-outline" size={20} color={Colors.primary} />
+                <MaterialIcons name="star-outline" size={24} color={Colors.primary} />
               </View>
               <Text style={styles.menuText}>Rate SplitMate</Text>
-              <MaterialIcons name="chevron-right" size={22} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Logout Button */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-          <MaterialIcons name="logout" size={20} color={Colors.error} />
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModalVisible(true)} activeOpacity={0.85}>
+          <MaterialIcons name="logout" size={24} color={Colors.error} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        {/* Footer */}
         <Text style={styles.footerText}>Made with ❤️ in India • v1.2.0</Text>
       </ScrollView>
 
-      {/* QR Code Modal with Two Tabs: My QR & Scan QR */}
+      <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLogoutModalVisible(false)}>
+          <View style={styles.confirmDialog}>
+            <MaterialIcons name="logout" size={32} color={Colors.error} style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={styles.confirmTitle}>Sign Out?</Text>
+            <Text style={styles.confirmSub}>Are you sure? You'll need to sign in again.</Text>
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity style={styles.cancelDialogBtn} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={styles.cancelDialogText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmLogoutBtn} onPress={confirmLogout}>
+                <Text style={styles.confirmLogoutText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={helpModalVisible} transparent animationType="slide" onRequestClose={() => setHelpModalVisible(false)}>
+        <View style={styles.lazyModalContainer}>
+          <View style={styles.lazyModalHeader}>
+            <Text style={styles.lazyModalTitle}>Help Center & FAQ</Text>
+            <TouchableOpacity onPress={() => setHelpModalVisible(false)}>
+              <MaterialIcons name="close" size={24} color={Colors.onSurface} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ flex: 1, padding: 16 }}>
+            <Text style={styles.faqTitle}>How does SplitMate work?</Text>
+            <Text style={styles.faqBody}>
+              SplitMate automatically calculates net balances across your friends and groups so you always know who owes what.
+            </Text>
+
+            <Text style={[styles.faqTitle, { marginTop: 16 }]}>How do I settle up via UPI?</Text>
+            <Text style={styles.faqBody}>
+              Tap "Settle Up" on any group page, select UPI payment, and enter your UPI ID. SplitMate directly opens your installed UPI apps like PhonePe, Paytm, or Google Pay.
+            </Text>
+
+            <TouchableOpacity style={styles.fullHelpBtn} onPress={() => { setHelpModalVisible(false); navigation.navigate('HelpSupport'); }}>
+              <Text style={styles.fullHelpText}>Open Full Support Page</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
+
       <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setQrModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.qrCardExpanded}>
-            {/* Tab Selector */}
             <View style={styles.tabHeader}>
               <TouchableOpacity
                 style={[styles.tabButton, activeQrTab === 'scan' && styles.tabButtonActive]}
@@ -853,6 +922,112 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     color: '#FFFFFF',
     fontSize: 11,
+    fontWeight: '600',
+  },
+  avatarEditOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  confirmDialog: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: BorderRadius.xl,
+    padding: 20,
+    ...Shadows.dialog,
+  },
+  confirmTitle: {
+    ...Typography.titleLg,
+    color: Colors.onSurface,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  confirmSub: {
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 20,
+  },
+  confirmBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelDialogBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surfaceContainerLow,
+    alignItems: 'center',
+  },
+  cancelDialogText: {
+    ...Typography.titleSm,
+    color: Colors.onSurface,
+    fontWeight: '600',
+  },
+  confirmLogoutBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.error,
+    alignItems: 'center',
+  },
+  confirmLogoutText: {
+    ...Typography.titleSm,
+    color: Colors.onError,
+    fontWeight: '600',
+  },
+  lazyModalContainer: {
+    flex: 1,
+    marginTop: 80,
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    ...Shadows.dialog,
+  },
+  lazyModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  lazyModalTitle: {
+    ...Typography.titleMd,
+    color: Colors.onSurface,
+    fontWeight: '700',
+  },
+  faqTitle: {
+    ...Typography.titleSm,
+    color: Colors.onSurface,
+    fontWeight: '600',
+  },
+  faqBody: {
+    ...Typography.bodyMd,
+    color: Colors.onSurfaceVariant,
+    marginTop: 4,
+    lineHeight: 20,
+  },
+  fullHelpBtn: {
+    backgroundColor: Colors.primaryFixed,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  fullHelpText: {
+    ...Typography.titleSm,
+    color: Colors.primary,
     fontWeight: '600',
   },
 });

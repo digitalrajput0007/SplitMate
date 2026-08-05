@@ -22,39 +22,50 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NotificationSettings'>;
 export default function NotificationSettingsScreen({ navigation }: Props) {
   const currentUser = auth.currentUser;
 
+  const [groupInvites, setGroupInvites] = useState(true);
   const [expenseAlerts, setExpenseAlerts] = useState(true);
   const [settlementReminders, setSettlementReminders] = useState(true);
   const [monthlyDigest, setMonthlyDigest] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser?.uid) {
-      getUserProfileFromFirestore(currentUser.uid).then((data) => {
-        if (data?.preferences) {
-          if (data.preferences.expenseAlerts !== undefined) setExpenseAlerts(data.preferences.expenseAlerts);
-          if (data.preferences.settlementReminders !== undefined) setSettlementReminders(data.preferences.settlementReminders);
-          if (data.preferences.monthlyDigest !== undefined) setMonthlyDigest(data.preferences.monthlyDigest);
-        }
-      });
+      getUserProfileFromFirestore(currentUser.uid)
+        .then((data) => {
+          if (data?.preferences) {
+            if (data.preferences.groupInvites !== undefined) setGroupInvites(data.preferences.groupInvites);
+            if (data.preferences.expenseAlerts !== undefined) setExpenseAlerts(data.preferences.expenseAlerts);
+            if (data.preferences.settlementReminders !== undefined) setSettlementReminders(data.preferences.settlementReminders);
+            if (data.preferences.monthlyDigest !== undefined) setMonthlyDigest(data.preferences.monthlyDigest);
+          }
+        })
+        .catch(() => {
+          Alert.alert('Error', 'Network error, check your connection');
+        });
     }
   }, [currentUser]);
 
-  const handleSave = async () => {
+  const handleToggle = async (key: string, value: boolean, setter: (v: boolean) => void) => {
     if (!currentUser?.uid) return;
-    setSaving(true);
+    setter(value);
+    setSavingKey(key);
+
+    const updated = {
+      groupInvites: key === 'groupInvites' ? value : groupInvites,
+      expenseAlerts: key === 'expenseAlerts' ? value : expenseAlerts,
+      settlementReminders: key === 'settlementReminders' ? value : settlementReminders,
+      monthlyDigest: key === 'monthlyDigest' ? value : monthlyDigest,
+    };
+
     try {
-      await updateUserPreferencesInFirestore(currentUser.uid, {
-        expenseAlerts,
-        settlementReminders,
-        monthlyDigest,
-      });
-      Alert.alert('Preferences Saved', 'Your notification settings have been updated.');
-      navigation.goBack();
+      await updateUserPreferencesInFirestore(currentUser.uid, updated);
     } catch (error: any) {
       console.error('Error saving notification preferences:', error);
-      Alert.alert('Error', error.message || 'Failed to save preferences.');
+      // Revert state on error
+      setter(!value);
+      Alert.alert('Error', 'Couldn\'t save settings, please try again');
     } finally {
-      setSaving(false);
+      setSavingKey(null);
     }
   };
 
@@ -62,7 +73,7 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Notification Preferences</Text>
         <View style={{ width: 40 }} />
@@ -70,61 +81,85 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
+
+          {/* Group Invitations */}
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleTextCol}>
+              <Text style={styles.toggleTitle}>Group invitations</Text>
+              <Text style={styles.toggleSub}>Get notified when added to a group</Text>
+            </View>
+            {savingKey === 'groupInvites' ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginHorizontal: 12 }} />
+            ) : (
+              <Switch
+                value={groupInvites}
+                onValueChange={(val) => handleToggle('groupInvites', val, setGroupInvites)}
+                trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
+                thumbColor={groupInvites ? Colors.primary : Colors.outlineVariant}
+              />
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Expense Push Alerts */}
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextCol}>
               <Text style={styles.toggleTitle}>Expense Push Alerts</Text>
               <Text style={styles.toggleSub}>Get notified instantly when someone adds an expense</Text>
             </View>
-            <Switch
-              value={expenseAlerts}
-              onValueChange={setExpenseAlerts}
-              trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
-              thumbColor={expenseAlerts ? Colors.primary : Colors.outlineVariant}
-            />
+            {savingKey === 'expenseAlerts' ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginHorizontal: 12 }} />
+            ) : (
+              <Switch
+                value={expenseAlerts}
+                onValueChange={(val) => handleToggle('expenseAlerts', val, setExpenseAlerts)}
+                trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
+                thumbColor={expenseAlerts ? Colors.primary : Colors.outlineVariant}
+              />
+            )}
           </View>
 
           <View style={styles.divider} />
 
+          {/* Settlement Reminders */}
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextCol}>
               <Text style={styles.toggleTitle}>Settlement Reminders</Text>
               <Text style={styles.toggleSub}>Remind friends about pending group balances</Text>
             </View>
-            <Switch
-              value={settlementReminders}
-              onValueChange={setSettlementReminders}
-              trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
-              thumbColor={settlementReminders ? Colors.primary : Colors.outlineVariant}
-            />
+            {savingKey === 'settlementReminders' ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginHorizontal: 12 }} />
+            ) : (
+              <Switch
+                value={settlementReminders}
+                onValueChange={(val) => handleToggle('settlementReminders', val, setSettlementReminders)}
+                trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
+                thumbColor={settlementReminders ? Colors.primary : Colors.outlineVariant}
+              />
+            )}
           </View>
 
           <View style={styles.divider} />
 
+          {/* Monthly Digest */}
           <View style={styles.toggleRow}>
             <View style={styles.toggleTextCol}>
               <Text style={styles.toggleTitle}>Monthly Summary Digest</Text>
               <Text style={styles.toggleSub}>Receive a monthly breakdown of all group spending</Text>
             </View>
-            <Switch
-              value={monthlyDigest}
-              onValueChange={setMonthlyDigest}
-              trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
-              thumbColor={monthlyDigest ? Colors.primary : Colors.outlineVariant}
-            />
+            {savingKey === 'monthlyDigest' ? (
+              <ActivityIndicator size="small" color={Colors.primary} style={{ marginHorizontal: 12 }} />
+            ) : (
+              <Switch
+                value={monthlyDigest}
+                onValueChange={(val) => handleToggle('monthlyDigest', val, setMonthlyDigest)}
+                trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryContainer }}
+                thumbColor={monthlyDigest ? Colors.primary : Colors.outlineVariant}
+              />
+            )}
           </View>
 
-          <TouchableOpacity
-            style={[styles.button, saving && styles.disabledButton]}
-            onPress={handleSave}
-            activeOpacity={0.85}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color={Colors.onPrimary} size="small" />
-            ) : (
-              <Text style={styles.buttonText}>Save Notification Settings</Text>
-            )}
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -155,19 +190,9 @@ const styles = StyleSheet.create({
   },
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
   toggleTextCol: { flex: 1 },
+  titleWithBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   toggleTitle: { ...Typography.bodyLg, color: Colors.onSurface, fontWeight: '600' },
+  statusBadge: { ...Typography.labelMd, fontWeight: '700', marginLeft: 4 },
   toggleSub: { ...Typography.labelMd, color: Colors.onSurfaceVariant, marginTop: 2 },
   divider: { height: 1, backgroundColor: Colors.divider },
-  button: {
-    width: '100%',
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.md,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.md,
-    ...Shadows.button,
-  },
-  disabledButton: { opacity: 0.7 },
-  buttonText: { ...Typography.titleMd, color: Colors.onPrimary },
 });

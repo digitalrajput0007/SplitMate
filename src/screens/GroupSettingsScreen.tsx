@@ -9,6 +9,7 @@ import {
   Alert,
   StatusBar as RNStatusBar,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -237,7 +238,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 >
                   <View style={styles.memberLeftInfo}>
                     <View style={styles.memberAvatarCircle}>
-                      <Text style={styles.memberAvatarText}>{u.name.charAt(0).toUpperCase()}</Text>
+                      {u.photoUrl ? (
+                        <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                      ) : (
+                        <Text style={styles.memberAvatarText}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
+                      )}
                     </View>
                     <View>
                       <Text style={styles.memberItemName}>{u.name} {isMe ? '(You)' : ''}</Text>
@@ -269,7 +274,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
               >
                 <View style={styles.memberLeftInfo}>
                   <View style={[styles.memberAvatarCircle, { backgroundColor: Colors.outlineVariant }]}>
-                    <Text style={styles.memberAvatarText}>{u.name.charAt(0).toUpperCase()}</Text>
+                    {u.photoUrl ? (
+                      <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    ) : (
+                      <Text style={styles.memberAvatarText}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
+                    )}
                   </View>
                   <View>
                     <Text style={styles.memberItemName}>{u.name}</Text>

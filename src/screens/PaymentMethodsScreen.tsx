@@ -30,17 +30,34 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
 
   useEffect(() => {
     if (currentUser?.uid) {
-      getUserProfileFromFirestore(currentUser.uid).then((data) => {
-        if (data?.paymentHandle) {
-          setPaymentHandle(data.paymentHandle);
-        }
-      });
+      getUserProfileFromFirestore(currentUser.uid)
+        .then((data) => {
+          if (data?.paymentHandle) {
+            setPaymentHandle(data.paymentHandle);
+          }
+        })
+        .catch(() => {
+          Alert.alert('Error', 'Network error, check your connection');
+        });
     }
   }, [currentUser]);
 
+  const handleTextChange = (text: string) => {
+    // Automatically trim whitespace
+    setPaymentHandle(text.replace(/\s+/g, ''));
+  };
+
+  const isValidUpi = paymentHandle.includes('@') && paymentHandle.trim().length >= 3;
+
   const handleSave = async () => {
-    if (!paymentHandle.trim()) {
+    const trimmed = paymentHandle.trim();
+    if (!trimmed) {
       Alert.alert('Payment Handle Required', 'Please enter your payment handle or UPI ID.');
+      return;
+    }
+
+    if (!isValidUpi) {
+      Alert.alert('Invalid UPI ID', 'Please provide a valid UPI ID containing @ (e.g. user@okhdfcbank).');
       return;
     }
 
@@ -49,14 +66,14 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
       if (currentUser?.uid) {
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
-          paymentHandle: paymentHandle.trim(),
+          paymentHandle: trimmed,
         });
       }
       Alert.alert('Payment Method Saved', 'Your payment receiving details have been updated.');
       navigation.goBack();
     } catch (error: any) {
       console.error('Error saving payment handle:', error);
-      Alert.alert('Error', error.message || 'Failed to save payment handle.');
+      Alert.alert('Save Error', 'Failed to save UPI ID, try again');
     } finally {
       setSaving(false);
     }
@@ -66,7 +83,7 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Payment Methods</Text>
         <View style={{ width: 40 }} />
@@ -79,12 +96,28 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
             Friends will use this payment handle when sending settlement payments directly to you.
           </Text>
 
-          <OutlinedInput
-            label={currencyConfig.paymentHandleLabel}
-            value={paymentHandle}
-            onChangeText={setPaymentHandle}
-            placeholder={currencyConfig.paymentHandlePlaceholder}
-          />
+          <View>
+            <OutlinedInput
+              label={currencyConfig.paymentHandleLabel}
+              value={paymentHandle}
+              onChangeText={handleTextChange}
+              placeholder="user@okhdfcbank"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {paymentHandle.length > 0 && (
+              <View style={styles.validationRow}>
+                <MaterialIcons
+                  name={isValidUpi ? 'check-circle' : 'cancel'}
+                  size={18}
+                  color={isValidUpi ? Colors.positive : Colors.error}
+                />
+                <Text style={[styles.validationText, { color: isValidUpi ? Colors.positive : Colors.error }]}>
+                  {isValidUpi ? 'Valid UPI ID' : 'Invalid format'}
+                </Text>
+              </View>
+            )}
+          </View>
 
           <TouchableOpacity
             style={styles.defaultToggleRow}
@@ -100,10 +133,10 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, saving && styles.disabledButton]}
+            style={[styles.button, (saving || (paymentHandle.length > 0 && !isValidUpi)) && styles.disabledButton]}
             onPress={handleSave}
             activeOpacity={0.85}
-            disabled={saving}
+            disabled={saving || (paymentHandle.length > 0 && !isValidUpi)}
           >
             {saving ? (
               <ActivityIndicator color={Colors.onPrimary} size="small" />
@@ -141,6 +174,17 @@ const styles = StyleSheet.create({
   },
   cardTitle: { ...Typography.headlineLgMobile, color: Colors.onSurface, fontSize: 18 },
   cardSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, fontSize: 13 },
+  validationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  validationText: {
+    ...Typography.bodySm,
+    fontWeight: '600',
+  },
   defaultToggleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.xs },
   defaultToggleText: { ...Typography.bodyMd, color: Colors.onSurface, flex: 1 },
   button: {

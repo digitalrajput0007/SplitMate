@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -134,16 +134,20 @@ function AccountSvgIcon({ color, size = 22 }: { color: string; size?: number }) 
   );
 }
 
+import { useTheme } from '../context/ThemeContext';
+
 function MainTabNavigator() {
+  const { colors } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: Colors.primary,
-        tabBarInactiveTintColor: Colors.outline,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.outline,
         tabBarStyle: {
-          backgroundColor: Colors.surfaceContainerLowest,
-          borderTopColor: Colors.divider,
+          backgroundColor: colors.surfaceContainerLowest,
+          borderTopColor: colors.divider,
           height: 60,
           paddingBottom: 8,
           paddingTop: 8,
@@ -172,6 +176,7 @@ import { auth } from '../config/firebase';
 import { getUserProfileFromFirestore } from '../services/firestoreService';
 
 export default function AppNavigator() {
+  const { colors, isDark } = useTheme();
   const [initializing, setInitializing] = React.useState(true);
   const [user, setUser] = React.useState<User | null>(null);
   const [initialRoute, setInitialRoute] = React.useState<keyof RootStackParamList>('Splash');
@@ -201,19 +206,22 @@ export default function AppNavigator() {
 
   if (initializing) {
     return (
-      <View style={{ flex: 1, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#FFFFFF" />
       </View>
     );
   }
 
+  const navTheme = isDark ? DarkTheme : DefaultTheme;
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="Splash" component={SplashScreen} />

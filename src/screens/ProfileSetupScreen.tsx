@@ -91,10 +91,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       } else {
         setMobileNumber('');
       }
-      setPaymentHandle(
-        resolvedHandle ||
-          (resolvedName ? `${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi` : '')
-      );
+      setPaymentHandle(resolvedHandle || '');
     }
 
     loadInitialData();
@@ -168,7 +165,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           name: name.trim(),
           email: currentUser?.email || '',
           photoUrl: photoUrl || currentUser?.photoURL || '',
-          paymentHandle: paymentHandle.trim() || `${name.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`,
+          paymentHandle: paymentHandle.trim(),
           dob: formattedDob,
           mobile: fullMobile,
         });
@@ -221,12 +218,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
               <TextInput
                 style={styles.inputText}
                 value={name}
-                onChangeText={(text) => {
-                  setName(text);
-                  if (text && !paymentHandle) {
-                    setPaymentHandle(`${text.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`);
-                  }
-                }}
+                onChangeText={setName}
                 placeholder="e.g. Rahul Sharma"
                 placeholderTextColor="#A0A0A0"
               />
@@ -287,6 +279,31 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
                 keyboardType="number-pad"
                 maxLength={10}
               />
+            </View>
+          </View>
+
+          {/* UPI ID (Optional) */}
+          <View style={styles.fieldGroup}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.fieldLabel}>UPI ID / Payment Handle</Text>
+              <Text style={{ fontSize: 12, color: Colors.onSurfaceVariant, fontWeight: '500' }}>(Optional)</Text>
+            </View>
+            <View style={styles.inputBox}>
+              <TextInput
+                style={styles.inputText}
+                value={paymentHandle}
+                onChangeText={(val) => setPaymentHandle(val.replace(/\s+/g, ''))}
+                placeholder="user@okhdfcbank"
+                placeholderTextColor="#A0A0A0"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <View style={styles.upiInfoCard}>
+              <MaterialIcons name="info-outline" size={18} color={Colors.primary} />
+              <Text style={styles.upiInfoText}>
+                Your UPI ID lets group members settle up debts directly to your Google Pay, PhonePe, or Paytm account with one tap!
+              </Text>
             </View>
           </View>
 
@@ -424,6 +441,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  upiInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.primaryFixed,
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  upiInfoText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.onPrimaryFixed,
+    lineHeight: 16,
   },
   modalBackdrop: {
     flex: 1,

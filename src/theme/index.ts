@@ -96,7 +96,15 @@ export const DarkColors = {
   divider: '#2D3748',
 };
 
+export const activeTheme = {
+  isDark: false,
+};
+
 export const Colors = LightColors;
+
+export function updateGlobalThemeColors(targetColors: typeof LightColors) {
+  Object.assign(LightColors, targetColors);
+}
 
 export const Typography = {
   fontFamily: 'Inter_400Regular',
@@ -226,5 +234,12 @@ export const Shadows = {
     shadowOpacity: 0.18,
     shadowRadius: 6,
     elevation: 3,
+  },
+  dialog: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 5,
   },
 };

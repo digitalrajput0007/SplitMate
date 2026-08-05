@@ -13,6 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { GroupCard } from '../components/GroupCard';
 import { BannerAdSlot } from '../components/BannerAdSlot';
 import { auth } from '../config/firebase';
@@ -25,6 +26,7 @@ import {
   subscribeToPendingInvitations,
   acceptGroupInvitation,
   declineGroupInvitation,
+  getAllUsersFromFirestore,
   GroupData,
   UserProfile,
   UserBalanceSummary,
@@ -34,6 +36,7 @@ import {
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
 
   const currentUser = auth.currentUser;
 
@@ -47,6 +50,8 @@ export default function HomeScreen() {
     youOwe: 0,
   });
   const [loading, setLoading] = useState(true);
+
+  const [allUsersMap, setAllUsersMap] = useState<Map<string, UserProfile>>(new Map());
 
   // Resolve display name: Firestore profile → Auth displayName → email prefix → generic
   useEffect(() => {
@@ -74,6 +79,13 @@ export default function HomeScreen() {
       setLoading(false);
       return;
     }
+
+    // Fetch all users to resolve member names and photoUrls
+    getAllUsersFromFirestore().then((users) => {
+      const map = new Map<string, UserProfile>();
+      users.forEach((u) => map.set(u.uid, u));
+      setAllUsersMap(map);
+    });
 
     // Subscribe to User Groups
     const unsubGroups = subscribeToUserGroups(currentUser.uid, (firestoreGroups) => {
@@ -124,8 +136,8 @@ export default function HomeScreen() {
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.sm;
 
   return (
-    <View style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
@@ -273,21 +285,33 @@ export default function HomeScreen() {
             </View>
           ) : (
             <View style={styles.groupsList}>
-              {groups.map((g) => (
-                <GroupCard
-                  key={g.groupId}
-                  name={g.name}
-                  members={g.memberIds.map((id, index) => ({ name: `Member ${index + 1}` }))}
-                  balanceLabel={g.balanceLabel || 'settled'}
-                  balanceAmount={g.balanceAmount || formatCurrency(0)}
-                  onPress={() =>
-                    navigation.navigate('GroupDetail', {
-                      groupId: g.groupId,
-                      groupName: g.name,
-                    })
-                  }
-                />
-              ))}
+              {groups.map((g) => {
+                const mappedMembers = (g.memberIds || []).map((uid) => {
+                  const prof = allUsersMap.get(uid);
+                  return {
+                    name: prof?.name || (uid === currentUser?.uid ? 'You' : 'Member'),
+                    uri: prof?.photoUrl || undefined,
+                  };
+                });
+
+                return (
+                  <GroupCard
+                    key={g.groupId}
+                    name={g.name}
+                    groupPhotoUrl={g.photoUrl}
+                    groupType={g.groupType}
+                    members={mappedMembers}
+                    balanceLabel={g.balanceLabel || 'settled'}
+                    balanceAmount={g.balanceAmount || formatCurrency(0)}
+                    onPress={() =>
+                      navigation.navigate('GroupDetail', {
+                        groupId: g.groupId,
+                        groupName: g.name,
+                      })
+                    }
+                  />
+                );
+              })}
             </View>
           )}
         </View>

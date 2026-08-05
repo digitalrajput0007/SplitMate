@@ -26,6 +26,7 @@ export interface UserProfile {
   mobile?: string;
   emailVerified?: boolean;
   preferences?: {
+    groupInvites?: boolean;
     expenseAlerts?: boolean;
     settlementReminders?: boolean;
     monthlyDigest?: boolean;
@@ -71,6 +72,7 @@ export interface GroupData {
   memberProfiles?: Record<string, GroupMemberDetail>;
   membersJoinedAt?: Record<string, number>;
   memberExistingExpensesPreference?: Record<string, boolean>;
+  photoUrl?: string;
   createdBy: string;
   createdAt: any;
   balanceLabel?: 'owed' | 'owe' | 'settled';
