@@ -128,18 +128,22 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
 
     const dataToSave: Record<string, any> = {
       uid: profile.uid,
-      name: profile.name || profile.email?.split('@')[0] || 'User',
-      email: profile.email || '',
-      photoUrl: profile.photoUrl || '',
-      paymentHandle: profile.paymentHandle || '',
-      dob: profile.dob || '',
-      mobile: profile.mobile || '',
-      ...(profile.emailVerified !== undefined && { emailVerified: profile.emailVerified }),
       updatedAt: serverTimestamp(),
     };
 
+    if (profile.name !== undefined) dataToSave.name = profile.name;
+    if (profile.email !== undefined) dataToSave.email = profile.email;
+    if (profile.photoUrl !== undefined) dataToSave.photoUrl = profile.photoUrl;
+    if (profile.paymentHandle !== undefined) dataToSave.paymentHandle = profile.paymentHandle;
+    if (profile.dob !== undefined) dataToSave.dob = profile.dob;
+    if (profile.mobile !== undefined) dataToSave.mobile = profile.mobile;
+    if (profile.emailVerified !== undefined) dataToSave.emailVerified = profile.emailVerified;
+
     if (!existingSnap.exists()) {
       dataToSave.createdAt = serverTimestamp();
+      // Only set defaults for new profiles
+      if (dataToSave.name === undefined) dataToSave.name = profile.email?.split('@')[0] || 'User';
+      if (dataToSave.paymentHandle === undefined) dataToSave.paymentHandle = '';
     }
 
     await setDoc(userRef, dataToSave, { merge: true });

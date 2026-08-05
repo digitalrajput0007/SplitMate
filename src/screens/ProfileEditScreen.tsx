@@ -115,7 +115,22 @@ export default function ProfileEditScreen({ navigation }: Props) {
     }
   };
 
-  const initial = name.charAt(0).toUpperCase() || 'U';
+  const handleRemovePhoto = () => {
+    setPhotoUrl('');
+  };
+
+  const getInitials = (userName: string) => {
+    return userName
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'U';
+  };
+
+  const initial = getInitials(name);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -153,14 +168,35 @@ export default function ProfileEditScreen({ navigation }: Props) {
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity onPress={handlePickPhoto}>
-              <Text style={[styles.avatarHint, { color: colors.primary, marginTop: 6 }]}>Change Profile Photo</Text>
-            </TouchableOpacity>
+
+            <View style={styles.photoActions}>
+              <TouchableOpacity onPress={handlePickPhoto}>
+                <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
+              </TouchableOpacity>
+
+              {photoUrl ? (
+                <>
+                  <View style={[styles.actionDivider, { backgroundColor: colors.divider }]} />
+                  <TouchableOpacity onPress={handleRemovePhoto}>
+                    <Text style={[styles.avatarHint, { color: colors.error }]}>Remove</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
+            </View>
           </View>
 
           {/* Form Fields */}
-          <OutlinedInput label="Full Name" value={name} onChangeText={setName} />
-          <OutlinedInput label="Email Address" value={email} editable={false} />
+          <OutlinedInput
+            label="Full Name"
+            value={name}
+            onChangeText={setName}
+            placeholder="Enter your name"
+          />
+          <OutlinedInput
+            label="Email Address"
+            value={email}
+            editable={false}
+          />
           <OutlinedInput
             label="Mobile Number"
             value={mobile}
@@ -218,6 +254,16 @@ const styles = StyleSheet.create({
   },
   avatarImg: { width: 80, height: 80, borderRadius: 40 },
   avatarText: { ...Typography.headlineLg },
+  photoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: Spacing.sm,
+  },
+  actionDivider: {
+    width: 1,
+    height: 12,
+  },
   uploadingOverlay: {
     width: 80,
     height: 80,

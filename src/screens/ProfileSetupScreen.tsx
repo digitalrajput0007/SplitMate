@@ -185,27 +185,35 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         <Text style={styles.title}>Setup Profile</Text>
 
         {/* Avatar Section matching initials placeholder & camera badge */}
-        <TouchableOpacity style={styles.avatarWrapper} onPress={handlePickImage} activeOpacity={0.8}>
-          <View style={styles.avatarCircle}>
-            {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
-            ) : (
-              <Text style={styles.avatarInitialsText}>
-                {name
-                  .trim()
-                  .split(' ')
-                  .filter(Boolean)
-                  .map((n) => n[0])
-                  .join('')
-                  .toUpperCase()
-                  .slice(0, 2) || 'SM'}
-              </Text>
-            )}
-          </View>
-          <View style={styles.cameraBadge}>
-            <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
+        <View style={styles.avatarContainer}>
+          <TouchableOpacity style={styles.avatarWrapper} onPress={handlePickImage} activeOpacity={0.8}>
+            <View style={styles.avatarCircle}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarInitialsText}>
+                  {name
+                    .trim()
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2) || 'U'}
+                </Text>
+              )}
+            </View>
+            <View style={styles.cameraBadge}>
+              <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+
+          {photoUrl ? (
+            <TouchableOpacity onPress={() => setPhotoUrl('')} style={styles.removePhotoBtn}>
+              <Text style={styles.removePhotoText}>Remove Photo</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         {/* Form Container */}
         <View style={styles.formContainer}>
@@ -345,11 +353,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
   },
+  avatarContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
   avatarWrapper: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
   },
   avatarCircle: {
     width: 120,
@@ -383,6 +394,14 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FFFFFF',
     elevation: 3,
+  },
+  removePhotoBtn: {
+    marginTop: 12,
+  },
+  removePhotoText: {
+    fontSize: 14,
+    color: Colors.error,
+    fontWeight: '600',
   },
   formContainer: {
     width: '100%',

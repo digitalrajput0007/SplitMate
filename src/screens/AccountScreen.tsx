@@ -198,7 +198,16 @@ export default function AccountScreen() {
               {photoUrl ? (
                 <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
               ) : (
-                <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{displayName.charAt(0).toUpperCase()}</Text>
+                <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>
+                  {displayName
+                    .trim()
+                    .split(' ')
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .join('')
+                    .toUpperCase()
+                    .slice(0, 2) || 'U'}
+                </Text>
               )}
             </View>
             <View style={styles.userInfo}>
