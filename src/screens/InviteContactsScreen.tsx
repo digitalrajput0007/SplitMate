@@ -16,7 +16,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Contacts from 'expo-contacts';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { getAllUsersFromFirestore, addContactToUserFirestore, getSavedUserContactsFromFirestore, UserProfile } from '../services/firestoreService';
 import { useNavigation } from '@react-navigation/native';
@@ -35,6 +36,8 @@ interface ContactItem {
 export default function InviteContactsScreen() {
   const navigation = useNavigation();
   const currentUser = auth.currentUser;
+  const { colors, isDark } = useTheme();
+
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<ContactItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,56 +64,57 @@ export default function InviteContactsScreen() {
       setPermissionGranted(true);
 
       const { data } = await Contacts.getContactsAsync({
-        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Emails, Contacts.Fields.Image],
+        fields: [Contacts.Fields.PhoneNumbers, Contacts.Fields.Image],
       });
 
-      const onboardedUsers = await getAllUsersFromFirestore();
-      const onboardedPhoneMap = new Map<string, UserProfile>();
-      onboardedUsers.forEach((user) => {
-        if (user.mobile && user.uid !== currentUser?.uid) {
-          const norm = normalizePhone(user.mobile);
-          if (norm) onboardedPhoneMap.set(norm, user);
+      const registeredUsers = await getAllUsersFromFirestore();
+      const registeredPhoneMap = new Map<string, UserProfile>();
+      registeredUsers.forEach((user) => {
+        if (user.phoneNumber) {
+          const norm = normalizePhone(user.phoneNumber);
+          if (norm.length === 10) registeredPhoneMap.set(norm, user);
         }
       });
 
-      // Retrieve existing added user contacts from Firestore
-      const savedContacts = currentUser?.uid ? await getSavedUserContactsFromFirestore(currentUser.uid) : [];
-      const savedUids = new Set(savedContacts.map((u) => u.uid));
+      let savedContactsUids = new Set<string>();
+      if (currentUser?.uid) {
+        const saved = await getSavedUserContactsFromFirestore(currentUser.uid);
+        saved.forEach((c) => savedContactsUids.add(c.uid));
+      }
 
-      const parsedContacts: ContactItem[] = [];
-      data.forEach((c) => {
-        if (c.phoneNumbers && c.phoneNumbers.length > 0) {
-          const phoneObj = c.phoneNumbers[0];
-          const rawNum = phoneObj.number || '';
-          const norm = normalizePhone(rawNum);
-          const onboardedUser = norm ? onboardedPhoneMap.get(norm) : undefined;
-          const imageUri = c.imageAvailable && c.image?.uri ? c.image.uri : undefined;
-          const alreadyAdded = onboardedUser?.uid ? savedUids.has(onboardedUser.uid) : false;
+      const parsed: ContactItem[] = [];
+      const seenNumbers = new Set<string>();
 
-          parsedContacts.push({
-            id: c.id || Math.random().toString(),
-            name: c.name || 'Unknown Contact',
-            phoneNumber: rawNum,
+      if (data) {
+        for (const c of data) {
+          if (!c.name || !c.phoneNumbers || c.phoneNumbers.length === 0) continue;
+          const phone = c.phoneNumbers[0].number || '';
+          const norm = normalizePhone(phone);
+          if (!norm || norm.length < 10 || seenNumbers.has(norm)) continue;
+          seenNumbers.add(norm);
+
+          const onboardedUser = registeredPhoneMap.get(norm);
+          const isAdded = onboardedUser ? savedContactsUids.has(onboardedUser.uid) : false;
+
+          parsed.push({
+            id: c.id || norm,
+            name: c.name,
+            phoneNumber: phone,
             rawNumber: norm,
-            imageUri: imageUri || onboardedUser?.photoUrl,
+            imageUri: c.imageAvailable && c.image?.uri ? c.image.uri : undefined,
             isOnboarded: !!onboardedUser,
             onboardedUser: onboardedUser,
-            isAdded: alreadyAdded,
+            isAdded,
           });
         }
-      });
+      }
 
-      // Sort onboarded users first, then alphabetically
-      parsedContacts.sort((a, b) => {
-        if (a.isOnboarded && !b.isOnboarded) return -1;
-        if (!a.isOnboarded && b.isOnboarded) return 1;
-        return a.name.localeCompare(b.name);
-      });
+      parsed.sort((a, b) => (b.isOnboarded ? 1 : 0) - (a.isOnboarded ? 1 : 0));
 
-      setContacts(parsedContacts);
-      setFilteredContacts(parsedContacts);
-    } catch (e: any) {
-      console.log('Error loading contacts:', e);
+      setContacts(parsed);
+      setFilteredContacts(parsed);
+    } catch (e) {
+      console.log('Error fetching contacts:', e);
     } finally {
       setLoading(false);
     }
@@ -122,88 +126,102 @@ export default function InviteContactsScreen() {
       setFilteredContacts(contacts);
       return;
     }
-    const lower = query.toLowerCase();
+    const q = query.toLowerCase();
     const filtered = contacts.filter(
-      (c) => c.name.toLowerCase().includes(lower) || c.phoneNumber.includes(lower)
+      (c) => c.name.toLowerCase().includes(q) || c.phoneNumber.includes(q)
     );
     setFilteredContacts(filtered);
   };
 
-  const handleInvite = async (contact: ContactItem) => {
-    try {
-      await Share.share({
-        message: `Hey ${contact.name}! Join me on SplitMate to track & split expenses effortlessly: https://splitmate.app/download`,
-      });
-    } catch (error: any) {
-      Alert.alert('Share Failed', error.message || 'Unable to share invite link.');
-    }
-  };
+  const handleAddContact = async (item: ContactItem) => {
+    if (!currentUser?.uid || !item.onboardedUser) return;
 
-  const handleAddContact = async (contact: ContactItem) => {
-    if (!currentUser?.uid || !contact.onboardedUser?.uid) return;
     try {
-      await addContactToUserFirestore(currentUser.uid, contact.onboardedUser.uid);
+      await addContactToUserFirestore(currentUser.uid, item.onboardedUser);
       setContacts((prev) =>
-        prev.map((c) => (c.id === contact.id ? { ...c, isAdded: true } : c))
+        prev.map((c) => (c.id === item.id ? { ...c, isAdded: true } : c))
       );
       setFilteredContacts((prev) =>
-        prev.map((c) => (c.id === contact.id ? { ...c, isAdded: true } : c))
+        prev.map((c) => (c.id === item.id ? { ...c, isAdded: true } : c))
       );
-      Alert.alert('Added Contact', `${contact.name} has been added to your SplitMate contacts!`);
-    } catch (e: any) {
-      Alert.alert('Error', 'Failed to add contact.');
+    } catch (e) {
+      console.log('Error adding contact:', e);
     }
   };
 
-  const renderContactItem = ({ item }: { item: ContactItem }) => {
+  const handleInvite = async (item: ContactItem) => {
+    try {
+      const shareMessage = `Hey ${item.name}! Join me on SplitMate to easily split bills & track group expenses. Download the app today: https://splitmate.app/invite`;
+      await Share.share({
+        message: shareMessage,
+        title: 'Invite to SplitMate',
+      });
+    } catch (error) {
+      console.log('Error sharing invite:', error);
+    }
+  };
+
+  const renderItem = ({ item }: { item: ContactItem }) => {
     const avatarLetter = item.name.charAt(0).toUpperCase();
 
     return (
-      <View style={styles.contactCard}>
-        <View style={[styles.avatarCircle, item.isOnboarded && styles.avatarCircleOnboarded]}>
+      <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+        <View style={{ position: 'relative' }}>
           {item.imageUri ? (
             <Image source={{ uri: item.imageUri }} style={styles.contactAvatarImg} />
           ) : (
-            <Text style={[styles.avatarText, item.isOnboarded && styles.avatarTextOnboarded]}>
-              {avatarLetter}
-            </Text>
+            <View
+              style={[
+                styles.avatarCircle,
+                { backgroundColor: item.isOnboarded ? colors.primaryContainer : colors.surfaceContainerHighest },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.avatarText,
+                  { color: item.isOnboarded ? colors.onPrimaryContainer : colors.onSurfaceVariant },
+                ]}
+              >
+                {avatarLetter}
+              </Text>
+            </View>
           )}
         </View>
 
         <View style={styles.contactInfo}>
           <View style={styles.nameRow}>
-            <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
+            <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>{item.name}</Text>
             {item.isOnboarded && (
-              <View style={styles.onboardedBadge}>
-                <Text style={styles.onboardedBadgeText}>On SplitMate</Text>
+              <View style={[styles.onboardedBadge, { backgroundColor: colors.primaryFixed }]}>
+                <Text style={[styles.onboardedBadgeText, { color: colors.primary }]}>On SplitMate</Text>
               </View>
             )}
           </View>
-          <Text style={styles.contactPhone}>{item.phoneNumber}</Text>
+          <Text style={[styles.contactPhone, { color: colors.onSurfaceVariant }]}>{item.phoneNumber}</Text>
         </View>
 
         {item.isOnboarded ? (
           item.isAdded ? (
-            <View style={[styles.addIconCircle, { backgroundColor: Colors.positive }]}>
-              <MaterialIcons name="check" size={20} color="#FFFFFF" />
+            <View style={[styles.addIconCircle, { backgroundColor: colors.positive }]}>
+              <MaterialIcons name="check" size={20} color={colors.onPrimary} />
             </View>
           ) : (
             <TouchableOpacity
-              style={styles.addIconCircle}
+              style={[styles.addIconCircle, { backgroundColor: colors.primary }]}
               onPress={() => handleAddContact(item)}
               activeOpacity={0.8}
             >
-              <MaterialIcons name="add" size={22} color={Colors.onPrimary} />
+              <MaterialIcons name="add" size={22} color={colors.onPrimary} />
             </TouchableOpacity>
           )
         ) : (
           <TouchableOpacity
-            style={styles.inviteButton}
+            style={[styles.inviteButton, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary }]}
             onPress={() => handleInvite(item)}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="send" size={14} color={Colors.primary} />
-            <Text style={styles.inviteButtonText}>Invite</Text>
+            <MaterialIcons name="send" size={14} color={colors.primary} />
+            <Text style={[styles.inviteButtonText, { color: colors.primary }]}>Invite</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -214,32 +232,32 @@ export default function InviteContactsScreen() {
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
       <View style={[styles.topHeader, { paddingTop: topPadding }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
         <View style={styles.headerTitleBox}>
-          <Text style={styles.headerTitle}>All Contacts</Text>
-          <Text style={styles.headerSubtitle}>Invite friends or add them to SplitMate</Text>
+          <Text style={[styles.headerTitle, { color: colors.onBackground }]}>All Contacts</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}>Invite friends or add them to SplitMate</Text>
         </View>
       </View>
 
       {/* Search Bar */}
       {permissionGranted && contacts.length > 0 && (
-        <View style={styles.searchBox}>
-          <MaterialIcons name="search" size={22} color={Colors.outline} />
+        <View style={[styles.searchBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+          <MaterialIcons name="search" size={22} color={colors.outline} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: colors.onSurface }]}
             placeholder="Search contacts..."
-            placeholderTextColor={Colors.outline}
+            placeholderTextColor={colors.outline}
             value={searchQuery}
             onChangeText={handleSearch}
           />
           {!!searchQuery && (
             <TouchableOpacity onPress={() => handleSearch('')}>
-              <MaterialIcons name="close" size={20} color={Colors.outline} />
+              <MaterialIcons name="close" size={20} color={colors.outline} />
             </TouchableOpacity>
           )}
         </View>
@@ -247,31 +265,32 @@ export default function InviteContactsScreen() {
 
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator color={Colors.primary} size="large" />
-          <Text style={styles.loadingText}>Loading contacts...</Text>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Loading contacts...</Text>
         </View>
       ) : !permissionGranted ? (
         <View style={styles.centerContainer}>
-          <MaterialIcons name="contacts" size={64} color={Colors.primary} />
-          <Text style={styles.emptyTitle}>Contacts Permission Required</Text>
-          <Text style={styles.emptySub}>Grant access to invite friends directly from your phone contacts.</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={loadContactsAndOnboardedStatus}>
-            <Text style={styles.retryBtnText}>Grant Access</Text>
+          <MaterialIcons name="contacts" size={64} color={colors.primary} />
+          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>Permission Required</Text>
+          <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
+            Please grant contacts permission to invite and add friends on SplitMate.
+          </Text>
+          <TouchableOpacity style={[styles.retryBtn, { backgroundColor: colors.primary }]} onPress={loadContactsAndOnboardedStatus}>
+            <Text style={[styles.retryBtnText, { color: colors.onPrimary }]}>Grant Permission</Text>
           </TouchableOpacity>
+        </View>
+      ) : filteredContacts.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyTitle, { color: colors.onSurface }]}>No contacts found</Text>
+          <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>Try searching with a different name or number.</Text>
         </View>
       ) : (
         <FlatList
           data={filteredContacts}
           keyExtractor={(item) => item.id}
-          renderItem={renderContactItem}
+          renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyTitle}>No contacts found</Text>
-              <Text style={styles.emptySub}>Try searching for another name or number.</Text>
-            </View>
-          }
         />
       )}
     </SafeAreaView>
@@ -279,40 +298,31 @@ export default function InviteContactsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: Spacing.sm,
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitleBox: { flex: 1 },
-  headerTitle: { ...Typography.headlineLgMobile, color: Colors.onBackground, fontWeight: '700' },
-  headerSubtitle: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  headerTitle: { ...Typography.headlineLgMobile, fontWeight: '700' },
+  headerSubtitle: { ...Typography.bodyMd, marginTop: 2 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     marginHorizontal: Spacing.containerMargin,
     marginVertical: Spacing.sm,
     paddingHorizontal: 14,
     height: 48,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     gap: 10,
     ...Shadows.card,
   },
-  searchInput: { flex: 1, ...Typography.bodyLg, color: Colors.onSurface },
+  searchInput: { flex: 1, ...Typography.bodyLg },
   listContent: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: Spacing.xxl,
@@ -321,11 +331,9 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     marginVertical: 4,
     gap: 12,
     ...Shadows.card,
@@ -334,29 +342,26 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.surfaceContainerHighest,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarCircleOnboarded: { backgroundColor: Colors.primaryContainer },
-  avatarText: { ...Typography.titleMd, color: Colors.onSurfaceVariant, fontWeight: '600' },
-  avatarTextOnboarded: { color: Colors.onPrimaryContainer },
+  avatarCircleOnboarded: {},
+  avatarText: { ...Typography.titleMd, fontWeight: '600' },
+  avatarTextOnboarded: {},
   contactInfo: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  contactName: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600', maxWidth: 160 },
+  contactName: { ...Typography.titleSm, fontWeight: '600', maxWidth: 160 },
   onboardedBadge: {
-    backgroundColor: Colors.primaryFixed,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: BorderRadius.sm,
   },
-  onboardedBadgeText: { fontSize: 10, color: Colors.primary, fontWeight: '700' },
-  contactPhone: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  onboardedBadgeText: { fontSize: 10, fontWeight: '700' },
+  contactPhone: { ...Typography.bodyMd, marginTop: 2 },
   addIconCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.button,
@@ -364,21 +369,19 @@ const styles = StyleSheet.create({
   inviteButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLow,
     borderWidth: 1,
-    borderColor: Colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: BorderRadius.md,
     gap: 4,
   },
-  inviteButtonText: { ...Typography.titleSm, color: Colors.primary, fontWeight: '600' },
+  inviteButtonText: { ...Typography.titleSm, fontWeight: '600' },
   contactAvatarImg: { width: 44, height: 44, borderRadius: 22 },
   centerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl },
-  loadingText: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: Spacing.md },
+  loadingText: { ...Typography.bodyMd, marginTop: Spacing.md },
   emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.xxl },
-  emptyTitle: { ...Typography.titleLg, color: Colors.onSurface, fontWeight: '600', marginTop: Spacing.md },
-  emptySub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, textAlign: 'center', marginTop: Spacing.xs },
-  retryBtn: { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: BorderRadius.md, marginTop: Spacing.lg },
-  retryBtnText: { ...Typography.titleSm, color: Colors.onPrimary, fontWeight: '600' },
+  emptyTitle: { ...Typography.titleLg, fontWeight: '600', marginTop: Spacing.md },
+  emptySub: { ...Typography.bodyMd, textAlign: 'center', marginTop: Spacing.xs },
+  retryBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: BorderRadius.md, marginTop: Spacing.lg },
+  retryBtnText: { ...Typography.titleSm, fontWeight: '600' },
 });

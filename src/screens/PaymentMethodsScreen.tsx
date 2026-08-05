@@ -7,12 +7,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import { getCurrencyConfig } from '../services/currencyService';
@@ -23,6 +25,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PaymentMethods'>;
 export default function PaymentMethodsScreen({ navigation }: Props) {
   const currencyConfig = getCurrencyConfig();
   const currentUser = auth.currentUser;
+  const { colors, isDark } = useTheme();
 
   const [paymentHandle, setPaymentHandle] = useState('');
   const [saving, setSaving] = useState(false);
@@ -43,7 +46,6 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
   }, [currentUser]);
 
   const handleTextChange = (text: string) => {
-    // Automatically trim whitespace
     setPaymentHandle(text.replace(/\s+/g, ''));
   };
 
@@ -68,52 +70,59 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
           uid: currentUser.uid,
           paymentHandle: trimmed,
         });
+
+        Alert.alert(
+          'Payment Handle Saved',
+          `Your ${currencyConfig.paymentHandleLabel} (${trimmed}) has been linked to your profile for easy group payments.`
+        );
+        navigation.goBack();
       }
-      Alert.alert('Payment Method Saved', 'Your payment receiving details have been updated.');
-      navigation.goBack();
-    } catch (error: any) {
-      console.error('Error saving payment handle:', error);
-      Alert.alert('Save Error', 'Failed to save UPI ID, try again');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save payment handle.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Payment Methods</Text>
-        <View style={{ width: 40 }} />
+        <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>{currencyConfig.paymentMethodsTitle}</Text>
+        <View style={{ width: 48 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Default Receiving Account</Text>
-          <Text style={styles.cardSub}>
-            Friends will use this payment handle when sending settlement payments directly to you.
-          </Text>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <View>
+            <Text style={[styles.cardTitle, { color: colors.onSurface }]}>Linked UPI ID / VPA</Text>
+            <Text style={[styles.cardSub, { color: colors.onSurfaceVariant }]}>
+              Friends will see this when settling up expenses with you directly.
+            </Text>
+          </View>
 
           <View>
             <OutlinedInput
               label={currencyConfig.paymentHandleLabel}
               value={paymentHandle}
               onChangeText={handleTextChange}
-              placeholder="user@okhdfcbank"
+              placeholder={currencyConfig.paymentHandlePlaceholder}
               autoCapitalize="none"
               autoCorrect={false}
             />
+
             {paymentHandle.length > 0 && (
               <View style={styles.validationRow}>
                 <MaterialIcons
-                  name={isValidUpi ? 'check-circle' : 'cancel'}
-                  size={18}
-                  color={isValidUpi ? Colors.positive : Colors.error}
+                  name={isValidUpi ? 'check-circle' : 'error-outline'}
+                  size={16}
+                  color={isValidUpi ? colors.positive : colors.error}
                 />
-                <Text style={[styles.validationText, { color: isValidUpi ? Colors.positive : Colors.error }]}>
-                  {isValidUpi ? 'Valid UPI ID' : 'Invalid format'}
+                <Text style={[styles.validationText, { color: isValidUpi ? colors.positive : colors.error }]}>
+                  {isValidUpi ? 'Valid UPI ID format' : 'Must include @ and handle name'}
                 </Text>
               </View>
             )}
@@ -122,26 +131,26 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.defaultToggleRow}
             onPress={() => setIsDefault(!isDefault)}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
           >
             <MaterialIcons
               name={isDefault ? 'check-box' : 'check-box-outline-blank'}
-              size={24}
-              color={isDefault ? Colors.primary : Colors.outlineVariant}
+              size={22}
+              color={isDefault ? colors.primary : colors.outlineVariant}
             />
-            <Text style={styles.defaultToggleText}>Set as primary method for group settle-ups</Text>
+            <Text style={[styles.defaultToggleText, { color: colors.onSurface }]}>Set as primary method for group settle-ups</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.button, (saving || (paymentHandle.length > 0 && !isValidUpi)) && styles.disabledButton]}
+            style={[styles.button, { backgroundColor: colors.primary }, (saving || (paymentHandle.length > 0 && !isValidUpi)) && styles.disabledButton]}
             onPress={handleSave}
             activeOpacity={0.85}
             disabled={saving || (paymentHandle.length > 0 && !isValidUpi)}
           >
             {saving ? (
-              <ActivityIndicator color={Colors.onPrimary} size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.buttonText}>Save Payment Handle</Text>
+              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>Save Payment Handle</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -151,7 +160,7 @@ export default function PaymentMethodsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -161,19 +170,17 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
+  topBarTitle: { ...Typography.titleMd, fontWeight: '600' },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl },
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: Colors.divider,
     gap: Spacing.md,
   },
-  cardTitle: { ...Typography.headlineLgMobile, color: Colors.onSurface, fontSize: 18 },
-  cardSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, fontSize: 13 },
+  cardTitle: { ...Typography.headlineLgMobile, fontSize: 18 },
+  cardSub: { ...Typography.bodyMd, fontSize: 13 },
   validationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -186,10 +193,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   defaultToggleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginVertical: Spacing.xs },
-  defaultToggleText: { ...Typography.bodyMd, color: Colors.onSurface, flex: 1 },
+  defaultToggleText: { ...Typography.bodyMd, flex: 1 },
   button: {
     width: '100%',
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     alignItems: 'center',
@@ -198,5 +204,5 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   disabledButton: { opacity: 0.7 },
-  buttonText: { ...Typography.titleMd, color: Colors.onPrimary },
+  buttonText: { ...Typography.titleMd },
 });

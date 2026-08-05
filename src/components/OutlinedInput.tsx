@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TextInputProps, TouchableOpacity } from 'react-native';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { Colors, Spacing, BorderRadius, Typography } from '../constants/theme';
+import { Spacing, BorderRadius, Typography } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface OutlinedInputProps extends TextInputProps {
   label: string;
   error?: string;
 }
 
-function OpenEyeSvg({ color = Colors.primary, size = 20 }: { color?: string; size?: number }) {
+function OpenEyeSvg({ color, size = 20 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -17,7 +18,7 @@ function OpenEyeSvg({ color = Colors.primary, size = 20 }: { color?: string; siz
   );
 }
 
-function ClosedEyeSvg({ color = Colors.primary, size = 20 }: { color?: string; size?: number }) {
+function ClosedEyeSvg({ color, size = 20 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <Path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
@@ -27,28 +28,35 @@ function ClosedEyeSvg({ color = Colors.primary, size = 20 }: { color?: string; s
 }
 
 export function OutlinedInput({ label, error, style, secureTextEntry, editable, ...props }: OutlinedInputProps) {
+  const { colors } = useTheme();
   const [isFocused, setIsFocused] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const isSecure = secureTextEntry && !isPasswordVisible;
   const isDisabled = editable === false;
 
+  const labelColor = error ? colors.error : isFocused ? colors.primary : colors.onSurfaceVariant;
+  const borderColor = error ? colors.error : isFocused ? colors.primary : colors.outlineVariant;
+  const bgColor = isDisabled ? colors.surfaceContainerLow : colors.surfaceContainerLowest;
+  const textColor = isDisabled ? colors.onSurfaceVariant : colors.onSurface;
+
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, isFocused && styles.labelFocused, !!error && styles.labelError]}>
-        {label}
-      </Text>
+      <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
       <View style={styles.inputWrapper}>
         <TextInput
           style={[
             styles.input,
             secureTextEntry && styles.inputWithIcon,
-            isFocused && styles.inputFocused,
-            !!error && styles.inputError,
-            isDisabled && styles.inputDisabled,
+            {
+              borderColor,
+              borderWidth: isFocused ? 2 : 1,
+              backgroundColor: bgColor,
+              color: textColor,
+            },
             style,
           ]}
-          placeholderTextColor={Colors.outlineVariant}
+          placeholderTextColor={colors.outlineVariant}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={isSecure}
@@ -63,14 +71,14 @@ export function OutlinedInput({ label, error, style, secureTextEntry, editable, 
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             {isPasswordVisible ? (
-              <ClosedEyeSvg color={isFocused ? Colors.primary : Colors.outline} size={20} />
+              <ClosedEyeSvg color={isFocused ? colors.primary : colors.outline} size={20} />
             ) : (
-              <OpenEyeSvg color={isFocused ? Colors.primary : Colors.outline} size={20} />
+              <OpenEyeSvg color={isFocused ? colors.primary : colors.outline} size={20} />
             )}
           </TouchableOpacity>
         )}
       </View>
-      {!!error && <Text style={styles.errorText}>{error}</Text>}
+      {!!error && <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>}
     </View>
   );
 }
@@ -82,14 +90,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...Typography.labelLg,
-    color: Colors.onSurfaceVariant,
     marginBottom: 6,
-  },
-  labelFocused: {
-    color: Colors.primary,
-  },
-  labelError: {
-    color: Colors.error,
   },
   inputWrapper: {
     position: 'relative',
@@ -97,29 +98,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: 14,
     minHeight: 48,
     ...Typography.bodyMd,
-    color: Colors.onSurface,
-    backgroundColor: Colors.surfaceContainerLowest,
   },
   inputWithIcon: {
     paddingRight: 48,
-  },
-  inputFocused: {
-    borderColor: Colors.primary,
-    borderWidth: 2,
-  },
-  inputError: {
-    borderColor: Colors.error,
-  },
-  inputDisabled: {
-    backgroundColor: Colors.surfaceContainerLow,
-    color: Colors.onSurfaceVariant,
   },
   eyeButton: {
     position: 'absolute',
@@ -133,7 +119,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     ...Typography.labelMd,
-    color: Colors.error,
     marginTop: Spacing.xs,
   },
 });

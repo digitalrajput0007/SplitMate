@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 interface GroupCardProps {
   name: string;
@@ -20,8 +21,6 @@ const TYPE_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   Flatmate: 'apartment',
   Other: 'groups',
 };
-
-import { useTheme } from '../context/ThemeContext';
 
 export function GroupCard({
   name,
@@ -140,12 +139,10 @@ export function GroupCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
   content: {
     flexDirection: 'row',
@@ -157,7 +154,6 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -165,7 +161,6 @@ const styles = StyleSheet.create({
   groupBadgeFallback: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -176,7 +171,6 @@ const styles = StyleSheet.create({
   },
   groupBadgeText: {
     ...Typography.titleLg,
-    color: Colors.onPrimaryContainer,
     fontWeight: '700',
   },
   info: {
@@ -186,7 +180,6 @@ const styles = StyleSheet.create({
   },
   groupName: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
     fontWeight: '600',
   },
   avatarRow: {
@@ -198,7 +191,6 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 2,
-    borderColor: Colors.surfaceContainerLowest,
     overflow: 'hidden',
   },
   avatarImage: {
@@ -208,25 +200,21 @@ const styles = StyleSheet.create({
   avatarFallback: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     ...Typography.labelMd,
     fontSize: 11,
-    color: Colors.primary,
     fontWeight: '600',
   },
   moreAvatar: {
-    backgroundColor: Colors.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },
   moreText: {
     ...Typography.labelMd,
     fontSize: 10,
-    color: Colors.onSurfaceVariant,
     fontWeight: '500',
   },
   balanceSection: {
@@ -234,20 +222,10 @@ const styles = StyleSheet.create({
   },
   balanceLabelText: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
   },
   balanceAmountText: {
     ...Typography.titleMd,
     fontWeight: '600',
     marginTop: 2,
-  },
-  positiveAmount: {
-    color: Colors.positive,
-  },
-  negativeAmount: {
-    color: Colors.error,
-  },
-  settledAmount: {
-    color: Colors.outline,
   },
 });

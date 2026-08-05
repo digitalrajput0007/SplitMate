@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
-import { Colors, Typography, BorderRadius, Shadows } from '../constants/theme';
+import { Typography, BorderRadius, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3BottomSheetProps {
   visible: boolean;
@@ -10,12 +11,17 @@ export interface M3BottomSheetProps {
 }
 
 export function M3BottomSheet({ visible, onDismiss, title, children }: M3BottomSheetProps) {
+  const { colors } = useTheme();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onDismiss}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onDismiss}>
-        <TouchableOpacity activeOpacity={1} style={styles.sheet}>
-          <View style={styles.handle} />
-          {title && <Text style={styles.title}>{title}</Text>}
+        <TouchableOpacity
+          activeOpacity={1}
+          style={[styles.sheet, { backgroundColor: colors.surfaceContainerLowest }]}
+        >
+          <View style={[styles.handle, { backgroundColor: colors.outlineVariant }]} />
+          {title && <Text style={[styles.title, { color: colors.onSurface }]}>{title}</Text>}
           <ScrollView contentContainerStyle={styles.content}>{children}</ScrollView>
         </TouchableOpacity>
       </TouchableOpacity>
@@ -26,11 +32,10 @@ export function M3BottomSheet({ visible, onDismiss, title, children }: M3BottomS
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   sheet: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     paddingTop: 12,
@@ -43,10 +48,9 @@ const styles = StyleSheet.create({
     width: 32,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.outlineVariant,
     alignSelf: 'center',
     marginBottom: 16,
   },
-  title: { ...Typography.titleMd, color: Colors.onSurface, fontWeight: '600', marginBottom: 12 },
+  title: { ...Typography.titleMd, fontWeight: '600', marginBottom: 12 },
   content: { gap: 16 },
 });

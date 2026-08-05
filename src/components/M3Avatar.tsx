@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
-import { Colors, Typography } from '../constants/theme';
+import { Typography } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3AvatarProps {
   name?: string;
@@ -10,19 +11,30 @@ export interface M3AvatarProps {
 }
 
 export function M3Avatar({ name = 'User', uri, size = 40, badgeCount }: M3AvatarProps) {
+  const { colors } = useTheme();
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <View style={[styles.container, { width: size, height: size, borderRadius: size / 2 }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: colors.primaryFixed,
+        },
+      ]}
+    >
       {uri ? (
         <Image source={{ uri }} style={[styles.image, { borderRadius: size / 2 }]} />
       ) : (
-        <Text style={[styles.text, { fontSize: size * 0.4 }]}>{initial}</Text>
+        <Text style={[styles.text, { fontSize: size * 0.4, color: colors.primary }]}>{initial}</Text>
       )}
 
       {badgeCount !== undefined && badgeCount > 0 && (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
+        <View style={[styles.badge, { backgroundColor: colors.error, borderColor: colors.surfaceContainerLowest }]}>
+          <Text style={[styles.badgeText, { color: colors.onError }]}>{badgeCount > 99 ? '99+' : badgeCount}</Text>
         </View>
       )}
     </View>
@@ -31,18 +43,16 @@ export function M3Avatar({ name = 'User', uri, size = 40, badgeCount }: M3Avatar
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   image: { width: '100%', height: '100%' },
-  text: { ...Typography.titleSm, color: Colors.primary, fontWeight: '700' },
+  text: { ...Typography.titleSm, fontWeight: '700' },
   badge: {
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: Colors.error,
     borderRadius: 10,
     minWidth: 18,
     height: 18,
@@ -50,7 +60,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: '#FFF',
   },
-  badgeText: { fontSize: 10, color: '#FFF', fontWeight: '700' },
+  badgeText: { fontSize: 10, fontWeight: '700' },
 });

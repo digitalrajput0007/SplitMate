@@ -7,12 +7,14 @@ import {
   ScrollView,
   Linking,
   Alert,
+  StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'HelpSupport'>;
 
@@ -36,6 +38,7 @@ const FAQS = [
 ];
 
 export default function HelpSupportScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
 
   const handleContactSupport = () => {
@@ -49,48 +52,49 @@ export default function HelpSupportScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Help & Support</Text>
+        <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Help & Support</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Contact Banner */}
-        <View style={styles.contactCard}>
-          <MaterialIcons name="headset-mic" size={32} color={Colors.primary} />
+        <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <MaterialIcons name="headset-mic" size={32} color={colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.contactTitle}>Need direct assistance?</Text>
-            <Text style={styles.contactSub}>Our support team is available 24/7 to help you.</Text>
+            <Text style={[styles.contactTitle, { color: colors.onSurface }]}>Need direct assistance?</Text>
+            <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>Our support team is available 24/7 to help you.</Text>
           </View>
-          <TouchableOpacity style={styles.contactBtn} onPress={handleContactSupport}>
-            <Text style={styles.contactBtnText}>Email Us</Text>
+          <TouchableOpacity style={[styles.contactBtn, { backgroundColor: colors.primary }]} onPress={handleContactSupport}>
+            <Text style={[styles.contactBtnText, { color: colors.onPrimary }]}>Email Us</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Frequently Asked Questions</Text>
 
         <View style={styles.faqList}>
           {FAQS.map((faq, index) => {
             const isExpanded = expandedIndex === index;
             return (
-              <View key={index} style={styles.faqItem}>
+              <View key={index} style={[styles.faqItem, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
                 <TouchableOpacity
                   style={styles.faqHeader}
                   onPress={() => setExpandedIndex(isExpanded ? null : index)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.faqQuestion}>{faq.q}</Text>
+                  <Text style={[styles.faqQuestion, { color: colors.onSurface }]}>{faq.q}</Text>
                   <MaterialIcons
                     name={isExpanded ? 'expand-less' : 'expand-more'}
                     size={24}
-                    color={Colors.primary}
+                    color={colors.primary}
                   />
                 </TouchableOpacity>
-                {isExpanded && <Text style={styles.faqAnswer}>{faq.a}</Text>}
+                {isExpanded && <Text style={[styles.faqAnswer, { color: colors.onSurfaceVariant }]}>{faq.a}</Text>}
               </View>
             );
           })}
@@ -101,7 +105,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -111,39 +115,34 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
+  topBarTitle: { ...Typography.titleMd, fontWeight: '600' },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl, gap: Spacing.lg },
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
-  contactTitle: { ...Typography.titleMd, color: Colors.onSurface, fontSize: 15 },
-  contactSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
+  contactTitle: { ...Typography.titleMd, fontSize: 15 },
+  contactSub: { ...Typography.bodyMd, fontSize: 12, marginTop: 2 },
   contactBtn: {
-    backgroundColor: Colors.primary,
     paddingHorizontal: Spacing.md,
     paddingVertical: 8,
     borderRadius: BorderRadius.md,
   },
-  contactBtnText: { ...Typography.titleMd, color: Colors.onPrimary, fontSize: 12 },
-  sectionTitle: { ...Typography.titleMd, color: Colors.onBackground },
+  contactBtnText: { ...Typography.titleMd, fontSize: 12 },
+  sectionTitle: { ...Typography.titleMd },
   faqList: { gap: Spacing.sm },
   faqItem: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   faqHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  faqQuestion: { ...Typography.bodyLg, color: Colors.onSurface, flex: 1, fontWeight: '600', fontSize: 14 },
-  faqAnswer: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: Spacing.sm, lineHeight: 20 },
+  faqQuestion: { ...Typography.bodyLg, flex: 1, fontWeight: '600', fontSize: 14 },
+  faqAnswer: { ...Typography.bodyMd, marginTop: Spacing.sm, lineHeight: 20 },
 });

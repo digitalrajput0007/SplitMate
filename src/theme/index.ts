@@ -102,10 +102,6 @@ export const activeTheme = {
 
 export const Colors = LightColors;
 
-export function updateGlobalThemeColors(targetColors: typeof LightColors) {
-  Object.assign(LightColors, targetColors);
-}
-
 export const Typography = {
   fontFamily: 'Inter_400Regular',
   fontFamilyMedium: 'Inter_500Medium',

@@ -1,16 +1,27 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { ADMOB_TEST_BANNER_ID } from '../services/adMobService';
-import { Colors, BorderRadius, Typography } from '../constants/theme';
+import { BorderRadius, Typography } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export function BannerAdSlot() {
+  const { colors } = useTheme();
+
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        {
+          backgroundColor: colors.surfaceContainerLow,
+          borderColor: colors.outlineVariant,
+        },
+      ]}
+    >
       <View style={styles.adBadgeRow}>
-        <Text style={styles.adBadge}>AD</Text>
-        <Text style={styles.adTitle}>Google AdMob Banner Slot</Text>
+        <Text style={[styles.adBadge, { backgroundColor: colors.primary, color: colors.onPrimary }]}>AD</Text>
+        <Text style={[styles.adTitle, { color: colors.onSurface }]}>Google AdMob Banner Slot</Text>
       </View>
-      <Text style={styles.adUnitText}>Test Unit ID: {ADMOB_TEST_BANNER_ID}</Text>
+      <Text style={[styles.adUnitText, { color: colors.onSurfaceVariant }]}>Test Unit ID: {ADMOB_TEST_BANNER_ID}</Text>
     </View>
   );
 }
@@ -19,12 +30,10 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     padding: 12,
-    backgroundColor: Colors.surfaceContainerLow,
     borderRadius: BorderRadius.DEFAULT,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     borderStyle: 'dashed',
     marginVertical: 12,
   },
@@ -34,8 +43,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   adBadge: {
-    backgroundColor: Colors.primary,
-    color: Colors.onPrimary,
     fontSize: 10,
     fontWeight: '800',
     paddingHorizontal: 4,
@@ -44,12 +51,10 @@ const styles = StyleSheet.create({
   },
   adTitle: {
     ...Typography.labelMd,
-    color: Colors.onSurface,
     fontWeight: '600',
   },
   adUnitText: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
     fontSize: 11,
     marginTop: 2,
   },

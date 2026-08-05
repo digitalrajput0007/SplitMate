@@ -15,6 +15,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -31,6 +32,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 export default function GroupDetailScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
+  const { colors, isDark } = useTheme();
 
   const groupId = route.params?.groupId || 'goa_trip';
 
@@ -63,171 +65,158 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
     };
   }, [groupId]);
 
-  const groupTitle = group?.name || route.params?.groupName || 'Trip to Goa';
+  const groupName = group?.name || 'Group Details';
+  const members = group?.members || [];
+  const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-  // Calculate Balances with joinedAt and includeExistingExpenses filtering
-  let totalGroupSpent = 0;
-  let userTotalPaid = 0;
-  let userTotalOwedShare = 0;
+  let netBalance = 0;
+  expenses.forEach((item) => {
+    const amt = item.amount || 0;
+    const paidBy = item.paidBy;
+    const splits = item.splitDetails || {};
+    const memberCount = Object.keys(splits).length || members.length || 1;
+    const mySplitShare = splits[currentUid] !== undefined ? splits[currentUid] : amt / memberCount;
 
-  const myJoinedAt = group?.membersJoinedAt?.[currentUid];
-  const myIncludeExisting = group?.memberExistingExpensesPreference?.[currentUid] ?? true;
-
-  expenses.forEach((exp) => {
-    totalGroupSpent += exp.amount;
-
-    const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
-
-    // Skip retroactive share calculation if user joined with "new only" mode
-    if (!myIncludeExisting && myJoinedAt && expTime < myJoinedAt) {
-      return;
+    if (paidBy === currentUid) {
+      netBalance += amt - mySplitShare;
+    } else if (splits[currentUid] !== undefined) {
+      netBalance -= mySplitShare;
     }
-
-    if (exp.paidBy === currentUid) {
-      userTotalPaid += exp.amount;
-    }
-
-    const myShare = exp.splitDetails?.[currentUid] || 0;
-    userTotalOwedShare += myShare;
   });
 
-  const netBalance = userTotalPaid - userTotalOwedShare;
-  const isOwed = netBalance >= 0;
-
-  const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
+  const memberNamesMap: Record<string, string> = {};
+  members.forEach((m: any) => {
+    if (m.uid || m.name) {
+      memberNamesMap[m.uid || m.name] = m.name || m.displayName || 'Member';
+    }
+  });
 
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      {/* Top Bar matching Stitch: Back button, Title, User Avatar right */}
-      <View style={[styles.topBar, { paddingTop: topPadding }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle} numberOfLines={1}>{groupTitle}</Text>
+      {/* Custom Top Navigation Bar */}
+      <View style={[styles.topBar, { borderBottomColor: colors.outlineVariant }]}>
         <TouchableOpacity
-          style={styles.avatarBtn}
-          onPress={() => navigation.navigate('GroupSettings', { groupId })}
-          activeOpacity={0.8}
+          style={styles.iconBtn}
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
         >
-          {userProfile?.photoUrl ? (
-            <Image source={{ uri: userProfile.photoUrl }} style={styles.topAvatarImg} />
-          ) : (
-            <View style={styles.topAvatarFallback}>
-              <Text style={styles.topAvatarText}>
-                {(userProfile?.name || currentUser?.displayName || 'U').charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
+
+        <View style={styles.topTitleContainer}>
+          <Text style={[styles.topTitle, { color: colors.onBackground }]} numberOfLines={1}>
+            {groupName}
+          </Text>
+          <Text style={[styles.topSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+            {members.length} member{members.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+
+        <View style={styles.topRightActions}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => navigation.navigate('GroupSettings', { groupId })}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="settings" size={22} color={colors.onSurfaceVariant} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Stitch Group Summary Card */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>TOTAL GROUP SPEND</Text>
-          <Text style={styles.summaryTotalAmount}>{formatCurrency(totalGroupSpent)}</Text>
-          <Text style={styles.summarySubtext}>
-            {netBalance === 0 ? (
-              'You are all settled up in this group.'
-            ) : isOwed ? (
-              <Text style={{ color: Colors.primary, fontWeight: '600' }}>
-                You are owed {formatCurrency(netBalance)} overall in this group.
-              </Text>
-            ) : (
-              <Text style={{ color: Colors.onSurfaceVariant }}>
-                You owe <Text style={{ color: Colors.error, fontWeight: '600' }}>{formatCurrency(Math.abs(netBalance))}</Text> overall in this group.
-              </Text>
-            )}
+        {/* Total Group Spend Card */}
+        <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
+          <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>TOTAL GROUP SPENT</Text>
+          <Text style={[styles.summaryTotalAmount, { color: colors.onBackground }]}>{formatCurrency(totalSpent)}</Text>
+          <Text style={[styles.summarySubtext, { color: colors.onSurfaceVariant }]}>
+            {netBalance === 0
+              ? 'You are all settled up in this group'
+              : netBalance > 0
+              ? `You are owed ${formatCurrency(netBalance)} overall`
+              : `You owe ${formatCurrency(Math.abs(netBalance))} overall`}
           </Text>
 
-          {/* Stitch Quick Action Row: (+) Icon button & Settle Up pill */}
+          {/* Action Row */}
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={styles.addBtnCircle}
-              onPress={() => navigation.navigate('AddExpense', { groupId, groupName: groupTitle })}
+              style={[styles.addBtnCircle, { backgroundColor: colors.primary }]}
+              onPress={() => navigation.navigate('AddExpense', { groupId, groupName: groupName })}
               activeOpacity={0.85}
             >
-              <MaterialIcons name="add" size={26} color={Colors.onPrimary} />
+              <MaterialIcons name="add" size={28} color={colors.onPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.settleUpPillBtn}
+              style={[styles.settleUpPillBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.primary }]}
               onPress={() => navigation.navigate('SettleUp', { groupId })}
-              activeOpacity={0.85}
+              activeOpacity={0.8}
             >
-              <Text style={styles.settleUpPillText}>Settle Up</Text>
+              <Text style={[styles.settleUpPillText, { color: colors.primary }]}>Settle up</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Expenses List Section matching Stitch */}
+        {/* Expenses Feed Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Expenses</Text>
+            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Group Expenses</Text>
             <TouchableOpacity onPress={() => navigation.navigate('GroupSettings', { groupId })}>
-              <Text style={styles.settingsLinkText}>Settings & Members</Text>
+              <Text style={[styles.settingsLinkText, { color: colors.primary }]}>Group Info</Text>
             </TouchableOpacity>
           </View>
 
           {loading ? (
-            <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: Spacing.md }} />
           ) : expenses.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <MaterialIcons name="receipt-long" size={36} color={Colors.outline} />
-              <Text style={styles.emptyText}>No expenses recorded yet.</Text>
+            <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
+              <MaterialIcons name="receipt-long" size={40} color={colors.outline} />
+              <Text style={[styles.emptyText, { color: colors.onSurfaceVariant }]}>No expenses added yet.</Text>
             </View>
           ) : (
-            <View style={styles.expensesContainer}>
-              {expenses.map((item, idx) => {
-                const isPayerMe = item.paidBy === currentUid;
-                const payerName = isPayerMe ? 'You' : item.paidByName || 'Member';
-                const myShare = item.splitDetails?.[currentUid] || 0;
+            <View style={[styles.expensesContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
+              {expenses.map((item, index) => {
+                const payerName = paidByText(item, currentUid, memberNamesMap);
+                const isLast = index === expenses.length - 1;
+                const dateStr = item.createdAt
+                  ? new Date((item.createdAt as any).seconds * 1000).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                    })
+                  : 'Recent';
 
                 return (
                   <TouchableOpacity
-                    key={item.expenseId || idx.toString()}
+                    key={item.expenseId || index.toString()}
                     style={[
                       styles.expenseItemRow,
-                      idx !== expenses.length - 1 && styles.expenseItemBorder,
+                      !isLast && [styles.expenseItemBorder, { borderBottomColor: colors.outlineVariant }],
                     ]}
                     onPress={() => navigation.navigate('ExpenseDetail', { expense: item })}
-                    activeOpacity={0.8}
+                    activeOpacity={0.7}
                   >
                     <View style={styles.expenseLeft}>
-                      <View style={styles.categoryCircle}>
+                      <View style={[styles.categoryCircle, { backgroundColor: colors.primaryFixed }]}>
                         <MaterialIcons
-                          name={
-                            item.category?.toLowerCase().includes('food')
-                              ? 'restaurant'
-                              : item.category?.toLowerCase().includes('hotel')
-                                ? 'hotel'
-                                : item.category?.toLowerCase().includes('travel') || item.category?.toLowerCase().includes('flight')
-                                  ? 'flight'
-                                  : 'receipt'
-                          }
+                          name={getCategoryIcon(item.category)}
                           size={20}
-                          color={Colors.primary}
+                          color={colors.primary}
                         />
                       </View>
                       <View style={styles.expenseDetails}>
-                        <Text style={styles.expenseTitle} numberOfLines={1}>{item.title}</Text>
-                        <Text style={styles.expenseSub}>Paid by {payerName} • {formatCurrency(item.amount)}</Text>
+                        <Text style={[styles.expenseTitle, { color: colors.onBackground }]} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={[styles.expenseSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                          {payerName} paid {formatCurrency(item.amount)} • {dateStr}
+                        </Text>
                       </View>
                     </View>
 
                     <View style={styles.expenseRight}>
-                      <Text style={styles.shareHeaderLabel}>Your share</Text>
-                      <Text
-                        style={[
-                          styles.shareAmountText,
-                          { color: isPayerMe ? Colors.primary : Colors.error },
-                        ]}
-                      >
-                        {formatCurrency(myShare)}
-                      </Text>
+                      <Text style={[styles.shareHeaderLabel, { color: colors.onSurfaceVariant }]}>Total</Text>
+                      <Text style={[styles.shareAmountText, { color: colors.onBackground }]}>{formatCurrency(item.amount)}</Text>
                     </View>
                   </TouchableOpacity>
                 );
@@ -240,17 +229,30 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   );
 }
 
+function paidByText(item: ExpenseData, currentUid: string, memberNamesMap: Record<string, string>): string {
+  if (item.paidBy === currentUid) return 'You';
+  return memberNamesMap[item.paidBy] || 'Someone';
+}
+
+function getCategoryIcon(cat?: string): keyof typeof MaterialIcons.glyphMap {
+  if (!cat) return 'receipt';
+  const c = cat.toLowerCase();
+  if (c.includes('food') || c.includes('dinner') || c.includes('lunch')) return 'restaurant';
+  if (c.includes('flight') || c.includes('travel') || c.includes('trip')) return 'flight';
+  if (c.includes('home') || c.includes('rent') || c.includes('bill')) return 'house';
+  if (c.includes('movie') || c.includes('fun')) return 'movie';
+  return 'receipt';
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
+  container: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.containerMargin,
-    paddingBottom: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
   },
   iconBtn: {
     width: 40,
@@ -259,44 +261,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topBarTitle: {
-    ...Typography.headlineLgMobile,
-    color: Colors.primary,
-    fontWeight: '700',
+  topTitleContainer: {
     flex: 1,
-    marginLeft: 8,
-  },
-  avatarBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: Colors.primaryFixed,
-  },
-  topAvatarImg: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-  },
-  topAvatarFallback: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: Spacing.xs,
   },
-  topAvatarText: {
-    ...Typography.titleSm,
-    color: Colors.onPrimary,
+  topTitle: {
+    ...Typography.titleMd,
     fontWeight: '700',
+  },
+  topSub: {
+    ...Typography.bodyMd,
+    fontSize: 12,
+  },
+  topRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   scroll: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: 40,
   },
   summaryCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginTop: Spacing.sm,
@@ -305,7 +291,6 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
     letterSpacing: 1,
     fontWeight: '600',
   },
@@ -313,12 +298,10 @@ const styles = StyleSheet.create({
     ...Typography.numericDisplay,
     fontSize: 32,
     lineHeight: 40,
-    color: Colors.onBackground,
     fontWeight: '700',
   },
   summarySubtext: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
   },
   actionRow: {
     flexDirection: 'row',
@@ -330,7 +313,6 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.button,
@@ -340,14 +322,11 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
   },
   settleUpPillText: {
     ...Typography.titleMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
   section: {
@@ -361,16 +340,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...Typography.titleMd,
-    color: Colors.onBackground,
     fontWeight: '700',
   },
   settingsLinkText: {
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
   expensesContainer: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     ...Shadows.card,
     overflow: 'hidden',
@@ -384,7 +360,6 @@ const styles = StyleSheet.create({
   },
   expenseItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
   },
   expenseLeft: {
     flexDirection: 'row',
@@ -396,7 +371,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -405,12 +379,10 @@ const styles = StyleSheet.create({
   },
   expenseTitle: {
     ...Typography.titleMd,
-    color: Colors.onBackground,
     fontWeight: '600',
   },
   expenseSub: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginTop: 2,
   },
   expenseRight: {
@@ -418,7 +390,6 @@ const styles = StyleSheet.create({
   },
   shareHeaderLabel: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     fontSize: 12,
   },
   shareAmountText: {
@@ -428,7 +399,6 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     padding: Spacing.xl,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
@@ -436,6 +406,5 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
   },
 });

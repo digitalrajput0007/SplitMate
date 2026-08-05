@@ -7,7 +7,8 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { Colors, Typography, BorderRadius, Shadows, Motion } from '../constants/theme';
+import { Typography, BorderRadius, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3ButtonProps {
   label: string;
@@ -32,30 +33,32 @@ export function M3Button({
   style,
   textStyle,
 }: M3ButtonProps) {
-  const getVariantStyle = () => {
+  const { colors } = useTheme();
+
+  const getVariantStyle = (): ViewStyle => {
     switch (variant) {
       case 'outlined':
-        return styles.outlined;
+        return { borderWidth: 1, borderColor: colors.outline, backgroundColor: 'transparent' };
       case 'tonal':
-        return styles.tonal;
+        return { backgroundColor: colors.secondaryContainer };
       case 'text':
-        return styles.textVariant;
+        return { backgroundColor: 'transparent' };
       case 'filled':
       default:
-        return styles.filled;
+        return { backgroundColor: colors.primary, ...Shadows.button };
     }
   };
 
-  const getTextStyle = () => {
+  const getTextColor = (): string => {
     switch (variant) {
       case 'outlined':
       case 'text':
-        return styles.textOutlined;
+        return colors.primary;
       case 'tonal':
-        return styles.textTonal;
+        return colors.onSecondaryContainer;
       case 'filled':
       default:
-        return styles.textFilled;
+        return colors.onPrimary;
     }
   };
 
@@ -85,11 +88,11 @@ export function M3Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'filled' ? Colors.onPrimary : Colors.primary} />
+        <ActivityIndicator color={variant === 'filled' ? colors.onPrimary : colors.primary} />
       ) : (
         <>
           {icon}
-          <Text style={[styles.baseText, getTextStyle(), textStyle]}>{label}</Text>
+          <Text style={[styles.baseText, { color: getTextColor() }, textStyle]}>{label}</Text>
         </>
       )}
     </TouchableOpacity>
@@ -108,15 +111,6 @@ const styles = StyleSheet.create({
   sizeMd: { minHeight: 48, paddingHorizontal: 24, paddingVertical: 12 },
   sizeLg: { minHeight: 56, paddingHorizontal: 32, paddingVertical: 16 },
 
-  filled: { backgroundColor: Colors.primary, ...Shadows.button },
-  outlined: { borderWidth: 1, borderColor: Colors.outline, backgroundColor: 'transparent' },
-  tonal: { backgroundColor: Colors.secondaryContainer },
-  textVariant: { backgroundColor: 'transparent' },
-
   baseText: { ...Typography.titleSm, fontWeight: '600' },
-  textFilled: { color: Colors.onPrimary },
-  textOutlined: { color: Colors.primary },
-  textTonal: { color: Colors.onSecondaryContainer },
-
   disabled: { opacity: 0.5 },
 });

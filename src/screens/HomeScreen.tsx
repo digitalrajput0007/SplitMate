@@ -58,82 +58,87 @@ export default function HomeScreen() {
     const resolveDisplayName = async () => {
       if (currentUser?.uid) {
         const profile = await getUserProfileFromFirestore(currentUser.uid);
-        if (profile?.name) {
-          setFirstName(profile.name.split(' ')[0]);
+        if (profile?.displayName) {
+          setFirstName(profile.displayName.split(' ')[0]);
           return;
         }
       }
       if (currentUser?.displayName) {
         setFirstName(currentUser.displayName.split(' ')[0]);
-      } else if (currentUser?.email) {
-        setFirstName(currentUser.email.split('@')[0]);
-      } else {
-        setFirstName('there');
+        return;
       }
+      if (currentUser?.email) {
+        const prefix = currentUser.email.split('@')[0];
+        setFirstName(prefix.charAt(0).toUpperCase() + prefix.slice(1));
+        return;
+      }
+      setFirstName('Friend');
     };
+
     resolveDisplayName();
   }, [currentUser]);
 
+  // Load frequent contacts for horizontal row
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    getSavedUserContactsFromFirestore(currentUser.uid).then((contacts) => {
+      setFrequentContacts(contacts.slice(0, 8));
+    });
+  }, [currentUser]);
+
+  // Pre-fetch all user profiles in system once for fast avatar rendering in GroupCard
+  useEffect(() => {
+    getAllUsersFromFirestore().then((users) => {
+      const uMap = new Map<string, UserProfile>();
+      users.forEach((u) => uMap.set(u.uid, u));
+      setAllUsersMap(uMap);
+    });
+  }, []);
+
+  // Real-time Firestore subscriptions for Groups, Pending Invitations, and Balance Summary
   useEffect(() => {
     if (!currentUser?.uid) {
       setLoading(false);
       return;
     }
 
-    // Fetch all users to resolve member names and photoUrls
-    getAllUsersFromFirestore().then((users) => {
-      const map = new Map<string, UserProfile>();
-      users.forEach((u) => map.set(u.uid, u));
-      setAllUsersMap(map);
-    });
-
-    // Subscribe to User Groups
-    const unsubGroups = subscribeToUserGroups(currentUser.uid, (firestoreGroups) => {
-      setGroups(firestoreGroups);
+    const unsubGroups = subscribeToUserGroups(currentUser.uid, (groupList) => {
+      setGroups(groupList);
       setLoading(false);
     });
 
-    // Subscribe to Pending Group Invitations
-    const unsubInvitations = subscribeToPendingInvitations(currentUser.uid, (invs) => {
-      setPendingInvitations(invs);
+    const unsubInvites = subscribeToPendingInvitations(currentUser.uid, (invList) => {
+      setPendingInvitations(invList);
     });
 
-    // Subscribe to Realtime Balance Calculations across all expenses & settlements
     const unsubBalance = subscribeUserBalanceSummary(currentUser.uid, (summary) => {
       setBalanceSummary(summary);
     });
 
-    // Load Frequent Contacts (Saved User Contacts)
-    getSavedUserContactsFromFirestore(currentUser.uid).then((contacts) => {
-      setFrequentContacts(contacts.slice(0, 6));
-    });
-
     return () => {
       unsubGroups();
-      unsubInvitations();
+      unsubInvites();
       unsubBalance();
     };
   }, [currentUser]);
 
   const handleAcceptInv = async (inv: GroupInvitation) => {
-    if (!inv.invitationId) return;
     try {
-      await acceptGroupInvitation(inv.invitationId, inv.groupId);
+      await acceptGroupInvitation(inv.invitationId, inv.groupId, currentUser?.uid || '', currentUser?.displayName || 'Member');
     } catch (e) {
       console.log('Error accepting invitation:', e);
     }
   };
 
   const handleDeclineInv = async (inv: GroupInvitation) => {
-    if (!inv.invitationId) return;
     try {
-      await declineGroupInvitation(inv.invitationId, inv.groupId);
+      await declineGroupInvitation(inv.invitationId);
     } catch (e) {
       console.log('Error declining invitation:', e);
     }
   };
 
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.sm;
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -143,14 +148,16 @@ export default function HomeScreen() {
         contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Greeting Header */}
+        {/* Header Greeting */}
         <View style={styles.greeting}>
           <View style={styles.greetingTitleBox}>
-            <Text style={styles.greetingText}>Hey, {firstName} 👋</Text>
-            <Text style={styles.greetingSubtext}>Here's your expense summary (INR)</Text>
+            <Text style={[styles.greetingText, { color: colors.onBackground }]}>
+              {firstName ? `Hello, ${firstName}!` : 'Hello!'}
+            </Text>
+            <Text style={[styles.greetingSubtext, { color: colors.onSurfaceVariant }]}>Here's your expense summary (INR)</Text>
           </View>
           <TouchableOpacity
-            style={styles.notifBtn}
+            style={[styles.notifBtn, { backgroundColor: colors.surfaceContainerLow }]}
             activeOpacity={0.7}
             onPress={() => navigation.navigate('Notifications')}
           >
@@ -159,31 +166,31 @@ export default function HomeScreen() {
         </View>
 
         {/* Total Balance Card */}
-        <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
+        <View style={[styles.balanceCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <Text style={[styles.balanceLabel, { color: colors.onSurfaceVariant }]}>Total Balance</Text>
           <View style={styles.balanceRow}>
-            <Text style={styles.balanceCurrency}>₹</Text>
-            <Text style={styles.balanceAmount}>{balanceSummary.totalBalance.toFixed(2)}</Text>
+            <Text style={[styles.balanceCurrency, { color: colors.primary }]}>₹</Text>
+            <Text style={[styles.balanceAmount, { color: colors.primary }]}>{balanceSummary.totalBalance.toFixed(2)}</Text>
           </View>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <View style={styles.balanceSplit}>
             <View>
-              <Text style={styles.splitLabel}>You are owed</Text>
-              <Text style={styles.splitAmountPositive}>{formatCurrency(balanceSummary.youAreOwed)}</Text>
+              <Text style={[styles.splitLabel, { color: colors.onSurfaceVariant }]}>You are owed</Text>
+              <Text style={[styles.splitAmountPositive, { color: colors.positive }]}>{formatCurrency(balanceSummary.youAreOwed)}</Text>
             </View>
             <View style={styles.splitRight}>
-              <Text style={styles.splitLabel}>You owe</Text>
-              <Text style={styles.splitAmountNegative}>{formatCurrency(balanceSummary.youOwe)}</Text>
+              <Text style={[styles.splitLabel, { color: colors.onSurfaceVariant }]}>You owe</Text>
+              <Text style={[styles.splitAmountNegative, { color: colors.error }]}>{formatCurrency(balanceSummary.youOwe)}</Text>
             </View>
           </View>
         </View>
 
-        {/* Frequent Contacts Section (Stitch Design Specification) */}
+        {/* Frequent Contacts Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Frequent Contacts</Text>
+            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Frequent Contacts</Text>
             <TouchableOpacity onPress={() => navigation.navigate('ContactsTab')}>
-              <Text style={styles.createGroupLink}>See All</Text>
+              <Text style={[styles.createGroupLink, { color: colors.primary }]}>See All</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.contactsRow}>
@@ -191,10 +198,10 @@ export default function HomeScreen() {
               style={styles.contactItem}
               onPress={() => navigation.navigate('ContactsPermission')}
             >
-              <View style={styles.addContactBtn}>
-                <Text style={styles.addContactIcon}>+</Text>
+              <View style={[styles.addContactBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <Text style={[styles.addContactIcon, { color: colors.primary }]}>+</Text>
               </View>
-              <Text style={styles.contactName}>Add</Text>
+              <Text style={[styles.contactName, { color: colors.onSurfaceVariant }]}>Add</Text>
             </TouchableOpacity>
             {frequentContacts.map((contact) => (
               <TouchableOpacity
@@ -205,11 +212,11 @@ export default function HomeScreen() {
                 {contact.photoUrl ? (
                   <Image source={{ uri: contact.photoUrl }} style={styles.contactAvatar} />
                 ) : (
-                  <View style={[styles.contactAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
-                    <Text style={styles.avatarInitial}>{contact.name.charAt(0).toUpperCase()}</Text>
+                  <View style={[styles.contactAvatar, { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceContainerHighest }]}>
+                    <Text style={[styles.avatarInitial, { color: colors.primary }]}>{contact.name.charAt(0).toUpperCase()}</Text>
                   </View>
                 )}
-                <Text style={styles.contactName} numberOfLines={1}>
+                <Text style={[styles.contactName, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
                   {contact.name.split(' ')[0]}
                 </Text>
               </TouchableOpacity>
@@ -221,31 +228,31 @@ export default function HomeScreen() {
         {pendingInvitations.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
+              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>
                 Pending Invitations ({pendingInvitations.length})
               </Text>
             </View>
             <View style={{ gap: Spacing.sm }}>
               {pendingInvitations.map((inv) => (
-                <View key={inv.invitationId} style={styles.invitationCard}>
+                <View key={inv.invitationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.primaryContainer }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.invitationTitle}>You've been added to {inv.groupName}</Text>
-                    <Text style={styles.invitationSub}>Invited by {inv.invitedByName}</Text>
+                    <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>You've been added to {inv.groupName}</Text>
+                    <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>Invited by {inv.invitedByName}</Text>
                   </View>
                   <View style={styles.invitationActions}>
                     <TouchableOpacity
-                      style={styles.declineBtn}
+                      style={[styles.declineBtn, { backgroundColor: colors.surfaceContainerHighest }]}
                       onPress={() => handleDeclineInv(inv)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.declineBtnText}>Decline</Text>
+                      <Text style={[styles.declineBtnText, { color: colors.onSurfaceVariant }]}>Decline</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.acceptBtn}
+                      style={[styles.acceptBtn, { backgroundColor: colors.primary }]}
                       onPress={() => handleAcceptInv(inv)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.acceptBtnText}>Accept</Text>
+                      <Text style={[styles.acceptBtnText, { color: colors.onPrimary }]}>Accept</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -254,59 +261,77 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Your Groups */}
+        {/* Your Groups Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Your Groups ({groups.length})</Text>
+            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Your Groups</Text>
             <TouchableOpacity
-              onPress={() => navigation.navigate('CreateGroup')}
               style={styles.createGroupBtn}
+              onPress={() => navigation.navigate('CreateGroup')}
+              activeOpacity={0.7}
             >
-              <Text style={styles.createGroupLink}>+ Create Group</Text>
+              <Text style={[styles.createGroupLink, { color: colors.primary }]}>+ Create Group</Text>
             </TouchableOpacity>
           </View>
 
           {loading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color={Colors.primary} />
+              <ActivityIndicator size="small" color={colors.primary} />
             </View>
           ) : groups.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyEmoji}>📋</Text>
-              <Text style={styles.emptyTitle}>No groups yet!</Text>
-              <Text style={styles.emptySub}>Create a group to start splitting bills with friends.</Text>
+            <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+              <Text style={styles.emptyEmoji}>👥</Text>
+              <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No Groups Yet</Text>
+              <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
+                Create a group for trips, flatmates, or events to start splitting expenses.
+              </Text>
               <TouchableOpacity
-                style={styles.emptyBtn}
+                style={[styles.emptyBtn, { backgroundColor: colors.primaryFixed }]}
                 onPress={() => navigation.navigate('CreateGroup')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.emptyBtnText}>+ Create Your First Group</Text>
+                <Text style={[styles.emptyBtnText, { color: colors.primary }]}>Create First Group</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.groupsList}>
-              {groups.map((g) => {
-                const mappedMembers = (g.memberIds || []).map((uid) => {
-                  const prof = allUsersMap.get(uid);
+              {groups.map((group) => {
+                const myUid = currentUser?.uid || '';
+                const myShare = group.memberNetShares?.[myUid] || 0;
+                let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
+                let balanceAmount = 'Settled up';
+
+                if (myShare > 0.01) {
+                  balanceLabel = 'owed';
+                  balanceAmount = formatCurrency(myShare);
+                } else if (myShare < -0.01) {
+                  balanceLabel = 'owe';
+                  balanceAmount = formatCurrency(Math.abs(myShare));
+                }
+
+                // Map member profile images accurately from Firestore lookup or group cache
+                const membersWithImages = (group.members || []).map((m: any) => {
+                  const mUid = m.uid || m.id;
+                  const profileMatch = allUsersMap.get(mUid);
                   return {
-                    name: prof?.name || (uid === currentUser?.uid ? 'You' : 'Member'),
-                    uri: prof?.photoUrl || undefined,
+                    name: m.displayName || m.name || profileMatch?.displayName || 'Member',
+                    uri: m.photoURL || m.photoUrl || profileMatch?.photoURL || profileMatch?.photoUrl || undefined,
                   };
                 });
 
                 return (
                   <GroupCard
-                    key={g.groupId}
-                    name={g.name}
-                    groupPhotoUrl={g.photoUrl}
-                    groupType={g.groupType}
-                    members={mappedMembers}
-                    balanceLabel={g.balanceLabel || 'settled'}
-                    balanceAmount={g.balanceAmount || formatCurrency(0)}
+                    key={group.groupId}
+                    name={group.name}
+                    groupPhotoUrl={group.groupPhotoUrl}
+                    groupType={group.groupType as any}
+                    members={membersWithImages}
+                    balanceLabel={balanceLabel}
+                    balanceAmount={balanceAmount}
                     onPress={() =>
                       navigation.navigate('GroupDetail', {
-                        groupId: g.groupId,
-                        groupName: g.name,
+                        groupId: group.groupId,
+                        groupName: group.name,
                       })
                     }
                   />
@@ -316,24 +341,24 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Google AdMob Banner Placement — Below Group List */}
+        {/* AdMob Banner Slot */}
         <BannerAdSlot />
       </ScrollView>
 
       {/* FAB — Create Group */}
       <TouchableOpacity
-        style={styles.fab}
+        style={[styles.fab, { backgroundColor: colors.primary }]}
         onPress={() => navigation.navigate('CreateGroup')}
         activeOpacity={0.85}
       >
-        <Text style={styles.fabIcon}>+</Text>
+        <Text style={[styles.fabIcon, { color: colors.onPrimary }]}>+</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   scroll: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: 110,
@@ -346,72 +371,64 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   greetingTitleBox: { flex: 1, marginRight: Spacing.md },
-  greetingText: { ...Typography.headlineLgMobile, color: Colors.onBackground },
-  greetingSubtext: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: Spacing.xs },
+  greetingText: { ...Typography.headlineLgMobile },
+  greetingSubtext: { ...Typography.bodyMd, marginTop: Spacing.xs },
   notifBtn: {
     width: 48,
     height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 24,
-    backgroundColor: Colors.surfaceContainerLow,
   },
   notifIcon: { fontSize: 20 },
   balanceCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     ...Shadows.card,
     gap: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
-  balanceLabel: { ...Typography.titleSm, color: Colors.onSurfaceVariant },
+  balanceLabel: { ...Typography.titleSm },
   balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.xs },
-  balanceCurrency: { ...Typography.titleMd, color: Colors.primary },
-  balanceAmount: { ...Typography.numericDisplay, color: Colors.primary },
-  divider: { height: 1, backgroundColor: Colors.divider },
+  balanceCurrency: { ...Typography.titleMd },
+  balanceAmount: { ...Typography.numericDisplay },
+  divider: { height: 1 },
   balanceSplit: { flexDirection: 'row', justifyContent: 'space-between' },
   splitRight: { alignItems: 'flex-end' },
-  splitLabel: { ...Typography.bodyMd, color: Colors.onSurfaceVariant },
-  splitAmountPositive: { ...Typography.titleMd, color: Colors.positive, fontWeight: '600' },
-  splitAmountNegative: { ...Typography.titleMd, color: Colors.error, fontWeight: '600' },
+  splitLabel: { ...Typography.bodyMd },
+  splitAmountPositive: { ...Typography.titleMd, fontWeight: '600' },
+  splitAmountNegative: { ...Typography.titleMd, fontWeight: '600' },
   section: { gap: Spacing.sm },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  sectionTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
+  sectionTitle: { ...Typography.titleMd, fontWeight: '600' },
   createGroupBtn: { paddingVertical: Spacing.xs, paddingHorizontal: Spacing.sm },
-  createGroupLink: { ...Typography.labelLg, color: Colors.primary },
+  createGroupLink: { ...Typography.labelLg },
   contactsRow: { gap: Spacing.md, paddingRight: Spacing.containerMargin },
   contactItem: { alignItems: 'center', gap: Spacing.xs, minWidth: 56 },
-  contactAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.surfaceContainerHighest },
-  avatarInitial: { ...Typography.titleSm, color: Colors.primary, fontWeight: '600' },
-  contactName: { ...Typography.labelMd, color: Colors.onSurfaceVariant },
+  contactAvatar: { width: 48, height: 48, borderRadius: 24 },
+  avatarInitial: { ...Typography.titleSm, fontWeight: '600' },
+  contactName: { ...Typography.labelMd },
   addContactBtn: {
     width: 48, height: 48, borderRadius: 24,
-    borderWidth: 1.5, borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
+    borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
   },
-  addContactIcon: { fontSize: 24, color: Colors.primary, fontWeight: '300' },
+  addContactIcon: { fontSize: 24, fontWeight: '300' },
   invitationCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.surfaceContainerLowest,
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.primaryContainer,
     ...Shadows.card,
   },
   invitationTitle: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
     fontWeight: '600',
   },
   invitationSub: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginTop: 2,
   },
   invitationActions: {
@@ -423,46 +440,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surfaceContainerHighest,
   },
   declineBtnText: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
     fontWeight: '600',
   },
   acceptBtn: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primary,
   },
   acceptBtnText: {
     ...Typography.labelMd,
-    color: Colors.onPrimary,
     fontWeight: '600',
   },
   groupsList: { gap: Spacing.sm },
   loadingBox: { paddingVertical: Spacing.xl, alignItems: 'center' },
   emptyCard: {
     padding: Spacing.lg,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
     gap: Spacing.sm,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
   emptyEmoji: { fontSize: 32 },
-  emptyTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
-  emptySub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, textAlign: 'center' },
+  emptyTitle: { ...Typography.titleMd, fontWeight: '600' },
+  emptySub: { ...Typography.bodyMd, textAlign: 'center' },
   emptyBtn: {
-    backgroundColor: Colors.primaryFixed,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 2,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.xs,
   },
-  emptyBtnText: { ...Typography.titleSm, color: Colors.primary },
+  emptyBtnText: { ...Typography.titleSm },
   fab: {
     position: 'absolute',
     bottom: 24,
@@ -470,10 +480,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.button,
   },
-  fabIcon: { fontSize: 28, color: Colors.onPrimary, lineHeight: 32, fontWeight: '300' },
+  fabIcon: { fontSize: 28, lineHeight: 32, fontWeight: '300' },
 });

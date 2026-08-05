@@ -21,6 +21,7 @@ import * as Contacts from 'expo-contacts';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import {
   createGroupInFirestore,
   getAllUsersFromFirestore,
@@ -61,6 +62,8 @@ const AVATAR_COLORS = [
 
 export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
+  const { colors, isDark } = useTheme();
+  const theme = { colors, isDark };
 
   // Screen Flow Steps:
   // Screen 1 (Basics) -> Screen 2 (Add Members) -> Screen 3 (Confirm) -> Screen 4 (Success)
@@ -315,99 +318,81 @@ export default function CreateGroupModal({ navigation }: Props) {
   if (currentStep === 3) {
     return (
       <SafeAreaView style={styles.container}>
-        {/* TopAppBar */}
-        <View style={styles.topAppBar}>
+        {/* Top App Bar */}
+        <View style={[styles.topAppBar, { backgroundColor: colors.background }]}>
           <TouchableOpacity
             style={styles.iconBtn}
             onPress={() => setCurrentStep(2)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            disabled={creating}
           >
-            <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
+            <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
-          <Text style={styles.topAppBarTitleCenter}>Confirm Group Details</Text>
-          <View style={{ width: 40 }} />
+          <Text style={[styles.topAppBarTitle, { color: colors.onBackground, textAlign: 'center' }]}>Confirm Group Details</Text>
+          <View style={{ width: 44 }} />
         </View>
 
         {/* Main Content */}
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.confirmMainContent}>
-          <View style={styles.confirmCard}>
+          <View style={[styles.confirmCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
             {/* Header Section */}
             <View style={styles.confirmHeader}>
-              <Text style={styles.confirmHeadlineMobile}>Confirm Group Details</Text>
-              <Text style={styles.confirmBodyVariant}>
+              <Text style={[styles.confirmHeadlineMobile, { color: colors.onSurface }]}>Confirm Group Details</Text>
+              <Text style={[styles.confirmBodyVariant, { color: colors.onSurfaceVariant }]}>
                 Please review the details below before creating the group.
               </Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
             {/* Row 1: Name */}
-            <View style={styles.confirmRow}>
-              <View style={styles.confirmCol}>
-                <Text style={styles.confirmLabelUppercase}>GROUP NAME</Text>
-                <Text style={styles.confirmValueTitle}>{groupName || 'Goa Trip'}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md }}>
+              <View>
+                <Text style={{ ...Typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase' }}>GROUP NAME</Text>
+                <Text style={{ ...Typography.titleMd, color: colors.onSurface, marginTop: 2 }}>{groupName || 'Group'}</Text>
               </View>
-              <View style={styles.checkCircleBadge}>
-                <MaterialIcons name="check-circle" size={24} color={Colors.onSecondaryContainer} />
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryContainer, alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialIcons name="check-circle" size={24} color={colors.primary} />
               </View>
             </View>
 
             {/* Row 2: Type & Dates */}
-            <View style={styles.confirmRowGap}>
-              <View style={styles.confirmColFlex}>
-                <Text style={styles.confirmLabelUppercase}>TYPE</Text>
-                <View style={styles.pillBadge}>
-                  <Text style={styles.pillBadgeText}>{groupType.toUpperCase()}</Text>
+            <View style={{ flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ ...Typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase' }}>TYPE</Text>
+                <View style={{ height: 32, borderRadius: 16, backgroundColor: colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm, alignSelf: 'flex-start', marginTop: 4 }}>
+                  <Text style={{ ...Typography.labelMd, color: colors.onSurface }}>{groupType.toUpperCase()}</Text>
                 </View>
               </View>
 
               {groupType === 'Trip' && (
-                <View style={styles.confirmColFlex}>
-                  <Text style={styles.confirmLabelUppercase}>DATES</Text>
-                  <View style={styles.pillBadge}>
-                    <Text style={styles.pillBadgeText}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ ...Typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase' }}>DATES</Text>
+                  <View style={{ height: 32, borderRadius: 16, backgroundColor: colors.surfaceContainerHigh, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.sm, alignSelf: 'flex-start', marginTop: 4 }}>
+                    <Text style={{ ...Typography.labelMd, color: colors.onSurface }}>
                       {formatDateShort(startDate)} - {formatDateShort(endDate)}
                     </Text>
-                  </View>
-                </View>
-              )}
-
-              {groupType === 'Family' && familyName.trim() !== '' && (
-                <View style={styles.confirmColFlex}>
-                  <Text style={styles.confirmLabelUppercase}>FAMILY</Text>
-                  <View style={styles.pillBadge}>
-                    <Text style={styles.pillBadgeText}>{familyName}</Text>
-                  </View>
-                </View>
-              )}
-
-              {groupType === 'Flatmate' && (
-                <View style={styles.confirmColFlex}>
-                  <Text style={styles.confirmLabelUppercase}>MONTHLY SPLIT</Text>
-                  <View style={styles.pillBadge}>
-                    <Text style={styles.pillBadgeText}>{setupMonthlySplit ? 'ENABLED' : 'DISABLED'}</Text>
                   </View>
                 </View>
               )}
             </View>
 
             {/* Row 3: Members */}
-            <View style={styles.confirmMembersCol}>
-              <View style={styles.confirmMembersHeader}>
-                <Text style={styles.confirmLabelUppercase}>MEMBERS</Text>
-                <Text style={styles.confirmMembersCountText}>
+            <View style={{ marginTop: Spacing.xs }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: Spacing.sm }}>
+                <Text style={{ ...Typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase' }}>MEMBERS</Text>
+                <Text style={{ ...Typography.labelMd, color: colors.primary }}>
                   {selectedContactsList.length + 1} Members
                 </Text>
               </View>
-              <View style={styles.avatarRow}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
                 {/* User avatar */}
-                <View style={[styles.avatarCircle, { backgroundColor: Colors.primaryFixed }]}>
-                  <Text style={[styles.avatarCircleText, { color: Colors.onPrimaryFixed }]}>You</Text>
+                <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
+                  <Text style={[styles.avatarCircleText, { color: colors.onPrimaryContainer }]}>You</Text>
                 </View>
                 {/* Selected members avatars */}
                 {selectedContactsList.slice(0, 5).map((item) => (
-                  <View key={item.id} style={[styles.avatarCircle, { backgroundColor: item.avatarBg }]}>
-                    <Text style={styles.avatarCircleText}>{item.initial}</Text>
+                  <View key={item.id} style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
+                    <Text style={[styles.avatarCircleText, { color: colors.onSurface }]}>{item.initial}</Text>
                   </View>
                 ))}
               </View>
@@ -415,24 +400,24 @@ export default function CreateGroupModal({ navigation }: Props) {
           </View>
 
           {/* Action Buttons */}
-          <View style={styles.confirmActionsRow}>
+          <View style={{ width: '100%', maxWidth: 360, marginTop: Spacing.xl, flexDirection: 'row', gap: Spacing.md }}>
             <TouchableOpacity
-              style={styles.confirmEditBtn}
+              style={{ flex: 1, height: 48, borderRadius: BorderRadius.lg, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}
               onPress={() => setCurrentStep(1)}
               disabled={creating}
             >
-              <Text style={styles.confirmEditBtnText}>Edit</Text>
+              <Text style={{ ...Typography.titleMd, color: colors.primary }}>Edit</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.confirmPrimaryBtn, creating && styles.disabledBtn]}
+              style={[{ flex: 1, height: 48, borderRadius: BorderRadius.lg, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }, creating && styles.disabledBtn]}
               onPress={handleConfirmCreate}
               disabled={creating}
             >
               {creating ? (
-                <ActivityIndicator color={Colors.onPrimary} size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
-                <Text style={styles.confirmPrimaryBtnText}>Confirm</Text>
+                <Text style={{ ...Typography.titleMd, color: colors.onPrimary }}>Confirm</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -624,7 +609,7 @@ export default function CreateGroupModal({ navigation }: Props) {
 
         {/* Group Type Selection — Single Horizontal Row */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Group type</Text>
+          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group type</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.singleRowTypeContainer}>
             {GROUP_TYPES.map((t) => {
               const isSelected = groupType === t.id;
@@ -632,8 +617,8 @@ export default function CreateGroupModal({ navigation }: Props) {
                 <TouchableOpacity
                   key={t.id}
                   style={[
-                    styles.singleRowTypeCard,
-                    isSelected ? styles.typeGridBtnSelected : styles.typeGridBtnUnselected,
+                    styles.singleRowTypeBtn,
+                    { backgroundColor: isSelected ? colors.primary : colors.surfaceContainerLowest, borderColor: isSelected ? colors.primary : colors.outlineVariant, borderWidth: isSelected ? 0 : 1 },
                   ]}
                   onPress={() => setGroupType(t.id)}
                   activeOpacity={0.8}
@@ -641,10 +626,10 @@ export default function CreateGroupModal({ navigation }: Props) {
                   <MaterialIcons
                     name={t.icon}
                     size={18}
-                    color={isSelected ? Colors.onPrimary : Colors.onSurfaceVariant}
+                    color={isSelected ? colors.onPrimary : colors.onSurfaceVariant}
                     style={{ marginRight: 6 }}
                   />
-                  <Text style={[styles.singleRowTypeLabel, isSelected ? styles.typeGridTextSelected : styles.typeGridTextUnselected]}>
+                  <Text style={[styles.singleRowTypeLabel, { color: isSelected ? colors.onPrimary : colors.onSurface }]}>
                     {t.label}
                   </Text>
                 </TouchableOpacity>
@@ -821,33 +806,28 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
     textTransform: 'uppercase',
   },
+  photoPickerCenter: {
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
   textInputFull: {
     width: '100%',
     paddingHorizontal: Spacing.md,
     paddingVertical: 10,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
     ...Typography.bodyLg,
-    color: Colors.onSurface,
-  },
-  groupTypeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
   },
   singleRowTypeContainer: {
     flexDirection: 'row',
     gap: 8,
     paddingRight: Spacing.md,
   },
-  singleRowTypeCard: {
+  singleRowTypeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: BorderRadius.lg,
     ...Shadows.card,
   },
@@ -855,38 +835,10 @@ const styles = StyleSheet.create({
     ...Typography.bodyMd,
     fontWeight: '600',
   },
-  typeGridBtn: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: BorderRadius.lg,
-    minWidth: '45%',
-    flex: 1,
-    ...Shadows.card,
-  },
-  typeGridBtnSelected: {
-    backgroundColor: Colors.primary,
-  },
-  typeGridBtnUnselected: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-  },
-  typeGridBtnFullWidth: {
-    minWidth: '100%',
-  },
-  typeGridBtnLabel: {
-    ...Typography.bodyMd,
-    fontWeight: '500',
-  },
-  typeGridTextSelected: {
-    color: Colors.onPrimary,
-  },
-  typeGridTextUnselected: {
-    color: Colors.onSurface,
-  },
+  typeGridBtnSelected: {},
+  typeGridBtnUnselected: {},
+  typeGridTextSelected: {},
+  typeGridTextUnselected: {},
   datesRow: {
     flexDirection: 'row',
     gap: Spacing.gutter,
@@ -902,37 +854,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
   },
   dateInputText: {
     ...Typography.bodyMd,
-    color: Colors.onSurface,
   },
   switchCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: Spacing.md,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
   },
   switchTitle: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
   },
   switchSubtitle: {
     ...Typography.bodySm,
-    color: Colors.onSurfaceVariant,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -940,12 +883,10 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     ...Typography.bodyLg,
-    color: Colors.onSurface,
   },
   phoneInviteToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primaryContainer,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -954,35 +895,28 @@ const styles = StyleSheet.create({
   phoneInviteToggleText: {
     flex: 1,
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '700',
   },
   phoneInviteCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginTop: Spacing.sm,
   },
   phoneInviteTitle: {
     ...Typography.labelMd,
-    color: Colors.onSurface,
     fontWeight: '700',
     marginBottom: 8,
   },
   phoneInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.md,
   },
   phonePrefix: {
     ...Typography.bodyLg,
-    color: Colors.primary,
     fontWeight: '700',
     marginRight: 8,
   },
@@ -990,10 +924,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     ...Typography.bodyLg,
-    color: Colors.onSurface,
   },
   addMemberSubmitBtn: {
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.lg,
     paddingVertical: 10,
     alignItems: 'center',
@@ -1001,7 +933,6 @@ const styles = StyleSheet.create({
   },
   addMemberSubmitText: {
     ...Typography.labelMd,
-    color: Colors.onPrimary,
     fontWeight: '700',
   },
   counterRow: {
@@ -1010,14 +941,11 @@ const styles = StyleSheet.create({
   },
   selectedCountLabel: {
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '700',
   },
   contactsCardContainer: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: '#F2F2F7',
     marginTop: Spacing.md,
     overflow: 'hidden',
     ...Shadows.card,
@@ -1026,14 +954,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
-    backgroundColor: Colors.surfaceContainerLowest,
   },
   dottedPhoneCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1041,7 +967,6 @@ const styles = StyleSheet.create({
   },
   integratedInviteText: {
     ...Typography.titleMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
   bottomActionAreaCenter: {
@@ -1052,11 +977,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: Spacing.lg,
     paddingTop: Spacing.sm,
-    backgroundColor: Colors.background,
     alignItems: 'center',
   },
   countPillBadge: {
-    backgroundColor: Colors.primaryContainer + '88',
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 16,
@@ -1064,7 +987,6 @@ const styles = StyleSheet.create({
   },
   countPillText: {
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
   contactListItem: {
@@ -1073,8 +995,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
   },
   contactLeftCol: {
     flexDirection: 'row',
@@ -1089,30 +1009,23 @@ const styles = StyleSheet.create({
   },
   avatarCircleText: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
     fontWeight: '600',
   },
   contactItemName: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
   },
   contactItemSub: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
   },
   customCheckbox: {
     width: 24,
     height: 24,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: Colors.outline,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  customCheckboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
+  customCheckboxChecked: {},
   confirmMainContent: {
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.xxl,
@@ -1122,11 +1035,9 @@ const styles = StyleSheet.create({
   confirmCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: '#F2F2F7',
     ...Shadows.card,
   },
   confirmHeader: {
@@ -1134,121 +1045,17 @@ const styles = StyleSheet.create({
   },
   confirmHeadlineMobile: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     textAlign: 'center',
   },
   confirmBodyVariant: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
     marginTop: Spacing.xs,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.surfaceVariant,
     marginVertical: Spacing.md,
     width: '100%',
-  },
-  confirmRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  confirmRowGap: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  confirmCol: {
-    flexDirection: 'column',
-  },
-  confirmColFlex: {
-    flex: 1,
-    flexDirection: 'column',
-  },
-  confirmLabelUppercase: {
-    ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
-    textTransform: 'uppercase',
-  },
-  confirmValueTitle: {
-    ...Typography.titleMd,
-    color: Colors.onSurface,
-  },
-  checkCircleBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pillBadge: {
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceContainerHigh,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.sm,
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  pillBadgeText: {
-    ...Typography.labelMd,
-    color: Colors.onSurface,
-  },
-  confirmMembersCol: {
-    flexDirection: 'column',
-    marginTop: Spacing.xs,
-  },
-  confirmMembersHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: Spacing.sm,
-  },
-  confirmMembersCountText: {
-    ...Typography.labelMd,
-    color: Colors.primary,
-  },
-  avatarRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  confirmActionsRow: {
-    width: '100%',
-    maxWidth: 360,
-    marginTop: Spacing.xl,
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  confirmEditBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  confirmEditBtnText: {
-    ...Typography.titleMd,
-    color: Colors.primary,
-  },
-  confirmPrimaryBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
-  confirmPrimaryBtnText: {
-    ...Typography.titleMd,
-    color: Colors.onPrimary,
   },
   bottomActionArea: {
     position: 'absolute',
@@ -1256,15 +1063,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: Spacing.containerMargin,
-    backgroundColor: Colors.surface,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
   },
   bottomPrimaryBtn: {
     width: '100%',
     paddingVertical: 16,
     borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1273,7 +1077,6 @@ const styles = StyleSheet.create({
   },
   bottomPrimaryBtnText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
   },
   successCanvas: {
     flex: 1,
@@ -1288,7 +1091,6 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
@@ -1296,18 +1098,15 @@ const styles = StyleSheet.create({
   },
   successHeadline: {
     ...Typography.headlineLgMobile,
-    color: Colors.primary,
     textAlign: 'center',
   },
   successTitle: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
     textAlign: 'center',
     marginTop: Spacing.xs,
   },
   successSubtitle: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
     marginTop: Spacing.xs,
     marginBottom: Spacing.xxl,
@@ -1322,7 +1121,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primary,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.lg,
@@ -1330,7 +1128,6 @@ const styles = StyleSheet.create({
   },
   stitchPrimaryBtnText: {
     ...Typography.labelMd,
-    color: Colors.onPrimary,
     fontWeight: '700',
   },
   stitchSecondaryBtn: {
@@ -1340,14 +1137,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: Colors.primary,
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.lg,
   },
   stitchSecondaryBtnText: {
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '700',
   },
   stitchTertiaryBtn: {
@@ -1361,7 +1156,6 @@ const styles = StyleSheet.create({
   },
   stitchTertiaryBtnText: {
     ...Typography.labelMd,
-    color: Colors.primary,
     fontWeight: '700',
   },
   disabledBtn: {

@@ -1,7 +1,8 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { Colors, Typography, Shadows } from '../constants/theme';
+import { Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3FabProps {
   onPress: () => void;
@@ -11,25 +12,30 @@ export interface M3FabProps {
 }
 
 export function M3Fab({ onPress, label = 'Add', icon, extended = false }: M3FabProps) {
+  const { colors } = useTheme();
+
   return (
     <TouchableOpacity
-      style={[styles.fab, extended ? styles.extended : styles.standard]}
+      style={[
+        styles.fab,
+        extended ? styles.extended : styles.standard,
+        { backgroundColor: colors.primaryContainer },
+      ]}
       onPress={onPress}
       activeOpacity={0.85}
     >
       {icon || (
-        <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={Colors.onPrimaryContainer} strokeWidth="2.5" strokeLinecap="round">
+        <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={colors.onPrimaryContainer} strokeWidth="2.5" strokeLinecap="round">
           <Path d="M12 5v14M5 12h14" />
         </Svg>
       )}
-      {extended && <Text style={styles.label}>{label}</Text>}
+      {extended && <Text style={[styles.label, { color: colors.onPrimaryContainer }]}>{label}</Text>}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   fab: {
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
@@ -41,5 +47,5 @@ const styles = StyleSheet.create({
   },
   standard: { width: 56, height: 56 },
   extended: { height: 56, paddingHorizontal: 20, flexDirection: 'row', gap: 10 },
-  label: { ...Typography.titleSm, color: Colors.onPrimaryContainer, fontWeight: '600' },
+  label: { ...Typography.titleSm, fontWeight: '600' },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { Colors, Typography, BorderRadius, Shadows } from '../constants/theme';
+import { View, StyleSheet, ViewStyle } from 'react-native';
+import { BorderRadius, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3CardProps {
   children: React.ReactNode;
@@ -9,15 +10,26 @@ export interface M3CardProps {
 }
 
 export function M3Card({ children, variant = 'elevated', style }: M3CardProps) {
-  const getVariantStyle = () => {
+  const { colors } = useTheme();
+
+  const getVariantStyle = (): ViewStyle => {
     switch (variant) {
       case 'filled':
-        return styles.filled;
+        return { backgroundColor: colors.surfaceContainerLow };
       case 'outlined':
-        return styles.outlined;
+        return {
+          backgroundColor: colors.surfaceContainerLowest,
+          borderWidth: 1,
+          borderColor: colors.outlineVariant,
+        };
       case 'elevated':
       default:
-        return styles.elevated;
+        return {
+          backgroundColor: colors.surfaceContainerLowest,
+          ...Shadows.card,
+          borderWidth: 1,
+          borderColor: colors.divider,
+        };
     }
   };
 
@@ -29,19 +41,5 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     padding: 16,
     overflow: 'hidden',
-  },
-  elevated: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    ...Shadows.card,
-    borderWidth: 1,
-    borderColor: Colors.divider,
-  },
-  filled: {
-    backgroundColor: Colors.surfaceContainerLow,
-  },
-  outlined: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
   },
 });

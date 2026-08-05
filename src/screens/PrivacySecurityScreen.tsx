@@ -7,15 +7,18 @@ import {
   ScrollView,
   Switch,
   Alert,
+  StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path } from 'react-native-svg';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export default function PrivacySecurityScreen() {
   const navigation = useNavigation();
+  const { colors, isDark } = useTheme();
 
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [authenticating, setAuthenticating] = useState(false);
@@ -58,43 +61,43 @@ export default function PrivacySecurityScreen() {
       }
     } catch (e: any) {
       setAuthenticating(false);
-      Alert.alert('Authentication Error', e?.message || 'An error occurred during verification.');
+      Alert.alert('Authentication Error', e.message || 'Unable to authenticate with biometrics.');
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Top Bar */}
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={Colors.onBackground} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <Path d="M19 12H5M12 19l-7-7 7-7" />
-          </Svg>
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Privacy & Security</Text>
+        <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Privacy & Security</Text>
         <View style={{ width: 48 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Security Options */}
-        <Text style={styles.sectionTitle}>Security Controls</Text>
-        <View style={styles.cardGroup}>
+        {/* Security Section */}
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>App Security</Text>
+        <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           <View style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Biometric Lock</Text>
-              <Text style={styles.rowSub}>Use Fingerprint / Face ID to secure app entry</Text>
+            <View style={{ flex: 1, paddingRight: Spacing.md }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Biometric Lock (Face ID / Touch ID)</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Require fingerprint or face recognition to unlock SplitMate</Text>
             </View>
             <Switch
               value={biometricEnabled}
               onValueChange={handleBiometricToggle}
-              trackColor={{ true: Colors.primary }}
+              trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryContainer }}
+              thumbColor={biometricEnabled ? colors.primary : colors.outline}
+              disabled={authenticating}
             />
           </View>
         </View>
 
         {/* Account Controls */}
-        <Text style={styles.sectionTitle}>Account Control</Text>
-        <View style={styles.cardGroup}>
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Account Control</Text>
+        <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           <TouchableOpacity
             style={styles.rowClickable}
             onPress={() =>
@@ -108,10 +111,8 @@ export default function PrivacySecurityScreen() {
               )
             }
           >
-            <Text style={[styles.rowTitle, { color: Colors.error }]}>Delete Account</Text>
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={Colors.error} strokeWidth="2">
-              <Path d="M9 18l6-6-6-6" />
-            </Svg>
+            <Text style={[styles.rowTitle, { color: colors.error }]}>Delete Account</Text>
+            <MaterialIcons name="chevron-right" size={24} color={colors.error} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -120,7 +121,7 @@ export default function PrivacySecurityScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -130,20 +131,18 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  topBarTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
+  topBarTitle: { ...Typography.titleMd, fontWeight: '600' },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl, gap: Spacing.md },
-  sectionTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600', marginTop: Spacing.xs },
+  sectionTitle: { ...Typography.titleMd, fontWeight: '600', marginTop: Spacing.xs },
   cardGroup: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 },
   rowClickable: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.gutter, minHeight: 44 },
-  rowTitle: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
-  rowSub: { ...Typography.labelMd, color: Colors.onSurfaceVariant, marginTop: 2 },
-  divider: { height: 1, backgroundColor: Colors.divider, marginVertical: Spacing.sm },
+  rowTitle: { ...Typography.titleSm, fontWeight: '600' },
+  rowSub: { ...Typography.labelMd, marginTop: 2 },
+  divider: { height: 1, marginVertical: Spacing.sm },
 });

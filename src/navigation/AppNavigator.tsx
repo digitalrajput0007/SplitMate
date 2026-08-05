@@ -145,6 +145,7 @@ function MainTabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
+        sceneContainerStyle: { backgroundColor: colors.background },
         tabBarStyle: {
           backgroundColor: colors.surfaceContainerLowest,
           borderTopColor: colors.divider,
@@ -212,7 +213,17 @@ export default function AppNavigator() {
     );
   }
 
-  const navTheme = isDark ? DarkTheme : DefaultTheme;
+  const navTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      background: colors.background,
+      card: colors.surfaceContainerLowest,
+      text: colors.onSurface,
+      border: colors.divider,
+      primary: colors.primary,
+    },
+  };
 
   return (
     <NavigationContainer theme={navTheme}>

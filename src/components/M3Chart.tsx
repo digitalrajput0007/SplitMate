@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors, Typography, BorderRadius } from '../constants/theme';
+import { Typography, BorderRadius } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3ChartProps {
   data: { label: string; amount: number; color?: string }[];
@@ -8,12 +9,13 @@ export interface M3ChartProps {
 }
 
 export function M3Chart({ data, total }: M3ChartProps) {
+  const { colors } = useTheme();
   const sum = total || data.reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
     <View style={styles.container}>
       {/* Progress Stack Bar */}
-      <View style={styles.barContainer}>
+      <View style={[styles.barContainer, { backgroundColor: colors.surfaceContainerHigh }]}>
         {data.map((item, index) => {
           const pct = sum > 0 ? (item.amount / sum) * 100 : 0;
           return (
@@ -23,7 +25,7 @@ export function M3Chart({ data, total }: M3ChartProps) {
                 styles.barSegment,
                 {
                   width: `${pct}%`,
-                  backgroundColor: item.color || Colors.primaryContainer,
+                  backgroundColor: item.color || colors.primaryContainer,
                 },
               ]}
             />
@@ -35,9 +37,9 @@ export function M3Chart({ data, total }: M3ChartProps) {
       <View style={styles.legendGrid}>
         {data.map((item, index) => (
           <View key={index} style={styles.legendItem}>
-            <View style={[styles.dot, { backgroundColor: item.color || Colors.primaryContainer }]} />
-            <Text style={styles.legendLabel}>{item.label}</Text>
-            <Text style={styles.legendAmount}>₹{item.amount}</Text>
+            <View style={[styles.dot, { backgroundColor: item.color || colors.primaryContainer }]} />
+            <Text style={[styles.legendLabel, { color: colors.onSurfaceVariant }]}>{item.label}</Text>
+            <Text style={[styles.legendAmount, { color: colors.onSurface }]}>₹{item.amount}</Text>
           </View>
         ))}
       </View>
@@ -50,7 +52,6 @@ const styles = StyleSheet.create({
   barContainer: {
     height: 12,
     borderRadius: BorderRadius.full,
-    backgroundColor: Colors.surfaceContainerHigh,
     flexDirection: 'row',
     overflow: 'hidden',
   },
@@ -58,6 +59,6 @@ const styles = StyleSheet.create({
   legendGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: '45%' },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { ...Typography.labelMd, color: Colors.onSurfaceVariant, flex: 1 },
-  legendAmount: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
+  legendLabel: { ...Typography.labelMd, flex: 1 },
+  legendAmount: { ...Typography.titleSm, fontWeight: '600' },
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { Colors, Typography, BorderRadius, Shadows } from '../constants/theme';
+import { Typography, BorderRadius, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 export interface M3SnackbarProps {
   visible: boolean;
@@ -12,14 +12,16 @@ export interface M3SnackbarProps {
 }
 
 export function M3Snackbar({ visible, message, actionLabel, onAction, onDismiss }: M3SnackbarProps) {
+  const { colors } = useTheme();
+
   if (!visible) return null;
 
   return (
-    <View style={styles.snackbar}>
-      <Text style={styles.text}>{message}</Text>
+    <View style={[styles.snackbar, { backgroundColor: colors.inverseSurface }]}>
+      <Text style={[styles.text, { color: colors.onSurface }]}>{message}</Text>
       {actionLabel && onAction && (
         <TouchableOpacity onPress={onAction}>
-          <Text style={styles.action}>{actionLabel}</Text>
+          <Text style={[styles.action, { color: colors.inversePrimary }]}>{actionLabel}</Text>
         </TouchableOpacity>
       )}
     </View>
@@ -32,7 +34,6 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 16,
     right: 16,
-    backgroundColor: Colors.inverseSurface,
     borderRadius: BorderRadius.md,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -42,6 +43,6 @@ const styles = StyleSheet.create({
     ...Shadows.cardElevated,
     zIndex: 100,
   },
-  text: { ...Typography.bodyMd, color: Colors.inverseOnSurface, flex: 1 },
-  action: { ...Typography.titleSm, color: Colors.inversePrimary, fontWeight: '600', marginLeft: 12 },
+  text: { ...Typography.bodyMd, flex: 1 },
+  action: { ...Typography.titleSm, fontWeight: '600', marginLeft: 12 },
 });

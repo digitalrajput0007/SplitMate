@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -20,6 +21,7 @@ import {
 
 export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -54,42 +56,42 @@ export default function ActivityScreen() {
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.sm;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.headerTitle}>Activity Feed</Text>
-        <Text style={styles.headerSub}>Live timeline of all group expenses & settlements</Text>
+        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
+        <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Live timeline of all group expenses & settlements</Text>
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color={Colors.primary} />
+            <ActivityIndicator size="small" color={colors.primary} />
           </View>
         ) : activities.length === 0 ? (
-          <View style={styles.emptyCard}>
+          <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
             <Text style={styles.emptyEmoji}>📜</Text>
-            <Text style={styles.emptyTitle}>No Activity Yet</Text>
-            <Text style={styles.emptySub}>
+            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No Activity Yet</Text>
+            <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
               Group expenses and recorded settlements will appear here in chronological order.
             </Text>
           </View>
         ) : (
           <View style={styles.feedList}>
             {activities.map((item) => (
-              <View key={item.id} style={styles.feedCard}>
-                <View style={styles.feedIconBox}>
+              <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                <View style={[styles.feedIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
                   <Text style={styles.feedEmoji}>{item.category ? item.category.split(' ')[0] : '💸'}</Text>
                 </View>
                 <View style={styles.feedContent}>
-                  <Text style={styles.feedTitle}>{item.title}</Text>
-                  <Text style={styles.feedSubtitle}>{item.subtitle}</Text>
+                  <Text style={[styles.feedTitle, { color: colors.onSurface }]}>{item.title}</Text>
+                  <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
                 </View>
                 <View style={styles.feedRight}>
-                  <Text style={styles.feedAmount}>{formatCurrency(item.amount)}</Text>
-                  <Text style={styles.feedDate}>{item.date}</Text>
+                  <Text style={[styles.feedAmount, { color: colors.primary }]}>{formatCurrency(item.amount)}</Text>
+                  <Text style={[styles.feedDate, { color: colors.onSurfaceVariant }]}>{item.date}</Text>
                 </View>
               </View>
             ))}
@@ -101,53 +103,48 @@ export default function ActivityScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   scroll: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: 100,
     gap: Spacing.md,
   },
-  headerTitle: { ...Typography.headlineLgMobile, color: Colors.onBackground },
-  headerSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: Spacing.xs, marginBottom: Spacing.xs },
+  headerTitle: { ...Typography.headlineLgMobile },
+  headerSub: { ...Typography.bodyMd, marginTop: Spacing.xs, marginBottom: Spacing.xs },
   loadingBox: { paddingVertical: Spacing.xxl, alignItems: 'center' },
   emptyCard: {
     padding: Spacing.xl,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
     gap: Spacing.xs,
     borderWidth: 1,
-    borderColor: Colors.divider,
     marginTop: Spacing.md,
   },
   emptyEmoji: { fontSize: 36 },
-  emptyTitle: { ...Typography.titleMd, color: Colors.onBackground },
-  emptySub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, textAlign: 'center' },
+  emptyTitle: { ...Typography.titleMd },
+  emptySub: { ...Typography.bodyMd, textAlign: 'center' },
   feedList: { gap: Spacing.sm },
   feedCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   feedIconBox: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
   feedEmoji: { fontSize: 18 },
   feedContent: { flex: 1 },
-  feedTitle: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
-  feedSubtitle: { ...Typography.labelMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  feedTitle: { ...Typography.titleSm, fontWeight: '600' },
+  feedSubtitle: { ...Typography.labelMd, marginTop: 2 },
   feedRight: { alignItems: 'flex-end' },
-  feedAmount: { ...Typography.titleMd, color: Colors.primary, fontWeight: '600' },
-  feedDate: { ...Typography.labelMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  feedAmount: { ...Typography.titleMd, fontWeight: '600' },
+  feedDate: { ...Typography.labelMd, marginTop: 2 },
 });

@@ -173,10 +173,12 @@ export default function AccountScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
+
+      {/* Header */}
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]} showsVerticalScrollIndicator={false}>
         <View style={styles.topHeader}>
           <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Account</Text>
-          <TouchableOpacity style={[styles.qrBtn, { backgroundColor: colors.primaryFixed }]} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
+          <TouchableOpacity style={[styles.qrBtn, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
             <MaterialIcons name="qr-code-2" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -241,129 +243,148 @@ export default function AccountScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>Preferences</Text>
-          <View style={styles.menuGroup}>
+          <Text style={[styles.sectionHeader, { color: colors.onSurfaceVariant }]}>Preferences</Text>
+          <View style={[styles.menuGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('AppTheme')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="palette" size={24} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.menuText, { color: colors.onSurface }]}>App Theme</Text>
+                <Text style={[{ color: colors.onSurfaceVariant, fontSize: 13, marginTop: 2 }]}>
+                  {themeMode === 'System' ? 'System Default' : themeMode === 'Dark' ? 'Dark Theme' : 'Light Theme'}
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
+            </TouchableOpacity>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
+
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => navigation.navigate('NotificationSettings')}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="notifications-none" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="notifications-none" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Notifications</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Notifications</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => navigation.navigate('RecurringExpenses')}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="autorenew" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="autorenew" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Recurring Expenses & Subs</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Recurring Expenses & Subs</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => navigation.navigate('PrivacySecurity')}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="security" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="security" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Privacy & Security</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Privacy & Security</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>Support</Text>
-          <View style={styles.menuGroup}>
+          <Text style={[styles.sectionHeader, { color: colors.onSurfaceVariant }]}>Support</Text>
+          <View style={[styles.menuGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => setHelpModalVisible(true)}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="help-outline" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="help-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Help Center & FAQ</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Help Center & FAQ</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => navigation.navigate('ContactUs')}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="mail-outline" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="mail-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Contact Us</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Contact Us</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={handleShareApp}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="share" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="share" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Invite Friends</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Invite Friends</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
-            <View style={styles.menuDivider} />
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
 
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => Alert.alert('Rate SplitMate', 'Thank you for rating SplitMate 5 stars!')}
               activeOpacity={0.7}
             >
-              <View style={styles.iconCircle}>
-                <MaterialIcons name="star-outline" size={24} color={Colors.primary} />
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="star-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={styles.menuText}>Rate SplitMate</Text>
-              <MaterialIcons name="chevron-right" size={24} color={Colors.outlineVariant} />
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Rate SplitMate</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => setLogoutModalVisible(true)} activeOpacity={0.85}>
-          <MaterialIcons name="logout" size={24} color={Colors.error} />
-          <Text style={styles.logoutText}>Sign Out</Text>
+        <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]} onPress={() => setLogoutModalVisible(true)} activeOpacity={0.85}>
+          <MaterialIcons name="logout" size={24} color={colors.error} />
+          <Text style={[styles.logoutText, { color: colors.error }]}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.footerText}>Made with ❤️ in India • v1.2.0</Text>
+        <Text style={[styles.footerText, { color: colors.onSurfaceVariant }]}>Made with ❤️ in India • v1.2.0</Text>
       </ScrollView>
 
       <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLogoutModalVisible(false)}>
-          <View style={styles.confirmDialog}>
-            <MaterialIcons name="logout" size={32} color={Colors.error} style={{ alignSelf: 'center', marginBottom: 8 }} />
-            <Text style={styles.confirmTitle}>Sign Out?</Text>
-            <Text style={styles.confirmSub}>Are you sure? You'll need to sign in again.</Text>
+          <View style={[styles.confirmDialog, { backgroundColor: colors.surfaceContainerLowest }]}>
+            <MaterialIcons name="logout" size={32} color={colors.error} style={{ alignSelf: 'center', marginBottom: 8 }} />
+            <Text style={[styles.confirmTitle, { color: colors.onSurface }]}>Sign Out?</Text>
+            <Text style={[styles.confirmSub, { color: colors.onSurfaceVariant }]}>Are you sure? You'll need to sign in again.</Text>
             <View style={styles.confirmBtnRow}>
-              <TouchableOpacity style={styles.cancelDialogBtn} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={styles.cancelDialogText}>Cancel</Text>
+              <TouchableOpacity style={[styles.cancelDialogBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={[styles.cancelDialogText, { color: colors.onSurface }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmLogoutBtn} onPress={confirmLogout}>
-                <Text style={styles.confirmLogoutText}>Logout</Text>
+              <TouchableOpacity style={[styles.confirmLogoutBtn, { backgroundColor: colors.error }]} onPress={confirmLogout}>
+                <Text style={[styles.confirmLogoutText, { color: colors.onError }]}>Logout</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -371,26 +392,26 @@ export default function AccountScreen() {
       </Modal>
 
       <Modal visible={helpModalVisible} transparent animationType="slide" onRequestClose={() => setHelpModalVisible(false)}>
-        <View style={styles.lazyModalContainer}>
-          <View style={styles.lazyModalHeader}>
-            <Text style={styles.lazyModalTitle}>Help Center & FAQ</Text>
+        <View style={[styles.lazyModalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.lazyModalHeader, { borderBottomColor: colors.outlineVariant }]}>
+            <Text style={[styles.lazyModalTitle, { color: colors.onBackground }]}>Help Center & FAQ</Text>
             <TouchableOpacity onPress={() => setHelpModalVisible(false)}>
-              <MaterialIcons name="close" size={24} color={Colors.onSurface} />
+              <MaterialIcons name="close" size={24} color={colors.onSurface} />
             </TouchableOpacity>
           </View>
           <ScrollView style={{ flex: 1, padding: 16 }}>
-            <Text style={styles.faqTitle}>How does SplitMate work?</Text>
-            <Text style={styles.faqBody}>
+            <Text style={[styles.faqTitle, { color: colors.onSurface }]}>How does SplitMate work?</Text>
+            <Text style={[styles.faqBody, { color: colors.onSurfaceVariant }]}>
               SplitMate automatically calculates net balances across your friends and groups so you always know who owes what.
             </Text>
 
-            <Text style={[styles.faqTitle, { marginTop: 16 }]}>How do I settle up via UPI?</Text>
-            <Text style={styles.faqBody}>
+            <Text style={[styles.faqTitle, { color: colors.onSurface, marginTop: 16 }]}>How do I settle up via UPI?</Text>
+            <Text style={[styles.faqBody, { color: colors.onSurfaceVariant }]}>
               Tap "Settle Up" on any group page, select UPI payment, and enter your UPI ID. SplitMate directly opens your installed UPI apps like PhonePe, Paytm, or Google Pay.
             </Text>
 
-            <TouchableOpacity style={styles.fullHelpBtn} onPress={() => { setHelpModalVisible(false); navigation.navigate('HelpSupport'); }}>
-              <Text style={styles.fullHelpText}>Open Full Support Page</Text>
+            <TouchableOpacity style={[styles.fullHelpBtn, { backgroundColor: colors.primary }]} onPress={() => { setHelpModalVisible(false); navigation.navigate('HelpSupport'); }}>
+              <Text style={[styles.fullHelpText, { color: colors.onPrimary }]}>Open Full Support Page</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -398,47 +419,47 @@ export default function AccountScreen() {
 
       <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setQrModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.qrCardExpanded}>
-            <View style={styles.tabHeader}>
+          <TouchableOpacity activeOpacity={1} style={[styles.qrCardExpanded, { backgroundColor: colors.surfaceContainerLowest }]}>
+            <View style={[styles.tabHeader, { borderBottomColor: colors.outlineVariant }]}>
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'scan' && styles.tabButtonActive]}
+                style={[styles.tabButton, activeQrTab === 'scan' && { borderBottomColor: colors.primary }]}
                 onPress={() => { setActiveQrTab('scan'); setScannedUser(null); setScannedNotFound(false); setScannedLock(false); }}
               >
-                <MaterialIcons name="qr-code-scanner" size={22} color={activeQrTab === 'scan' ? Colors.primary : Colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, activeQrTab === 'scan' && styles.tabTextActive]}>Scan QR</Text>
+                <MaterialIcons name="qr-code-scanner" size={22} color={activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant }]}>Scan QR</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'my' && styles.tabButtonActive]}
+                style={[styles.tabButton, activeQrTab === 'my' && { borderBottomColor: colors.primary }]}
                 onPress={() => setActiveQrTab('my')}
               >
-                <MaterialIcons name="qr-code-2" size={22} color={activeQrTab === 'my' ? Colors.primary : Colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, activeQrTab === 'my' && styles.tabTextActive]}>My QR</Text>
+                <MaterialIcons name="qr-code-2" size={22} color={activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant }]}>My QR</Text>
               </TouchableOpacity>
             </View>
 
             {activeQrTab === 'my' ? (
               <View style={styles.tabContent}>
                 <AppLogo size={56} />
-                <Text style={styles.qrTitle}>{displayName}</Text>
-                <View style={styles.qrBoxLarge}>
+                <Text style={[styles.qrTitle, { color: colors.onSurface }]}>{displayName}</Text>
+                <View style={[styles.qrBoxLarge, { backgroundColor: '#FFFFFF' }]}>
                   <QRCode
                     value={displayMobile || currentUser?.uid || 'SPLITMATE_USER'}
                     size={200}
-                    color={Colors.primary}
-                    backgroundColor={Colors.surfaceContainerLowest}
+                    color="#000000"
+                    backgroundColor="#FFFFFF"
                   />
                 </View>
-                <Text style={styles.qrNote}>Scan this QR code using SplitMate to add me directly to your contacts.</Text>
+                <Text style={[styles.qrNote, { color: colors.onSurfaceVariant }]}>Scan this QR code using SplitMate to add me directly to your contacts.</Text>
               </View>
             ) : (
               <View style={styles.tabContent}>
                 {!scannedUser && !scannedNotFound ? (
                   !permission?.granted ? (
                     <View style={styles.permissionBox}>
-                      <MaterialIcons name="photo-camera" size={64} color={Colors.primary} />
-                      <Text style={styles.scanInstruction}>Camera permission is required to scan SplitMate friend QR codes</Text>
-                      <TouchableOpacity style={styles.grantCameraBtn} onPress={requestPermission}>
-                        <Text style={styles.grantCameraText}>Grant Camera Access</Text>
+                      <MaterialIcons name="photo-camera" size={64} color={colors.primary} />
+                      <Text style={[styles.scanInstruction, { color: colors.onSurfaceVariant }]}>Camera permission is required to scan SplitMate friend QR codes</Text>
+                      <TouchableOpacity style={[styles.grantCameraBtn, { backgroundColor: colors.primary }]} onPress={requestPermission}>
+                        <Text style={[styles.grantCameraText, { color: colors.onPrimary }]}>Grant Camera Access</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -449,48 +470,48 @@ export default function AccountScreen() {
                         onBarcodeScanned={scannedLock ? undefined : handleBarcodeScanned}
                       />
                       <View style={styles.cameraOverlayFrame}>
-                        <View style={styles.cameraCornerTL} />
-                        <View style={styles.cameraCornerTR} />
-                        <View style={styles.cameraCornerBL} />
-                        <View style={styles.cameraCornerBR} />
+                        <View style={[styles.cameraCornerTL, { borderColor: colors.primary }]} />
+                        <View style={[styles.cameraCornerTR, { borderColor: colors.primary }]} />
+                        <View style={[styles.cameraCornerBL, { borderColor: colors.primary }]} />
+                        <View style={[styles.cameraCornerBR, { borderColor: colors.primary }]} />
                       </View>
-                      <Text style={styles.realtimeScanPrompt}>Point camera at SplitMate QR</Text>
+                      <Text style={[styles.realtimeScanPrompt, { color: '#FFFFFF' }]}>Point camera at SplitMate QR</Text>
                     </View>
                   )
                 ) : scannedNotFound ? (
                   <View style={styles.scannedUserCard}>
-                    <View style={[styles.scannedAvatarCircle, { backgroundColor: '#FEE2E2' }]}>
-                      <MaterialIcons name="person-off" size={36} color="#DC2626" />
+                    <View style={[styles.scannedAvatarCircle, { backgroundColor: colors.errorContainer }]}>
+                      <MaterialIcons name="person-off" size={36} color={colors.error} />
                     </View>
-                    <Text style={styles.scannedName}>User Not Found</Text>
-                    <Text style={[styles.scannedEmail, { textAlign: 'center' }]}>
+                    <Text style={[styles.scannedName, { color: colors.onSurface }]}>User Not Found</Text>
+                    <Text style={[styles.scannedEmail, { textAlign: 'center', color: colors.onSurfaceVariant }]}>
                       This QR code is not registered with an active SplitMate user account.
                     </Text>
                     <TouchableOpacity
-                      style={styles.rescanBtn}
+                      style={[styles.rescanBtn, { backgroundColor: colors.surfaceContainerHigh }]}
                       onPress={() => { setScannedNotFound(false); setScannedLock(false); }}
                     >
-                      <Text style={styles.rescanBtnText}>Scan Again</Text>
+                      <Text style={[styles.rescanBtnText, { color: colors.onSurface }]}>Scan Again</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={styles.scannedUserCard}>
-                    <View style={styles.scannedAvatarCircleLarge}>
+                    <View style={[styles.scannedAvatarCircleLarge, { backgroundColor: colors.primaryContainer }]}>
                       {scannedUser.photoUrl ? (
                         <Image source={{ uri: scannedUser.photoUrl }} style={styles.scannedAvatarImgLarge} />
                       ) : (
-                        <Text style={styles.scannedAvatarTextLarge}>{scannedUser.name.charAt(0).toUpperCase()}</Text>
+                        <Text style={[styles.scannedAvatarTextLarge, { color: colors.onPrimaryContainer }]}>{scannedUser.name.charAt(0).toUpperCase()}</Text>
                       )}
                     </View>
-                    <Text style={styles.scannedNameLarge}>{scannedUser.name}</Text>
-                    <Text style={styles.scannedMobileText}>{scannedUser.email}</Text>
+                    <Text style={[styles.scannedNameLarge, { color: colors.onSurface }]}>{scannedUser.name}</Text>
+                    <Text style={[styles.scannedMobileText, { color: colors.onSurfaceVariant }]}>{scannedUser.email}</Text>
 
                     <TouchableOpacity
-                      style={styles.addContactActionBtnLarge}
+                      style={[styles.addContactActionBtnLarge, { backgroundColor: colors.primary }]}
                       onPress={handleAddScannedContact}
                       disabled={addingContact}
                     >
-                      <Text style={styles.addContactActionText}>
+                      <Text style={[styles.addContactActionText, { color: colors.onPrimary }]}>
                         {addingContact ? 'Adding Friend...' : 'Confirm & Add as Friend'}
                       </Text>
                     </TouchableOpacity>

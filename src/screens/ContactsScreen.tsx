@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { UserProfile, getSavedUserContactsFromFirestore } from '../services/firestoreService';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -26,6 +27,7 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function ContactsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const insets = useSafeAreaInsets();
+  const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
 
   const [addedContacts, setAddedContacts] = useState<UserProfile[]>([]);
@@ -58,130 +60,129 @@ export default function ContactsScreen() {
     }
   };
 
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    if (!text.trim()) {
       setFilteredContacts(addedContacts);
       return;
     }
-    const lower = query.toLowerCase();
+    const q = text.toLowerCase();
     const filtered = addedContacts.filter(
       (c) =>
-        c.name.toLowerCase().includes(lower) ||
-        (c.email && c.email.toLowerCase().includes(lower)) ||
-        (c.mobile && c.mobile.includes(lower))
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        (c.mobile && c.mobile.includes(q))
     );
     setFilteredContacts(filtered);
   };
 
   const renderContactItem = ({ item }: { item: UserProfile }) => {
-    const avatarLetter = (item.name || 'U').charAt(0).toUpperCase();
+    const initial = (item.name || item.email || '?').charAt(0).toUpperCase();
 
     return (
-      <View style={styles.contactCard}>
-        <View style={styles.avatarCircle}>
-          {item.photoUrl ? (
-            <Image source={{ uri: item.photoUrl }} style={styles.contactAvatarImg} />
-          ) : (
-            <Text style={styles.avatarText}>{avatarLetter}</Text>
-          )}
-        </View>
-
+      <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+        {item.photoUrl ? (
+          <Image source={{ uri: item.photoUrl }} style={styles.contactAvatarImg} />
+        ) : (
+          <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
+            <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{initial}</Text>
+          </View>
+        )}
         <View style={styles.contactInfo}>
-          <Text style={styles.contactName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.contactSub}>{item.mobile || item.email}</Text>
+          <Text style={[styles.contactName, { color: colors.onSurface }]}>{item.name || 'No Name'}</Text>
+          <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+            {item.email || item.mobile || 'SplitMate User'}
+          </Text>
         </View>
-
-        <TouchableOpacity style={styles.chatIconBtn} activeOpacity={0.8}>
-          <MaterialIcons name="chat-bubble-outline" size={20} color={Colors.primary} />
-        </TouchableOpacity>
       </View>
     );
   };
 
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
-
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
-      <View style={[styles.header, { paddingTop: topPadding }]}>
-        <Text style={styles.headerTitle}>Contacts</Text>
-        <Text style={styles.headerSubtitle}>Invite friends or start splitting bills directly</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Friends & Contacts</Text>
+        <Text style={[styles.headerSubtitle, { color: colors.onSurfaceVariant }]}>Your added SplitMate connections</Text>
       </View>
 
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator color={Colors.primary} size="large" />
-          <Text style={styles.loadingText}>Syncing SplitMate contacts...</Text>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Loading contacts...</Text>
         </View>
       ) : addedContacts.length === 0 ? (
-        /* Matching design specs for Blank State */
-        <ScrollView contentContainerStyle={styles.emptyScreenScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.emptyScreenScroll}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Card Graphic */}
-          <View style={styles.emptyCardContainer}>
-            <View style={styles.bluePlusBadge}>
-              <MaterialIcons name="add" size={20} color="#FFFFFF" />
+          <View style={[styles.emptyCardContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+            <View style={[styles.bluePlusBadge, { backgroundColor: colors.primary }]}>
+              <MaterialIcons name="person-add" size={18} color={colors.onPrimary} />
             </View>
 
             <View style={styles.friendsGraphicBox}>
-              <MaterialIcons name="groups" size={60} color="#4C56AF" />
+              <MaterialIcons name="people-outline" size={72} color={colors.primary} />
             </View>
 
-            <Text style={styles.graphicCardTitle}>No Friends Found</Text>
-            <Text style={styles.graphicCardSub}>
-              Invite your friends to join the split and save features!
+            <Text style={[styles.graphicCardTitle, { color: colors.onSurface }]}>Friends & Family</Text>
+            <Text style={[styles.graphicCardSub, { color: colors.onSurfaceVariant }]}>
+              Track balances & split expenses effortlessly with your close ones.
             </Text>
           </View>
 
           {/* Main Title & Subtitle */}
-          <Text style={styles.emptyMainTitle}>No Contacts Added</Text>
-          <Text style={styles.emptyMainSub}>
-            Start adding friends to SplitMate to begin sharing expenses effortlessly.
+          <Text style={[styles.emptyMainTitle, { color: colors.onBackground }]}>No friends added yet</Text>
+          <Text style={[styles.emptyMainSub, { color: colors.onSurfaceVariant }]}>
+            Add friends from your phone contacts or search by email/phone to start splitting bills cleanly.
           </Text>
 
-          {/* Invite Now Button */}
+          {/* Primary CTA */}
           <TouchableOpacity
-            style={styles.inviteNowPrimaryBtn}
+            style={[styles.inviteNowPrimaryBtn, { backgroundColor: colors.primary }]}
             onPress={() => navigation.navigate('InviteContacts')}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="person-add" size={20} color="#FFFFFF" />
-            <Text style={styles.inviteNowPrimaryText}>Invite Now</Text>
+            <MaterialIcons name="person-add" size={22} color={colors.onPrimary} />
+            <Text style={[styles.inviteNowPrimaryText, { color: colors.onPrimary }]}>Add Friends & Contacts</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
           {/* Search Bar */}
-          <View style={styles.searchBox}>
-            <MaterialIcons name="search" size={22} color={Colors.outline} />
+          <View style={[styles.searchBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+            <MaterialIcons name="search" size={22} color={colors.outline} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.onSurface }]}
               placeholder="Search added contacts..."
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               value={searchQuery}
               onChangeText={handleSearch}
             />
             {!!searchQuery && (
               <TouchableOpacity onPress={() => handleSearch('')}>
-                <MaterialIcons name="close" size={20} color={Colors.outline} />
+                <MaterialIcons name="close" size={20} color={colors.outline} />
               </TouchableOpacity>
             )}
           </View>
 
           {/* Invite Contacts Header Action */}
           <TouchableOpacity
-            style={styles.inviteRowBanner}
+            style={[styles.inviteRowBanner, { backgroundColor: colors.primaryFixed }]}
             onPress={() => navigation.navigate('InviteContacts')}
             activeOpacity={0.8}
           >
-            <View style={styles.inviteBannerIcon}>
-              <MaterialIcons name="person-add" size={22} color={Colors.primary} />
+            <View style={[styles.inviteBannerIcon, { backgroundColor: colors.surfaceContainerLowest }]}>
+              <MaterialIcons name="person-add" size={22} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inviteBannerTitle}>Invite Contacts</Text>
-              <Text style={styles.inviteBannerSub}>Invite friends from your phone contacts</Text>
+              <Text style={[styles.inviteBannerTitle, { color: colors.primary }]}>Invite Contacts</Text>
+              <Text style={[styles.inviteBannerSub, { color: colors.onSurfaceVariant }]}>Invite friends from your phone contacts</Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color={Colors.onSurfaceVariant} />
+            <MaterialIcons name="chevron-right" size={24} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
 
           <FlatList
@@ -198,33 +199,30 @@ export default function ContactsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1 },
   header: {
     paddingHorizontal: Spacing.containerMargin,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.sm,
   },
-  headerTitle: { ...Typography.headlineLgMobile, color: Colors.onBackground, fontWeight: '700' },
-  headerSubtitle: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  headerTitle: { ...Typography.headlineLgMobile, fontWeight: '700' },
+  headerSubtitle: { ...Typography.bodyMd, marginTop: 2 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     marginHorizontal: Spacing.containerMargin,
     marginVertical: Spacing.xs,
     paddingHorizontal: 14,
     height: 48,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     gap: 10,
     ...Shadows.card,
   },
-  searchInput: { flex: 1, ...Typography.bodyLg, color: Colors.onSurface },
+  searchInput: { flex: 1, ...Typography.bodyLg },
   inviteRowBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primaryFixed,
     marginHorizontal: Spacing.containerMargin,
     marginVertical: Spacing.xs,
     padding: Spacing.md,
@@ -235,12 +233,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerLowest,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  inviteBannerTitle: { ...Typography.titleSm, color: Colors.primary, fontWeight: '700' },
-  inviteBannerSub: { ...Typography.labelMd, color: Colors.onSurfaceVariant },
+  inviteBannerTitle: { ...Typography.titleSm, fontWeight: '700' },
+  inviteBannerSub: { ...Typography.labelMd },
   listContent: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: 100,
@@ -249,11 +246,9 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     marginVertical: 4,
     gap: 12,
     ...Shadows.card,
@@ -262,20 +257,18 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { ...Typography.titleMd, color: Colors.onPrimaryContainer, fontWeight: '700' },
+  avatarText: { ...Typography.titleMd, fontWeight: '700' },
   contactAvatarImg: { width: 44, height: 44, borderRadius: 22 },
   contactInfo: { flex: 1 },
-  contactName: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
-  contactSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: 2 },
+  contactName: { ...Typography.titleSm, fontWeight: '600' },
+  contactSub: { ...Typography.bodyMd, marginTop: 2 },
   chatIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -289,7 +282,6 @@ const styles = StyleSheet.create({
   emptyCardContainer: {
     width: '100%',
     maxWidth: 320,
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 24,
     alignItems: 'center',
@@ -300,7 +292,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
     borderWidth: 1,
-    borderColor: '#F3F4F6',
     marginBottom: 32,
   },
   bluePlusBadge: {
@@ -310,7 +301,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#6366F1',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 2,
@@ -327,12 +317,10 @@ const styles = StyleSheet.create({
   graphicCardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1F2937',
     marginBottom: 4,
   },
   graphicCardSub: {
     fontSize: 11,
-    color: '#6B7280',
     textAlign: 'center',
     paddingHorizontal: 12,
     lineHeight: 16,
@@ -340,13 +328,11 @@ const styles = StyleSheet.create({
   emptyMainTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1A1C1C',
     textAlign: 'center',
     marginBottom: 8,
   },
   emptyMainSub: {
     fontSize: 14,
-    color: '#6B7280',
     textAlign: 'center',
     paddingHorizontal: 20,
     lineHeight: 20,
@@ -357,7 +343,6 @@ const styles = StyleSheet.create({
     maxWidth: 320,
     height: 50,
     borderRadius: 10,
-    backgroundColor: '#273896',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -367,8 +352,7 @@ const styles = StyleSheet.create({
   inviteNowPrimaryText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   centerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.xl },
-  loadingText: { ...Typography.bodyMd, color: Colors.onSurfaceVariant, marginTop: Spacing.md },
+  loadingText: { ...Typography.bodyMd, marginTop: Spacing.md },
 });
