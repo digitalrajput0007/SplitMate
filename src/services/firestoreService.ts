@@ -16,12 +16,21 @@ import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
 import { db, auth } from '../config/firebase';
 
+export interface PaymentMethod {
+  id: string;
+  handle: string;
+  type: 'UPI' | 'Bank' | 'Other';
+  label: string;
+  isDefault: boolean;
+}
+
 export interface UserProfile {
   uid: string;
   name: string;
   email: string;
   photoUrl?: string;
   paymentHandle?: string;
+  paymentMethods?: PaymentMethod[];
   dob?: string;
   mobile?: string;
   emailVerified?: boolean;
@@ -135,6 +144,7 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
     if (profile.email !== undefined) dataToSave.email = profile.email;
     if (profile.photoUrl !== undefined) dataToSave.photoUrl = profile.photoUrl;
     if (profile.paymentHandle !== undefined) dataToSave.paymentHandle = profile.paymentHandle;
+    if (profile.paymentMethods !== undefined) dataToSave.paymentMethods = profile.paymentMethods;
     if (profile.dob !== undefined) dataToSave.dob = profile.dob;
     if (profile.mobile !== undefined) dataToSave.mobile = profile.mobile;
     if (profile.emailVerified !== undefined) dataToSave.emailVerified = profile.emailVerified;
