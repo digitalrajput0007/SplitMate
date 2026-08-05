@@ -10,13 +10,16 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   Image,
+  TextInput,
+  Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
-import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import {
   subscribeToGroupDetail,
@@ -26,26 +29,37 @@ import {
   GroupData,
   UserProfile,
 } from '../services/firestoreService';
+import { useTheme } from '../context/ThemeContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
+import { GroupTypeOption } from './CreateGroupModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupSettings'>;
 
-const CATEGORIES: Array<{ id: NonNullable<GroupData['category']>; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = [
-  { id: 'Travel', label: 'Travel', icon: 'flight' },
-  { id: 'Food', label: 'Food', icon: 'restaurant' },
-  { id: 'Rent', label: 'Rent', icon: 'home' },
-  { id: 'Event', label: 'Event', icon: 'celebration' },
-  { id: 'Utilities', label: 'Utilities', icon: 'bolt' },
-  { id: 'Other', label: 'Other', icon: 'label' },
+const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = [
+  { id: 'Trip', label: 'Trip', icon: 'flight' },
+  { id: 'Family', label: 'Family', icon: 'home' },
+  { id: 'Couple', label: 'Couple', icon: 'favorite' },
+  { id: 'Flatmate', label: 'Flatmate', icon: 'apartment' },
+  { id: 'Other', label: 'Other', icon: 'more-horiz' },
 ];
 
 export default function GroupSettingsScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
   const groupId = route.params?.groupId;
+  const { colors, isDark } = useTheme();
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [groupName, setGroupName] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<NonNullable<GroupData['category']>>('Travel');
+  const [groupType, setGroupType] = useState<GroupTypeOption>('Other');
+  const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+
+  // Conditional Fields
+  const [startDate, setStartDate] = useState<Date>(new Date());
+  const [endDate, setEndDate] = useState<Date>(new Date());
+  const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
+  const [familyName, setFamilyName] = useState('');
+  const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
+
   const [acceptedUsers, setAcceptedUsers] = useState<UserProfile[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
   const [saving, setSaving] = useState(false);
@@ -63,7 +77,12 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         if (data) {
           setGroup(data);
           setGroupName(data.name || '');
-          if (data.category) setSelectedCategory(data.category);
+          if (data.groupType) setGroupType(data.groupType as GroupTypeOption);
+          if (data.photoUrl) setGroupPhoto(data.photoUrl);
+          if (data.startDate) setStartDate(new Date(data.startDate));
+          if (data.endDate) setEndDate(new Date(data.endDate));
+          if (data.familyName) setFamilyName(data.familyName);
+          if (data.setupMonthlySplit !== undefined) setSetupMonthlySplit(data.setupMonthlySplit);
           loadMembersStatus(groupId);
         }
       });
@@ -71,13 +90,49 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     }
   }, [groupId]);
 
+  const handlePickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow photo library access.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setGroupPhoto(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.log('Image picker error:', e);
+    }
+  };
+
   const handleUpdateGroup = async () => {
-    if (!groupName.trim() || !groupId) return;
+    if (!groupName.trim() || !groupId) {
+      Alert.alert('Validation Error', 'Group name cannot be empty.');
+      return;
+    }
+
     setSaving(true);
     try {
+      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
+
       await updateGroupInFirestore(groupId, {
         name: groupName.trim(),
-        category: selectedCategory,
+        groupType,
+        photoUrl: groupPhoto || undefined,
+        familyName: groupType === 'Family' ? familyName.trim() : undefined,
+        setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
+        enableDates: groupType === 'Trip',
+        startDate: formattedStart,
+        endDate: formattedEnd,
       });
       Alert.alert('Group Updated', 'Group settings updated successfully.');
     } catch (error: any) {
@@ -115,114 +170,194 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     );
   };
 
+  const formatDateShort = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
-  const memberList = group?.memberIds || [currentUser?.uid || 'current_user', 'm2', 'm3', 'm4'];
-
   return (
-    <SafeAreaView style={styles.container}>
-      <RNStatusBar backgroundColor={Colors.background} barStyle="dark-content" translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      {/* App Header */}
-      <View style={[styles.topBar, { paddingTop: topPadding }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
+      {/* App Header - Matching Create Group */}
+      <View style={[styles.topAppBar, { paddingTop: topPadding, backgroundColor: colors.surface }]}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.goBack()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <MaterialIcons name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle} numberOfLines={1}>{groupName || 'Trip to Goa'}</Text>
-        <View style={{ width: 40 }} />
+        <Text style={[styles.topAppBarTitle, { color: colors.onSurface }]}>Group Settings</Text>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Section 1: Group Settings Card */}
-        <View style={styles.section}>
-          <Text style={styles.sectionHeaderTitle}>Group Settings</Text>
-          <View style={styles.cardContainer}>
-            <View style={styles.inputBox}>
-              <Text style={styles.labelTitle}>Group Name</Text>
-              <OutlinedInput
-                label="Group Name"
-                value={groupName}
-                onChangeText={setGroupName}
-                placeholder="e.g. Trip to Goa"
-              />
+        {/* Photo Upload - Identical to Create Group */}
+        <View style={styles.photoUploadCenter}>
+          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
+            {groupPhoto ? (
+              <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
+            ) : (
+              <MaterialIcons name="photo-camera" size={28} color={colors.onSurfaceVariant} />
+            )}
+            <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+              <MaterialIcons name="edit" size={12} color={colors.onPrimary} />
             </View>
+          </TouchableOpacity>
+        </View>
 
-            {/* Category Selector Pills */}
-            <View style={styles.inputBox}>
-              <Text style={styles.labelTitle}>Category</Text>
-              <View style={styles.categoriesRow}>
-                {CATEGORIES.map((cat) => {
-                  const isSelected = selectedCategory === cat.id;
-                  return (
-                    <TouchableOpacity
-                      key={cat.id}
-                      style={[
-                        styles.categoryPill,
-                        isSelected ? styles.categoryPillSelected : styles.categoryPillUnselected,
-                      ]}
-                      onPress={() => setSelectedCategory(cat.id)}
-                      activeOpacity={0.8}
-                    >
-                      <MaterialIcons
-                        name={cat.icon}
-                        size={16}
-                        color={isSelected ? Colors.onPrimaryContainer : Colors.onSurfaceVariant}
-                      />
-                      <Text
-                        style={[
-                          styles.categoryPillText,
-                          { color: isSelected ? Colors.onPrimaryContainer : Colors.onSurfaceVariant },
-                        ]}
-                      >
-                        {cat.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+        {/* Section 1: Group Basics */}
+        <View style={styles.inputGroup}>
+          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group name</Text>
+          <TextInput
+            style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }]}
+            placeholder="e.g., Goa Trip"
+            placeholderTextColor={colors.outline}
+            value={groupName}
+            onChangeText={setGroupName}
+          />
+        </View>
+
+        {/* Group Type Selector - Identical to Create Group */}
+        <View style={styles.inputGroup}>
+          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group type</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.singleRowTypeContainer}>
+            {GROUP_TYPES.map((t) => {
+              const isSelected = groupType === t.id;
+              return (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[
+                    styles.singleRowTypeBtn,
+                    {
+                      backgroundColor: isSelected ? colors.primary : colors.surfaceContainerLowest,
+                      borderColor: isSelected ? colors.primary : colors.outlineVariant,
+                      borderWidth: isSelected ? 0 : 1
+                    },
+                  ]}
+                  onPress={() => setGroupType(t.id)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons
+                    name={t.icon}
+                    size={18}
+                    color={isSelected ? colors.onPrimary : colors.onSurfaceVariant}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.singleRowTypeLabel, { color: isSelected ? colors.onPrimary : colors.onSurface }]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Conditional Fields - Identical to Create Group */}
+        {groupType === 'Trip' && (
+          <View style={styles.inputGroup}>
+            <View style={styles.datesRow}>
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                  onPress={() => setPickerMode('start')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                  onPress={() => setPickerMode('end')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && styles.disabledButton]}
-              onPress={handleUpdateGroup}
-              activeOpacity={0.85}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color={Colors.onPrimary} size="small" />
-              ) : (
-                <Text style={styles.saveBtnText}>Save Settings</Text>
-              )}
-            </TouchableOpacity>
+            {pickerMode && (
+              <DateTimePicker
+                value={pickerMode === 'start' ? startDate : endDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(event, selected) => {
+                  setPickerMode(null);
+                  if (selected) {
+                    if (pickerMode === 'start') setStartDate(selected);
+                    else setEndDate(selected);
+                  }
+                }}
+              />
+            )}
           </View>
-        </View>
+        )}
 
-        {/* Section 2: Members Section */}
+        {groupType === 'Family' && (
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
+            <TextInput
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }]}
+              placeholder="e.g., The Sharma Household"
+              placeholderTextColor={colors.outline}
+              value={familyName}
+              onChangeText={setFamilyName}
+            />
+          </View>
+        )}
+
+        {groupType === 'Flatmate' && (
+          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
+              <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
+            </View>
+            <Switch
+              value={setupMonthlySplit}
+              onValueChange={setSetupMonthlySplit}
+              trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+              thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
+            />
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.saveBtn, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+          onPress={handleUpdateGroup}
+          activeOpacity={0.85}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color={colors.onPrimary} size="small" />
+          ) : (
+            <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Update Group</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Section 2: Members */}
         <View style={styles.section}>
           <View style={styles.membersHeaderRow}>
-            <Text style={styles.sectionHeaderTitle}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
+            <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
             <TouchableOpacity
               style={styles.addMemberBtn}
               onPress={() => setShowAddMemberModal(true)}
               activeOpacity={0.8}
             >
-              <MaterialIcons name="person-add" size={18} color={Colors.primary} />
-              <Text style={styles.addMemberText}>Add Members</Text>
+              <MaterialIcons name="person-add" size={18} color={colors.primary} />
+              <Text style={[styles.addMemberText, { color: colors.primary }]}>Add Members</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Pending Invitations Sub-Section ("Waiting for: ...") */}
-          {pendingUsers.length > 0 && (
-            <View style={{ marginBottom: Spacing.sm }}>
-              <Text style={styles.pendingHeaderLabel}>
-                Waiting for ({pendingUsers.length}): {pendingUsers.map((u) => u.name).join(', ')}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.membersCardContainer}>
-            {/* Accepted Members */}
+          <View style={[styles.membersCardContainer, { backgroundColor: colors.surfaceContainerLowest }]}>
             {acceptedUsers.map((u, index) => {
               const isMe = u.uid === currentUser?.uid;
               const isCreator = u.uid === group?.createdBy;
@@ -233,20 +368,20 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                   key={u.uid}
                   style={[
                     styles.memberRowItem,
-                    (index !== acceptedUsers.length - 1 || pendingUsers.length > 0) && styles.memberRowBorder,
+                    (index !== acceptedUsers.length - 1 || pendingUsers.length > 0) && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
                   ]}
                 >
                   <View style={styles.memberLeftInfo}>
-                    <View style={styles.memberAvatarCircle}>
+                    <View style={[styles.memberAvatarCircle, { backgroundColor: colors.secondaryContainer }]}>
                       {u.photoUrl ? (
                         <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
                       ) : (
-                        <Text style={styles.memberAvatarText}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
+                        <Text style={[styles.memberAvatarText, { color: colors.onSecondaryContainer }]}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
                       )}
                     </View>
                     <View>
-                      <Text style={styles.memberItemName}>{u.name} {isMe ? '(You)' : ''}</Text>
-                      <Text style={styles.memberRoleText}>{roleLabel} • Active</Text>
+                      <Text style={[styles.memberItemName, { color: colors.onSurface }]}>{u.name} {isMe ? '(You)' : ''}</Text>
+                      <Text style={[styles.memberRoleText, { color: colors.onSurfaceVariant }]}>{roleLabel} • Active</Text>
                     </View>
                   </View>
 
@@ -255,25 +390,24 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                       style={styles.removeIconBtn}
                       onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
                     >
-                      <MaterialIcons name="person-remove" size={20} color={Colors.error} />
+                      <MaterialIcons name="person-remove" size={20} color={colors.error} />
                     </TouchableOpacity>
                   )}
                 </View>
               );
             })}
 
-            {/* Pending Members */}
             {pendingUsers.map((u, index) => (
               <View
                 key={u.uid}
                 style={[
                   styles.memberRowItem,
-                  index !== pendingUsers.length - 1 && styles.memberRowBorder,
-                  { backgroundColor: Colors.surfaceContainerHighest + '44' },
+                  index !== pendingUsers.length - 1 && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
+                  { backgroundColor: colors.surfaceContainerHighest + '44' },
                 ]}
               >
                 <View style={styles.memberLeftInfo}>
-                  <View style={[styles.memberAvatarCircle, { backgroundColor: Colors.outlineVariant }]}>
+                  <View style={[styles.memberAvatarCircle, { backgroundColor: colors.outlineVariant }]}>
                     {u.photoUrl ? (
                       <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
                     ) : (
@@ -281,8 +415,8 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     )}
                   </View>
                   <View>
-                    <Text style={styles.memberItemName}>{u.name}</Text>
-                    <Text style={{ ...Typography.labelMd, color: Colors.outline, fontWeight: '600' }}>
+                    <Text style={[styles.memberItemName, { color: colors.onSurface }]}>{u.name}</Text>
+                    <Text style={[styles.memberRoleText, { color: colors.outline, fontWeight: '600' }]}>
                       Invitation Pending ⏳
                     </Text>
                   </View>
@@ -295,12 +429,12 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Section 3: Danger Zone */}
         <View style={styles.dangerSection}>
           <TouchableOpacity
-            style={styles.deleteGroupBtn}
+            style={[styles.deleteGroupBtn, { backgroundColor: isDark ? 'rgba(186, 26, 26, 0.15)' : 'rgba(186, 26, 26, 0.08)', borderColor: 'rgba(186, 26, 26, 0.2)' }]}
             onPress={handleDeleteGroup}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="delete-forever" size={22} color={Colors.error} />
-            <Text style={styles.deleteGroupText}>Delete Group</Text>
+            <MaterialIcons name="delete-forever" size={22} color={colors.error} />
+            <Text style={[styles.deleteGroupText, { color: colors.error }]}>Delete Group</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -311,9 +445,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         groupName={groupName || 'Group'}
         existingMemberIds={group?.memberIds || []}
         onClose={() => setShowAddMemberModal(false)}
-        onMemberAdded={() => {
-          // Realtime snapshot listener automatically refreshes group state
-        }}
+        onMemberAdded={() => {}}
       />
     </SafeAreaView>
   );
@@ -322,98 +454,147 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
-  topBar: {
+  topAppBar: {
+    height: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.containerMargin,
-    paddingBottom: Spacing.xs,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
+    padding: Spacing.sm,
     borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  topBarTitle: {
+  topAppBarTitle: {
+    flex: 1,
+    marginLeft: Spacing.md,
     ...Typography.titleMd,
-    color: Colors.onSurface,
     fontWeight: '700',
-    textAlign: 'center',
   },
   scroll: {
     paddingHorizontal: Spacing.containerMargin,
     paddingBottom: 40,
-    gap: Spacing.xl,
   },
-  section: {
-    gap: Spacing.md,
+  photoUploadCenter: {
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
   },
-  sectionHeaderTitle: {
-    ...Typography.titleMd,
-    color: Colors.onSurface,
-    fontWeight: '700',
-  },
-  cardContainer: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    gap: Spacing.md,
+  photoCircleContainer: {
+    position: 'relative',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...Shadows.card,
   },
-  inputBox: {
-    gap: Spacing.xs,
+  photoCircleImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
   },
-  labelTitle: {
+  photoAddBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inputGroup: {
+    marginBottom: Spacing.md,
+  },
+  inputLabel: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
-    fontWeight: '500',
+    marginBottom: Spacing.xs,
+    textTransform: 'uppercase',
   },
-  categoriesRow: {
+  textInputFull: {
+    width: '100%',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    ...Typography.bodyLg,
+  },
+  singleRowTypeContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-    marginTop: 4,
+    gap: 8,
+    paddingRight: Spacing.md,
   },
-  categoryPill: {
+  singleRowTypeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.card,
   },
-  categoryPillSelected: {
-    backgroundColor: Colors.primaryContainer,
-  },
-  categoryPillUnselected: {
-    backgroundColor: Colors.surfaceContainer,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-  },
-  categoryPillText: {
-    ...Typography.labelMd,
+  singleRowTypeLabel: {
+    ...Typography.bodyMd,
     fontWeight: '600',
   },
+  datesRow: {
+    flexDirection: 'row',
+    gap: Spacing.gutter,
+  },
+  dateCol: {
+    flex: 1,
+  },
+  dateInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  dateInputText: {
+    ...Typography.bodyMd,
+  },
+  switchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  switchTitle: {
+    ...Typography.titleMd,
+  },
+  switchSubtitle: {
+    ...Typography.bodySm,
+  },
   saveBtn: {
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    paddingVertical: 14,
+    borderRadius: BorderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.xs,
+    marginBottom: Spacing.xl,
     ...Shadows.button,
   },
   disabledButton: {
     opacity: 0.6,
   },
   saveBtnText: {
-    ...Typography.titleSm,
-    color: Colors.onPrimary,
-    fontWeight: '600',
+    ...Typography.titleMd,
+    fontWeight: '700',
+  },
+  section: {
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  sectionHeaderTitle: {
+    ...Typography.titleMd,
+    fontWeight: '700',
   },
   membersHeaderRow: {
     flexDirection: 'row',
@@ -429,16 +610,9 @@ const styles = StyleSheet.create({
   },
   addMemberText: {
     ...Typography.labelMd,
-    color: Colors.primary,
-    fontWeight: '700',
-  },
-  pendingHeaderLabel: {
-    ...Typography.bodyMd,
-    color: Colors.primary,
     fontWeight: '700',
   },
   membersCardContainer: {
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     ...Shadows.card,
     overflow: 'hidden',
@@ -451,7 +625,6 @@ const styles = StyleSheet.create({
   },
   memberRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
   },
   memberLeftInfo: {
     flexDirection: 'row',
@@ -462,45 +635,39 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
   memberAvatarText: {
     ...Typography.titleSm,
-    color: Colors.onSecondaryContainer,
     fontWeight: '700',
   },
   memberItemName: {
     ...Typography.bodyMd,
-    color: Colors.onSurface,
     fontWeight: '600',
   },
   memberRoleText: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
     fontSize: 12,
   },
   removeIconBtn: {
     padding: 8,
   },
   dangerSection: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.xxl,
   },
   deleteGroupBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.xs,
-    backgroundColor: 'rgba(186, 26, 26, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(186, 26, 26, 0.2)',
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.lg,
   },
   deleteGroupText: {
     ...Typography.titleMd,
-    color: Colors.error,
     fontWeight: '700',
   },
 });
