@@ -1,28 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  FlatList,
   ActivityIndicator,
   Alert,
   Modal,
   Image,
+  TextInput,
+  Share,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
 import {
   UserProfile,
   getSavedUserContactsFromFirestore,
+  getAllUsersFromFirestore,
   subscribeToGroupExpenses,
   addMemberToGroupWithPreference,
   ExpenseData,
   formatCurrency,
 } from '../services/firestoreService';
+import { useTheme } from '../context/ThemeContext';
 
 interface AddGroupMemberModalProps {
   visible: boolean;
@@ -33,6 +35,11 @@ interface AddGroupMemberModalProps {
   onMemberAdded: () => void;
 }
 
+interface CombinedContact extends UserProfile {
+  isRegistered: boolean;
+  isSavedContact: boolean;
+}
+
 export function AddGroupMemberModal({
   visible,
   groupId,
@@ -41,62 +48,107 @@ export function AddGroupMemberModal({
   onClose,
   onMemberAdded,
 }: AddGroupMemberModalProps) {
+  const { colors } = useTheme();
   const currentUser = auth.currentUser;
-  const [contacts, setContacts] = useState<UserProfile[]>([]);
-  const [loadingContacts, setLoadingContacts] = useState(true);
-  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allPlatformUsers, setAllPlatformUsers] = useState<UserProfile[]>([]);
+  const [savedContacts, setSavedContacts] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState<CombinedContact | null>(null);
 
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
-  const [includeExistingExpenses, setIncludeExistingExpenses] = useState(false); // Option B default (recommended)
+  const [includeExistingExpenses, setIncludeExistingExpenses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (visible && currentUser?.uid) {
-      setLoadingContacts(true);
-      getSavedUserContactsFromFirestore(currentUser.uid).then((saved) => {
-        // Filter out users already in the group
-        const available = saved.filter((c) => !existingMemberIds.includes(c.uid));
-        setContacts(available);
-        setLoadingContacts(false);
-      });
+      setLoading(true);
+
+      const loadData = async () => {
+        try {
+          const [platformUsers, saved] = await Promise.all([
+            getAllUsersFromFirestore(),
+            getSavedUserContactsFromFirestore(currentUser.uid),
+          ]);
+          setAllPlatformUsers(platformUsers);
+          setSavedContacts(saved);
+        } catch (e) {
+          console.log('Error loading members data:', e);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadData();
 
       const unsubExp = subscribeToGroupExpenses(groupId, (expList) => {
         setExpenses(expList);
       });
 
-      return () => {
-        unsubExp();
-      };
+      return () => unsubExp();
     }
   }, [visible, groupId, currentUser, existingMemberIds]);
 
-  // Calculate existing expenses and estimated share
+  const filteredResults = useMemo(() => {
+    if (!searchQuery.trim()) {
+      // Show saved contacts by default
+      return savedContacts
+        .filter(c => !existingMemberIds.includes(c.uid))
+        .map(c => ({ ...c, isRegistered: true, isSavedContact: true } as CombinedContact));
+    }
+
+    const query = searchQuery.toLowerCase();
+
+    // 1. Search in platform users
+    const platformMatches = allPlatformUsers
+      .filter(u =>
+        !existingMemberIds.includes(u.uid) &&
+        u.uid !== currentUser?.uid &&
+        (u.name.toLowerCase().includes(query) ||
+         u.email.toLowerCase().includes(query) ||
+         (u.mobile && u.mobile.includes(query)))
+      )
+      .map(u => ({
+        ...u,
+        isRegistered: true,
+        isSavedContact: savedContacts.some(sc => sc.uid === u.uid)
+      } as CombinedContact));
+
+    return platformMatches;
+  }, [searchQuery, allPlatformUsers, savedContacts, existingMemberIds, currentUser]);
+
   const totalExistingExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const nextMemberCount = existingMemberIds.length + 1;
   const estimatedSharePerUser = totalExistingExpenses > 0 ? totalExistingExpenses / nextMemberCount : 0;
 
   const handleConfirmAdd = async () => {
-    if (!selectedUser) {
-      Alert.alert('Select Member', 'Please select a contact to add to this group.');
-      return;
-    }
+    if (!selectedUser) return;
 
     setSubmitting(true);
     try {
       await addMemberToGroupWithPreference(groupId, selectedUser.uid, includeExistingExpenses);
       Alert.alert(
         'Member Added',
-        `${selectedUser.name} has been added to ${groupName} (${
-          includeExistingExpenses ? 'Splitting all expenses' : 'Splitting new expenses only'
-        }).`
+        `${selectedUser.name} added to ${groupName}.`
       );
       setSelectedUser(null);
+      setSearchQuery('');
       onMemberAdded();
       onClose();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to add member to group.');
+      Alert.alert('Error', e.message || 'Failed to add member.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleInvite = async () => {
+    try {
+      const shareMessage = `Join me on SplitMate to split bills & track group expenses! Download here: https://splitmate.app`;
+      await Share.share({ message: shareMessage });
+    } catch (error) {
+      console.log('Error sharing invite:', error);
     }
   };
 
@@ -105,144 +157,158 @@ export function AddGroupMemberModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { backgroundColor: colors.background }]}>
           {/* Header */}
           <View style={styles.headerRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Add Member to {groupName}</Text>
-              <Text style={styles.headerSub}>Choose expense splitting preference for new member</Text>
+              <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Add Member</Text>
+              <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Search and add people to {groupName}</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <MaterialIcons name="close" size={22} color={Colors.onSurfaceVariant} />
+            <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surfaceContainerLow }]}>
+              <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
 
+          {/* Search Bar */}
+          <View style={[styles.searchBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+            <MaterialIcons name="search" size={20} color={colors.outline} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.onSurface }]}
+              placeholder="Search by name, email or mobile"
+              placeholderTextColor={colors.outline}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {!!searchQuery && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <MaterialIcons name="close" size={18} color={colors.outline} />
+              </TouchableOpacity>
+            )}
+          </View>
+
           <ScrollView contentContainerStyle={styles.modalScroll} showsVerticalScrollIndicator={false}>
-            {/* Step 1: Select Contact */}
-            <Text style={styles.stepTitle}>1. Select Contact</Text>
-            {loadingContacts ? (
-              <ActivityIndicator color={Colors.primary} size="small" style={{ marginVertical: 12 }} />
-            ) : contacts.length === 0 ? (
-              <View style={styles.emptyContactsCard}>
-                <Text style={styles.emptyContactsText}>No available contacts found.</Text>
-                <Text style={styles.emptyContactsSub}>Add contacts from your phone contacts tab first.</Text>
-              </View>
+            {loading ? (
+              <ActivityIndicator color={colors.primary} size="small" style={{ marginVertical: 20 }} />
             ) : (
-              <View style={styles.contactsList}>
-                {contacts.map((c) => {
-                  const isSelected = selectedUser?.uid === c.uid;
-                  return (
-                    <TouchableOpacity
-                      key={c.uid}
-                      style={[styles.contactRow, isSelected && styles.contactRowSelected]}
-                      onPress={() => setSelectedUser(c)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.contactAvatar}>
-                        {c.photoUrl ? (
-                          <Image source={{ uri: c.photoUrl }} style={styles.avatarImg} />
-                        ) : (
-                          <Text style={styles.avatarLetter}>{(c.name || 'U').charAt(0).toUpperCase()}</Text>
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.contactName}>{c.name}</Text>
-                        <Text style={styles.contactSub}>{c.mobile || c.email}</Text>
-                      </View>
-                      <MaterialIcons
-                        name={isSelected ? 'radio-button-checked' : 'radio-button-unchecked'}
-                        size={22}
-                        color={isSelected ? Colors.primary : Colors.outlineVariant}
-                      />
+              <View style={styles.resultsList}>
+                {filteredResults.length === 0 && searchQuery.trim() !== '' ? (
+                  <View style={styles.noResultsBox}>
+                    <Text style={[styles.noResultsText, { color: colors.onSurface }]}>No SplitMate user found</Text>
+                    <TouchableOpacity style={[styles.inviteSmallBtn, { borderColor: colors.primary }]} onPress={handleInvite}>
+                      <Text style={[styles.inviteSmallBtnText, { color: colors.primary }]}>Invite to SplitMate</Text>
                     </TouchableOpacity>
-                  );
-                })}
+                  </View>
+                ) : (
+                  filteredResults.map((u) => {
+                    const isSelected = selectedUser?.uid === u.uid;
+                    return (
+                      <TouchableOpacity
+                        key={u.uid}
+                        style={[
+                          styles.contactRow,
+                          { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                          isSelected && { backgroundColor: colors.primaryFixed, borderColor: colors.primary }
+                        ]}
+                        onPress={() => setSelectedUser(u)}
+                      >
+                        <View style={[styles.contactAvatar, { backgroundColor: colors.primaryContainer }]}>
+                          {u.photoUrl ? (
+                            <Image source={{ uri: u.photoUrl }} style={styles.avatarImg} />
+                          ) : (
+                            <Text style={[styles.avatarLetter, { color: colors.onPrimaryContainer }]}>
+                              {u.name.charAt(0).toUpperCase()}
+                            </Text>
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>{u.name}</Text>
+                            <View style={[styles.badge, { backgroundColor: colors.positiveContainer }]}>
+                              <Text style={[styles.badgeText, { color: colors.positiveText }]}>On SplitMate</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{u.mobile || u.email}</Text>
+                        </View>
+                        <MaterialIcons
+                          name={isSelected ? 'radio-button-checked' : 'radio-button-unchecked'}
+                          size={22}
+                          color={isSelected ? colors.primary : colors.outlineVariant}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </View>
             )}
 
-            {/* Step 2: Splitting Preference Options */}
-            <Text style={styles.stepTitle}>2. Expense Splitting Preference</Text>
-            <View style={styles.optionsGroup}>
-              {/* Option B (Default / Recommended) */}
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  !includeExistingExpenses && styles.optionCardSelected,
-                ]}
-                onPress={() => setIncludeExistingExpenses(false)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.optionHeaderRow}>
-                  <MaterialIcons
-                    name={!includeExistingExpenses ? 'radio-button-checked' : 'radio-button-unchecked'}
-                    size={22}
-                    color={!includeExistingExpenses ? Colors.primary : Colors.outlineVariant}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.titleBadgeRow}>
-                      <Text style={styles.optionTitle}>Split only new expenses from now</Text>
-                      <View style={styles.recommendedBadge}>
-                        <Text style={styles.recommendedText}>Recommended</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.optionSub}>
-                      {selectedUser
-                        ? `Only expenses added after ${selectedUser.name.split(' ')[0]} accepts will count.`
-                        : 'Only expenses added after member accepts will count.'}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
+            {selectedUser && (
+              <View style={styles.preferenceSection}>
+                <Text style={[styles.stepTitle, { color: colors.onSurface }]}>Splitting Preference</Text>
 
-              {/* Option A */}
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  includeExistingExpenses && styles.optionCardSelected,
-                ]}
-                onPress={() => setIncludeExistingExpenses(true)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.optionHeaderRow}>
-                  <MaterialIcons
-                    name={includeExistingExpenses ? 'radio-button-checked' : 'radio-button-unchecked'}
-                    size={22}
-                    color={includeExistingExpenses ? Colors.primary : Colors.outlineVariant}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.optionTitle}>Split all expenses (including existing ones)</Text>
-                    <Text style={styles.optionSub}>
-                      Existing group expenses: {formatCurrency(totalExistingExpenses)}
-                    </Text>
-                    {totalExistingExpenses > 0 && selectedUser && (
-                      <View style={styles.impactBox}>
-                        <Text style={styles.impactText}>
-                          Estimated impact: {selectedUser.name.split(' ')[0]} will owe{' '}
-                          <Text style={{ fontWeight: '700', color: Colors.primary }}>
-                            {formatCurrency(estimatedSharePerUser)}
-                          </Text>{' '}
-                          from existing expenses.
-                        </Text>
-                      </View>
-                    )}
+                <TouchableOpacity
+                  style={[
+                    styles.optionCard,
+                    { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                    !includeExistingExpenses && { backgroundColor: colors.primaryFixed, borderColor: colors.primary },
+                  ]}
+                  onPress={() => setIncludeExistingExpenses(false)}
+                >
+                  <View style={styles.optionHeaderRow}>
+                    <MaterialIcons
+                      name={!includeExistingExpenses ? 'radio-button-checked' : 'radio-button-unchecked'}
+                      size={20}
+                      color={!includeExistingExpenses ? colors.primary : colors.outlineVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Split only new expenses</Text>
+                      <Text style={[styles.optionSub, { color: colors.onSurfaceVariant }]}>Recommended for new members</Text>
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.optionCard,
+                    { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                    includeExistingExpenses && { backgroundColor: colors.primaryFixed, borderColor: colors.primary },
+                  ]}
+                  onPress={() => setIncludeExistingExpenses(true)}
+                >
+                  <View style={styles.optionHeaderRow}>
+                    <MaterialIcons
+                      name={includeExistingExpenses ? 'radio-button-checked' : 'radio-button-unchecked'}
+                      size={20}
+                      color={includeExistingExpenses ? colors.primary : colors.outlineVariant}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Split all group expenses</Text>
+                      {totalExistingExpenses > 0 && (
+                        <Text style={[styles.impactText, { color: colors.primary }]}>
+                          Will owe approx {formatCurrency(estimatedSharePerUser)} from past bills
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
           </ScrollView>
 
-          {/* Action Footer */}
+          {/* Footer Action */}
           <TouchableOpacity
-            style={[styles.addSubmitBtn, (!selectedUser || submitting) && styles.disabledBtn]}
+            style={[
+              styles.addSubmitBtn,
+              { backgroundColor: colors.primary },
+              (!selectedUser || submitting) && styles.disabledBtn
+            ]}
             onPress={handleConfirmAdd}
             disabled={!selectedUser || submitting}
-            activeOpacity={0.85}
           >
             {submitting ? (
-              <ActivityIndicator color={Colors.onPrimary} size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.addSubmitText}>
-                {selectedUser ? `Add ${selectedUser.name.split(' ')[0]} to Group` : 'Select a Contact'}
+              <Text style={[styles.addSubmitText, { color: colors.onPrimary }]}>
+                {selectedUser ? `Add ${selectedUser.name.split(' ')[0]}` : 'Select a person'}
               </Text>
             )}
           </TouchableOpacity>
@@ -259,7 +325,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: Colors.background,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
     maxHeight: '90%',
@@ -270,96 +335,85 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  headerTitle: { ...Typography.titleLg, color: Colors.onBackground, fontWeight: '700' },
-  headerSub: { ...Typography.bodySm, color: Colors.onSurfaceVariant, marginTop: 2 },
+  headerTitle: { ...Typography.titleLg, fontWeight: '700' },
+  headerSub: { ...Typography.bodySm, marginTop: 2 },
   closeBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalScroll: { gap: Spacing.md, paddingBottom: Spacing.md },
-  stepTitle: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '700', marginTop: Spacing.xs },
-  emptyContactsCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    padding: Spacing.md,
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    height: 48,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.divider,
-    alignItems: 'center',
+    gap: 8,
   },
-  emptyContactsText: { ...Typography.titleSm, color: Colors.onSurface },
-  emptyContactsSub: { ...Typography.bodySm, color: Colors.onSurfaceVariant, marginTop: 2 },
-  contactsList: { gap: Spacing.xs },
+  searchInput: { flex: 1, ...Typography.bodyMd },
+  modalScroll: { gap: Spacing.md, paddingBottom: Spacing.md },
+  resultsList: { gap: Spacing.xs, marginTop: Spacing.xs },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
-    padding: Spacing.md,
+    padding: 12,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: Colors.divider,
     gap: 12,
   },
-  contactRowSelected: {
-    backgroundColor: Colors.primaryFixed,
-    borderColor: Colors.primary,
-  },
   contactAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primaryContainer,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarImg: { width: 40, height: 40, borderRadius: 20 },
-  avatarLetter: { ...Typography.titleSm, color: Colors.onPrimaryContainer, fontWeight: '700' },
-  contactName: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
-  contactSub: { ...Typography.bodySm, color: Colors.onSurfaceVariant, marginTop: 2 },
-  optionsGroup: { gap: Spacing.sm },
-  optionCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.divider,
-  },
-  optionCardSelected: {
-    backgroundColor: Colors.primaryFixed,
-    borderColor: Colors.primary,
-  },
-  optionHeaderRow: { flexDirection: 'row', gap: 10 },
-  titleBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  optionTitle: { ...Typography.titleSm, color: Colors.onSurface, fontWeight: '600' },
-  recommendedBadge: {
-    backgroundColor: Colors.positiveContainer,
+  avatarImg: { width: 44, height: 44, borderRadius: 22 },
+  avatarLetter: { ...Typography.titleMd, fontWeight: '700' },
+  contactName: { ...Typography.titleSm, fontWeight: '600', maxWidth: 140 },
+  contactSub: { ...Typography.bodySm, marginTop: 2 },
+  badge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
+    borderRadius: 4,
   },
-  recommendedText: { fontSize: 10, color: Colors.positiveText, fontWeight: '700' },
-  optionSub: { ...Typography.bodySm, color: Colors.onSurfaceVariant, marginTop: 4, lineHeight: 18 },
-  impactBox: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    marginTop: 8,
+  badgeText: { fontSize: 9, fontWeight: '700' },
+  noResultsBox: {
+    alignItems: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  noResultsText: { ...Typography.bodyMd, opacity: 0.7 },
+  inviteSmallBtn: {
     borderWidth: 1,
-    borderColor: Colors.divider,
-  },
-  impactText: { ...Typography.bodySm, color: Colors.onSurface },
-  addSubmitBtn: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: BorderRadius.md,
+  },
+  inviteSmallBtnText: { ...Typography.labelLg, fontWeight: '700' },
+  preferenceSection: { gap: Spacing.sm, marginTop: Spacing.md },
+  stepTitle: { ...Typography.labelLg, fontWeight: '700', marginBottom: 4 },
+  optionCard: {
+    borderRadius: BorderRadius.lg,
+    padding: 12,
+    borderWidth: 1,
+  },
+  optionHeaderRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  optionTitle: { ...Typography.titleSm, fontWeight: '600' },
+  optionSub: { ...Typography.bodySm, marginTop: 2 },
+  impactText: { ...Typography.labelMd, fontWeight: '700', marginTop: 4 },
+  addSubmitBtn: {
+    paddingVertical: 16,
+    borderRadius: BorderRadius.lg,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.button,
   },
   disabledBtn: { opacity: 0.5 },
-  addSubmitText: { ...Typography.titleMd, color: Colors.onPrimary, fontWeight: '700' },
+  addSubmitText: { ...Typography.titleMd, fontWeight: '700' },
 });

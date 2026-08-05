@@ -124,16 +124,21 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
       const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
 
-      await updateGroupInFirestore(groupId, {
+      const updateData: any = {
         name: groupName.trim(),
         groupType,
-        photoUrl: groupPhoto || undefined,
-        familyName: groupType === 'Family' ? familyName.trim() : undefined,
-        setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
+        photoUrl: groupPhoto || '',
         enableDates: groupType === 'Trip',
-        startDate: formattedStart,
-        endDate: formattedEnd,
-      });
+      };
+
+      if (groupType === 'Family') updateData.familyName = familyName.trim();
+      if (groupType === 'Flatmate') updateData.setupMonthlySplit = setupMonthlySplit;
+      if (groupType === 'Trip') {
+        updateData.startDate = formattedStart;
+        updateData.endDate = formattedEnd;
+      }
+
+      await updateGroupInFirestore(groupId, updateData);
       Alert.alert('Group Updated', 'Group settings updated successfully.');
     } catch (error: any) {
       console.error('Error updating group:', error);
@@ -142,6 +147,23 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       setSaving(false);
     }
   };
+
+  const handleRemovePhoto = () => {
+    setGroupPhoto(null);
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'G';
+  };
+
+  const groupInitials = getInitials(groupName);
 
   const handleDeleteGroup = async () => {
     if (!groupId) return;
@@ -195,18 +217,33 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Photo Upload - Identical to Create Group */}
+        {/* Photo Upload - Restored with Initials and Remove Option */}
         <View style={styles.photoUploadCenter}>
-          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
             {groupPhoto ? (
               <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
             ) : (
-              <MaterialIcons name="photo-camera" size={28} color={colors.onSurfaceVariant} />
+              <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{groupInitials}</Text>
             )}
             <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
-              <MaterialIcons name="edit" size={12} color={colors.onPrimary} />
+              <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
             </View>
           </TouchableOpacity>
+
+          <View style={styles.photoActions}>
+            <TouchableOpacity onPress={handlePickPhoto}>
+              <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
+            </TouchableOpacity>
+
+            {groupPhoto ? (
+              <>
+                <View style={[styles.actionDivider, { backgroundColor: colors.divider }]} />
+                <TouchableOpacity onPress={handleRemovePhoto}>
+                  <Text style={[styles.avatarHint, { color: colors.error }]}>Remove</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
         </View>
 
         {/* Section 1: Group Basics */}
@@ -495,6 +532,10 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 40,
   },
+  avatarText: {
+    ...Typography.headlineLg,
+    fontSize: 28,
+  },
   photoAddBadge: {
     position: 'absolute',
     bottom: 0,
@@ -505,6 +546,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  photoActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: Spacing.sm,
+  },
+  actionDivider: {
+    width: 1,
+    height: 12,
+  },
+  avatarHint: {
+    ...Typography.labelMd,
+    fontWeight: '600',
   },
   inputGroup: {
     marginBottom: Spacing.md,
