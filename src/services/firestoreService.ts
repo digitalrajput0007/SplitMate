@@ -22,7 +22,6 @@ export interface UserProfile {
   email: string;
   photoUrl?: string;
   paymentHandle?: string;
-  dob?: string;
   mobile?: string;
   emailVerified?: boolean;
   preferences?: {
@@ -108,7 +107,7 @@ export interface SettlementData {
 
 export interface ActivityItem {
   id: string;
-  type: 'expense' | 'settlement';
+  type: 'expense' | 'settlement' | 'activity';
   title: string;
   subtitle: string;
   amount: number;
@@ -116,6 +115,7 @@ export interface ActivityItem {
   groupName?: string;
   date: string;
   rawTimestamp: number;
+  groupId?: string;
 }
 
 // -------------------------------------------------------------
@@ -132,7 +132,6 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       email: profile.email || '',
       photoUrl: profile.photoUrl || '',
       paymentHandle: profile.paymentHandle || '',
-      dob: profile.dob || '',
       mobile: profile.mobile || '',
       ...(profile.emailVerified !== undefined && { emailVerified: profile.emailVerified }),
       updatedAt: serverTimestamp(),
@@ -733,6 +732,22 @@ export const subscribeToGroupSettlements = (
   });
 };
 
+export const addActivityToFirestore = async (activity: Omit<ActivityItem, 'id' | 'date' | 'rawTimestamp'>): Promise<string> => {
+  try {
+    const activityRef = doc(collection(db, 'activities'));
+    const activityData = {
+      ...activity,
+      id: activityRef.id,
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(activityRef, activityData);
+    return activityRef.id;
+  } catch (error) {
+    console.error('Error adding activity to Firestore:', error);
+    throw error;
+  }
+};
+
 // -------------------------------------------------------------
 // ACTIVITY FEED
 // -------------------------------------------------------------
@@ -745,12 +760,14 @@ export const subscribeUserActivityFeed = (
     return () => {};
   }
 
-  // Filter in memory across expenses
+  // Filter in memory across expenses, settlements and activities
   const expensesQuery = query(collection(db, 'expenses'));
   const settlementsQuery = query(collection(db, 'settlements'));
+  const activitiesQuery = query(collection(db, 'activities'));
 
   let currentExpenses: ExpenseData[] = [];
   let currentSettlements: SettlementData[] = [];
+  let currentActivities: any[] = [];
 
   const mergeAndNotify = () => {
     const items: ActivityItem[] = [];
@@ -798,6 +815,22 @@ export const subscribeUserActivityFeed = (
       }
     });
 
+    currentActivities.forEach((act) => {
+      if (act.groupId && groupIds.includes(act.groupId)) {
+        const rawTime = act.createdAt?.seconds ? act.createdAt.seconds * 1000 : Date.now();
+        const formattedDate = new Date(rawTime).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+
+        items.push({
+          ...act,
+          date: formattedDate,
+          rawTimestamp: rawTime,
+        });
+      }
+    });
+
     items.sort((a, b) => b.rawTimestamp - a.rawTimestamp);
     onActivityUpdate(items);
   };
@@ -812,9 +845,15 @@ export const subscribeUserActivityFeed = (
     mergeAndNotify();
   });
 
+  const unsub3 = onSnapshot(activitiesQuery, (snap) => {
+    currentActivities = snap.docs.map((d) => d.data());
+    mergeAndNotify();
+  });
+
   return () => {
     unsub1();
     unsub2();
+    unsub3();
   };
 };
 

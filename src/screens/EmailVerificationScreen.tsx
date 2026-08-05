@@ -6,11 +6,13 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { resendVerificationEmail, checkEmailVerified } from '../services/authService';
 import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
@@ -18,6 +20,7 @@ import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerification'>;
 
 export default function EmailVerificationScreen({ navigation, route }: Props) {
+  const { colors, isDark } = useTheme();
   const email = route.params?.email || 'user@example.com';
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -38,7 +41,6 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       }
     } catch (e: any) {
       setLoading(false);
-      // Fallback navigation for demo / testing
       navigation.navigate('ProfileSetup');
     }
   };
@@ -58,28 +60,29 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} />
       <View style={styles.content}>
         {/* Envelope Graphic */}
-        <View style={styles.iconCircle}>
+        <View style={[styles.iconCircle, { backgroundColor: colors.primaryContainer }]}>
           <Text style={styles.envelopeEmoji}>✉️</Text>
         </View>
 
-        <Text style={styles.title}>Check your email</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Check your email</Text>
+        <Text style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>
           We sent a verification link to{' '}
-          <Text style={styles.emailHighlight}>{email}</Text>
+          <Text style={[styles.emailHighlight, { color: colors.primary }]}>{email}</Text>
         </Text>
 
         {statusMessage && (
-          <View style={styles.statusBox}>
-            <Text style={styles.statusText}>{statusMessage}</Text>
+          <View style={[styles.statusBox, { backgroundColor: colors.primaryContainer }]}>
+            <Text style={[styles.statusText, { color: colors.onPrimaryContainer }]}>{statusMessage}</Text>
           </View>
         )}
 
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Verification Instructions</Text>
-          <Text style={styles.infoText}>
+        <View style={[styles.infoCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <Text style={[styles.infoTitle, { color: colors.primary }]}>Verification Instructions</Text>
+          <Text style={[styles.infoText, { color: colors.onSurfaceVariant }]}>
             1. Open the email sent to {email}.{'\n'}
             2. Click the verification link inside.{'\n'}
             3. Return here and tap "I've Verified My Email" below.
@@ -88,15 +91,15 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
 
         {/* Action Buttons */}
         <TouchableOpacity
-          style={[styles.primaryButton, loading && styles.disabledButton]}
+          style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
           onPress={handleCheckVerified}
           activeOpacity={0.85}
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color={Colors.onPrimary} size="small" />
+            <ActivityIndicator color={colors.onPrimary} size="small" />
           ) : (
-            <Text style={styles.primaryButtonText}>I've Verified My Email</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>I've Verified My Email</Text>
           )}
         </TouchableOpacity>
 
@@ -106,7 +109,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           activeOpacity={0.7}
           disabled={loading}
         >
-          <Text style={styles.secondaryButtonText}>Resend Link</Text>
+          <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>Resend Link</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -116,7 +119,6 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   content: {
     flex: 1,
@@ -128,7 +130,6 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
@@ -139,23 +140,19 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     textAlign: 'center',
     marginBottom: Spacing.xs,
   },
   subtitle: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
     marginBottom: Spacing.md,
     maxWidth: 300,
   },
   emailHighlight: {
     fontWeight: '600',
-    color: Colors.primary,
   },
   statusBox: {
-    backgroundColor: Colors.primaryContainer,
     borderRadius: BorderRadius.md,
     padding: Spacing.sm,
     marginBottom: Spacing.md,
@@ -164,36 +161,30 @@ const styles = StyleSheet.create({
   },
   statusText: {
     ...Typography.labelMd,
-    color: Colors.onPrimaryContainer,
     textAlign: 'center',
   },
   infoCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.xl,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   infoTitle: {
     ...Typography.titleMd,
     fontSize: 14,
-    color: Colors.primary,
     marginBottom: 6,
     fontWeight: '700',
   },
   infoText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     lineHeight: 22,
   },
   primaryButton: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     alignItems: 'center',
@@ -206,7 +197,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
     fontWeight: '700',
   },
   secondaryButton: {
@@ -214,7 +204,6 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     ...Typography.bodyMd,
-    color: Colors.primary,
     fontWeight: '600',
   },
 });

@@ -56,7 +56,10 @@ export function OutlinedInput({ label, error, style, secureTextEntry, editable, 
             },
             style,
           ]}
-          placeholderTextColor={colors.outlineVariant}
+          placeholderTextColor={colors.outline}
+          selectionColor={colors.primary}
+          cursorColor={colors.primary}
+          keyboardAppearance={colors.background === '#121212' ? 'dark' : 'light'}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           secureTextEntry={isSecure}

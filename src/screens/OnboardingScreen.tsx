@@ -5,12 +5,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
-  Image,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
 
@@ -22,25 +23,23 @@ const SLIDES = [
     title: 'Split Effortlessly',
     description: 'Add expenses in seconds and split equal or custom amounts with roommates and friends.',
     icon: '📊',
-    color: '#3F51B5',
   },
   {
     id: '2',
     title: 'Instant UPI Settlement',
     description: 'Settle debts directly with 1-tap Google Pay, PhonePe, or Paytm deep linking.',
     icon: '💸',
-    color: '#4C56AF',
   },
   {
     id: '3',
     title: 'Group Expense Tracking',
     description: 'Smart algorithms minimize the total number of transactions across all members.',
     icon: '🤝',
-    color: '#24389C',
   },
 ];
 
 export default function OnboardingScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
 
   const handleNext = () => {
@@ -54,23 +53,24 @@ export default function OnboardingScreen({ navigation }: Props) {
   const currentSlide = SLIDES[activeIndex];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} />
       {/* Top Header / Skip */}
       <View style={styles.header}>
-        <Text style={styles.brandTitle}>SplitMate</Text>
+        <Text style={[styles.brandTitle, { color: colors.primary }]}>SplitMate</Text>
         <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-          <Text style={styles.skipText}>Skip</Text>
+          <Text style={[styles.skipText, { color: colors.onSurfaceVariant }]}>Skip</Text>
         </TouchableOpacity>
       </View>
 
       {/* Main Slide Card */}
       <View style={styles.slideCardContainer}>
-        <View style={styles.slideCard}>
-          <View style={[styles.illustrationBox, { backgroundColor: currentSlide.color }]}>
+        <View style={[styles.slideCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <View style={[styles.illustrationBox, { backgroundColor: colors.primaryContainer }]}>
             <Text style={styles.illustrationEmoji}>{currentSlide.icon}</Text>
           </View>
-          <Text style={styles.title}>{currentSlide.title}</Text>
-          <Text style={styles.description}>{currentSlide.description}</Text>
+          <Text style={[styles.title, { color: colors.onSurface }]}>{currentSlide.title}</Text>
+          <Text style={[styles.description, { color: colors.onSurfaceVariant }]}>{currentSlide.description}</Text>
         </View>
       </View>
 
@@ -84,6 +84,7 @@ export default function OnboardingScreen({ navigation }: Props) {
               onPress={() => setActiveIndex(index)}
               style={[
                 styles.dot,
+                { backgroundColor: index === activeIndex ? colors.primary : colors.outlineVariant },
                 index === activeIndex && styles.activeDot,
               ]}
             />
@@ -92,11 +93,11 @@ export default function OnboardingScreen({ navigation }: Props) {
 
         {/* Primary Action Button */}
         <TouchableOpacity
-          style={styles.nextButton}
+          style={[styles.nextButton, { backgroundColor: colors.primary }]}
           onPress={handleNext}
           activeOpacity={0.85}
         >
-          <Text style={styles.nextButtonText}>
+          <Text style={[styles.nextButtonText, { color: colors.onPrimary }]}>
             {activeIndex === SLIDES.length - 1 ? 'Get Started' : 'Next'}
           </Text>
         </TouchableOpacity>
@@ -108,7 +109,6 @@ export default function OnboardingScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
     justifyContent: 'space-between',
   },
   header: {
@@ -120,11 +120,9 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     ...Typography.titleMd,
-    color: Colors.primary,
   },
   skipText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
   },
   slideCardContainer: {
     flex: 1,
@@ -135,13 +133,11 @@ const styles = StyleSheet.create({
   slideCard: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: Colors.divider,
   },
   illustrationBox: {
     width: 120,
@@ -156,13 +152,11 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     textAlign: 'center',
     marginBottom: Spacing.sm,
   },
   description: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -181,15 +175,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.outlineVariant,
   },
   activeDot: {
     width: 24,
-    backgroundColor: Colors.primary,
   },
   nextButton: {
     width: '100%',
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     alignItems: 'center',
@@ -198,6 +189,5 @@ const styles = StyleSheet.create({
   },
   nextButtonText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
   },
 });

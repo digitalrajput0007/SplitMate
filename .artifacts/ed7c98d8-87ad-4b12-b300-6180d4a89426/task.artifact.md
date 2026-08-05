@@ -1,0 +1,5 @@
+- [ ] Update `ExpenseForm.tsx` interface and controlled props
+- [ ] Refactor `ExpenseForm.tsx` validation logic (remove Alerts)
+- [ ] Implement Member Selection UI in `ExpenseForm.tsx`
+- [ ] Update `AddExpenseScreen.tsx` to manage selection state
+- [ ] Update `AddExpenseScreen.tsx` submission logic to handle validation errors

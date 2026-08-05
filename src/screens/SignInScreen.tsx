@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,9 +21,12 @@ import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
 
+import { useTheme } from '../context/ThemeContext';
+
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen({ navigation }: Props) {
+  const { colors, isDark } = useTheme();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -130,9 +134,10 @@ export default function SignInScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} />
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <ScrollView
@@ -141,16 +146,16 @@ export default function SignInScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
         {/* Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Brand Section */}
           <View style={styles.brandSection}>
-            <View style={styles.logoBox}>
+            <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
               <AppLogo size={44} />
             </View>
-            <Text style={styles.heading}>
+            <Text style={[styles.heading, { color: colors.onSurface }]}>
               {isSignUp ? 'Create account' : 'Welcome back'}
             </Text>
-            <Text style={styles.subheading}>
+            <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
               {isSignUp
                 ? 'Start splitting smarter today.'
                 : 'Sign in to manage your group expenses.'}
@@ -159,30 +164,34 @@ export default function SignInScreen({ navigation }: Props) {
 
           {/* Error Banner */}
           {!!errorMessage && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
+            <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+              <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
             </View>
           )}
 
-          {/* Google Sign-In Button */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            <View style={styles.googleIconBox}>
-              <Text style={styles.googleIconText}>G</Text>
-            </View>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
+          {/* Google Sign-In Button (Temporarily disabled for MVP) */}
+          {false && (
+            <>
+              <TouchableOpacity
+                style={[styles.googleButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
+                onPress={handleGoogleSignIn}
+                activeOpacity={0.85}
+                disabled={loading}
+              >
+                <View style={styles.googleIconBox}>
+                  <Text style={styles.googleIconText}>G</Text>
+                </View>
+                <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
+              </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+                <Text style={[styles.dividerText, { color: colors.outline }]}>or</Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+              </View>
+            </>
+          )}
 
           {/* Inputs */}
           <OutlinedInput
@@ -216,7 +225,7 @@ export default function SignInScreen({ navigation }: Props) {
                 setResetModalVisible(true);
               }}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
             </TouchableOpacity>
           )}
 
@@ -235,15 +244,15 @@ export default function SignInScreen({ navigation }: Props) {
 
           {/* Primary Action Button */}
           <TouchableOpacity
-            style={[styles.primaryButton, loading && styles.disabledButton]}
+            style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
             onPress={handleContinueWithEmail}
             activeOpacity={0.85}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color={Colors.onPrimary} size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.primaryButtonText}>
+              <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
                 {isSignUp ? 'Create Account' : 'Continue with Email'}
               </Text>
             )}
@@ -259,20 +268,20 @@ export default function SignInScreen({ navigation }: Props) {
               setErrorMessage('');
             }}
           >
-            <Text style={styles.toggleText}>
+            <Text style={[styles.toggleText, { color: colors.onSurfaceVariant }]}>
               {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <Text style={styles.toggleLink}>
+              <Text style={[styles.toggleLink, { color: colors.primary }]}>
                 {isSignUp ? 'Sign In' : 'Sign Up'}
               </Text>
             </Text>
           </TouchableOpacity>
 
           {/* Legal Footnote */}
-          <Text style={styles.legal}>
+          <Text style={[styles.legal, { color: colors.onSurfaceVariant }]}>
             By continuing, you agree to our{' '}
-            <Text style={styles.legalLink}>Terms</Text>
+            <Text style={[styles.legalLink, { color: colors.outline }]}>Terms</Text>
             {' & '}
-            <Text style={styles.legalLink}>Privacy Policy</Text>
+            <Text style={[styles.legalLink, { color: colors.outline }]}>Privacy Policy</Text>
           </Text>
         </View>
       </ScrollView>
@@ -280,13 +289,13 @@ export default function SignInScreen({ navigation }: Props) {
       {/* Forgot Password Modal */}
       <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.resetCard}>
-            <Text style={styles.resetTitle}>Reset Password</Text>
-            <Text style={styles.resetSub}>Enter your registered email address to receive a password reset link.</Text>
+          <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+            <Text style={[styles.resetTitle, { color: colors.onSurface }]}>Reset Password</Text>
+            <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>Enter your registered email address to receive a password reset link.</Text>
 
             {!!resetSuccessMessage && (
-              <View style={styles.resetSuccessBox}>
-                <Text style={styles.resetSuccessText}>{resetSuccessMessage}</Text>
+              <View style={[styles.resetSuccessBox, { backgroundColor: colors.positiveContainer, borderColor: colors.positive }]}>
+                <Text style={[styles.resetSuccessText, { color: colors.positiveText }]}>{resetSuccessMessage}</Text>
               </View>
             )}
 
@@ -301,10 +310,10 @@ export default function SignInScreen({ navigation }: Props) {
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.sendBtn, resetLoading && styles.disabledButton]}
+                style={[styles.sendBtn, { backgroundColor: colors.primary }, resetLoading && styles.disabledButton]}
                 disabled={resetLoading}
                 onPress={async () => {
                   if (!resetEmail.trim()) {
@@ -323,9 +332,9 @@ export default function SignInScreen({ navigation }: Props) {
                 }}
               >
                 {resetLoading ? (
-                  <ActivityIndicator color={Colors.onPrimary} size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
-                  <Text style={styles.sendText}>Send Link</Text>
+                  <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -340,7 +349,6 @@ export default function SignInScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   scroll: {
     flexGrow: 1,
@@ -352,11 +360,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   brandSection: {

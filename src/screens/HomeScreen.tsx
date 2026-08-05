@@ -323,7 +323,7 @@ export default function HomeScreen() {
                   <GroupCard
                     key={group.groupId}
                     name={group.name}
-                    groupPhotoUrl={group.groupPhotoUrl}
+                    groupPhotoUrl={group.photoUrl}
                     groupType={group.groupType as any}
                     members={membersWithImages}
                     balanceLabel={balanceLabel}

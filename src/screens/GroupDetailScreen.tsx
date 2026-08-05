@@ -19,13 +19,13 @@ import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
-  subscribeToGroupExpenses,
   subscribeToGroupDetail,
   getUserProfileFromFirestore,
   ExpenseData,
   GroupData,
   UserProfile,
 } from '../services/firestoreService';
+import { useGroupBalances } from '../hooks/useGroupBalances';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -37,9 +37,10 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const groupId = route.params?.groupId || 'goa_trip';
 
   const [group, setGroup] = useState<GroupData | null>(null);
-  const [expenses, setExpenses] = useState<ExpenseData[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [groupLoading, setGroupLoading] = useState(true);
+
+  const { totalSpent, netBalance, expenses, loading: balancesLoading } = useGroupBalances(groupId, currentUid);
 
   useEffect(() => {
     if (currentUser?.uid) {
@@ -52,37 +53,17 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   useEffect(() => {
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
       if (data) setGroup(data);
-    });
-
-    const unsubExpenses = subscribeToGroupExpenses(groupId, (expList) => {
-      setExpenses(expList);
-      setLoading(false);
+      setGroupLoading(false);
     });
 
     return () => {
       unsubGroup();
-      unsubExpenses();
     };
   }, [groupId]);
 
+  const loading = groupLoading || balancesLoading;
   const groupName = group?.name || 'Group Details';
   const members = group?.members || [];
-  const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
-
-  let netBalance = 0;
-  expenses.forEach((item) => {
-    const amt = item.amount || 0;
-    const paidBy = item.paidBy;
-    const splits = item.splitDetails || {};
-    const memberCount = Object.keys(splits).length || members.length || 1;
-    const mySplitShare = splits[currentUid] !== undefined ? splits[currentUid] : amt / memberCount;
-
-    if (paidBy === currentUid) {
-      netBalance += amt - mySplitShare;
-    } else if (splits[currentUid] !== undefined) {
-      netBalance -= mySplitShare;
-    }
-  });
 
   const memberNamesMap: Record<string, string> = {};
   members.forEach((m: any) => {

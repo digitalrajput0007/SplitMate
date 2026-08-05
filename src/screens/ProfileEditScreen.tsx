@@ -19,160 +19,201 @@ import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
-import { updateUserProfile } from '../services/authService';
-import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { updateUserProfile } from '../services/authService';
+import {
+  saveUserProfileToFirestore,
+  getUserProfileFromFirestore,
+  isMobileNumberRegistered,
+} from '../services/firestoreService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
 export default function ProfileEditScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const currentUser = auth.currentUser;
-  const { colors, isDark } = useTheme();
 
-  const [name, setName] = useState(currentUser?.displayName || '');
-  const [email, setEmail] = useState(currentUser?.email || '');
-  const [mobile, setMobile] = useState('');
-  const [dob, setDob] = useState('15-08-1995');
-  const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [name, setName] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [paymentHandle, setPaymentHandle] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
-    const activeUser = auth.currentUser;
-    if (!activeUser?.uid) return;
-
-    setName(activeUser.displayName || '');
-    setEmail(activeUser.email || '');
-    setPhotoUrl(activeUser.photoURL || '');
-
-    getUserProfileFromFirestore(activeUser.uid)
-      .then((data) => {
-        if (data) {
-          if (data.name) setName(data.name);
-          if (data.email) setEmail(data.email);
-          if (data.photoUrl) setPhotoUrl(data.photoUrl);
-          if (data.mobile) setMobile(data.mobile);
-          if (data.dob) setDob(data.dob);
+    async function loadProfile() {
+      if (!currentUser) return;
+      try {
+        const profile = await getUserProfileFromFirestore(currentUser.uid);
+        if (profile) {
+          setName(profile.name || '');
+          setPhotoUrl(profile.photoUrl || currentUser.photoURL || '');
+          setPaymentHandle(profile.paymentHandle || '');
+          const rawMobile = profile.mobile || '';
+          // Extract 10 digits for the input
+          const digits = rawMobile.replace(/[^0-9]/g, '').slice(-10);
+          setMobileNumber(digits);
+        } else {
+          setName(currentUser.displayName || '');
+          setPhotoUrl(currentUser.photoURL || '');
         }
-      })
-      .catch((e) => console.log('Error fetching user profile:', e));
-  }, []);
+      } catch (e) {
+        console.log('[ProfileEdit] Error loading Firestore profile:', e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadProfile();
+  }, [currentUser]);
 
-  const handlePickPhoto = async () => {
+  const handlePickImage = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow photo library access to change your profile picture.');
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'Gallery access is needed to change photo.');
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.6,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedUri = result.assets[0].uri;
-        setUploadingPhoto(true);
-        setPhotoUrl(selectedUri);
-        setUploadingPhoto(false);
+        setPhotoUrl(result.assets[0].uri);
       }
-    } catch (error) {
-      console.log('Image pick error:', error);
-      Alert.alert('Error', 'Could not select photo');
-      setUploadingPhoto(false);
+    } catch (e: any) {
+      Alert.alert('Pick Image Error', e.message || 'Error picking image.');
     }
   };
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation Error', 'Full Name cannot be empty');
+      Alert.alert('Required', 'Please enter your name.');
       return;
     }
 
     setSaving(true);
     try {
-      if (currentUser) {
-        await updateUserProfile(name, photoUrl);
+      const cleanedMobile = mobileNumber.trim().replace(/[^0-9]/g, '');
+      if (cleanedMobile && cleanedMobile.length !== 10) {
+        Alert.alert('Invalid Mobile', 'Please enter a valid 10-digit mobile number.');
+        setSaving(false);
+        return;
+      }
+
+      const isDuplicate = await isMobileNumberRegistered(cleanedMobile, currentUser?.uid);
+      if (isDuplicate) {
+        Alert.alert('Error', 'Mobile number already in use by another account.');
+        setSaving(false);
+        return;
+      }
+
+      // Update Firebase Auth profile
+      await updateUserProfile(name.trim(), photoUrl || undefined);
+
+      // Update Firestore user document
+      if (currentUser?.uid) {
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
-          name,
-          email,
-          mobile,
-          dob,
-          photoUrl,
+          name: name.trim(),
+          email: currentUser.email || '',
+          photoUrl: photoUrl || '',
+          paymentHandle: paymentHandle.trim(),
+          mobile: cleanedMobile ? `+91 ${cleanedMobile}` : '',
         });
-
-        Alert.alert('Success', 'Profile updated successfully');
-        navigation.goBack();
       }
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update profile');
+
+      Alert.alert('Success', 'Profile updated successfully.');
+      navigation.goBack();
+    } catch (error: any) {
+      console.log('[ProfileEdit] Update Failed:', error);
+      Alert.alert('Update Failed', error.message || 'Error occurred while saving changes.');
     } finally {
       setSaving(false);
     }
   };
 
-  const initial = name.charAt(0).toUpperCase() || 'U';
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+      <RNStatusBar barStyle={colors.background === '#FFFFFF' ? 'dark-content' : 'light-content'} />
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
-        <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Edit Profile</Text>
+        <Text style={[styles.topBarTitle, { color: colors.onSurface }]}>Edit Profile</Text>
         <View style={{ width: 48 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-          {/* Avatar Section */}
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={handlePickPhoto} activeOpacity={0.8}>
-              {uploadingPhoto ? (
-                <View style={[styles.uploadingOverlay, { backgroundColor: colors.surfaceContainerHigh }]}>
-                  <ActivityIndicator color={colors.primary} />
-                </View>
-              ) : photoUrl ? (
-                <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-                  <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-                  <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
-                    <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
-                  </View>
-                </View>
+            <TouchableOpacity style={styles.avatarCircle} onPress={handlePickImage} activeOpacity={0.8}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
               ) : (
-                <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-                  <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{initial}</Text>
-                  <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
-                    <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
-                  </View>
+                <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceVariant, marginBottom: 0 }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>
+                    {name
+                      .trim()
+                      .split(' ')
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .join('')
+                      .toUpperCase()
+                      .slice(0, 2) || 'SM'}
+                  </Text>
                 </View>
               )}
+              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
+                <MaterialIcons name="camera-alt" size={16} color={colors.onPrimary} />
+              </View>
             </TouchableOpacity>
-            <TouchableOpacity onPress={handlePickPhoto}>
-              <Text style={[styles.avatarHint, { color: colors.primary, marginTop: 6 }]}>Change Profile Photo</Text>
-            </TouchableOpacity>
+            <Text style={[styles.avatarHint, { color: colors.onSurfaceVariant, marginTop: Spacing.sm }]}>Change Profile Photo</Text>
           </View>
 
-          {/* Form Fields */}
-          <OutlinedInput label="Full Name" value={name} onChangeText={setName} />
-          <OutlinedInput label="Email Address" value={email} editable={false} />
+          <OutlinedInput
+            label="Full Name"
+            value={name}
+            onChangeText={setName}
+            placeholder="e.g. Rahul Sharma"
+          />
+
+          <OutlinedInput
+            label="Payment Handle (UPI ID)"
+            value={paymentHandle}
+            onChangeText={setPaymentHandle}
+            placeholder="user@okhdfcbank"
+            autoCapitalize="none"
+          />
+
           <OutlinedInput
             label="Mobile Number"
-            value={mobile}
-            onChangeText={setMobile}
-            keyboardType="phone-pad"
-            placeholder="+91 9876543210"
+            value={mobileNumber}
+            onChangeText={(val) => setMobileNumber(val.replace(/[^0-9]/g, '').slice(0, 10))}
+            placeholder="9876543210"
+            keyboardType="number-pad"
+            maxLength={10}
           />
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            style={[
+              styles.button,
+              { backgroundColor: colors.primary },
+              saving && styles.disabledButton
+            ]}
             onPress={handleSave}
-            activeOpacity={0.85}
             disabled={saving}
           >
             {saving ? (

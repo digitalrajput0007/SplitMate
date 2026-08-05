@@ -38,6 +38,7 @@ import ExpenseDetailScreen from '../screens/ExpenseDetailScreen';
 import RecurringExpensesScreen from '../screens/RecurringExpensesScreen';
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
+import EditExpenseScreen from '../screens/EditExpenseScreen';
 
 import ContactsScreen from '../screens/ContactsScreen';
 import InviteContactsScreen from '../screens/InviteContactsScreen';
@@ -64,6 +65,7 @@ export type RootStackParamList = {
   Notifications: undefined;
   GroupSettings: { groupId: string };
   ExpenseDetail: { expense: ExpenseData };
+  EditExpense: { expense: ExpenseData };
   RecurringExpenses: undefined;
   PrivacySecurity: undefined;
   ContactUs: undefined;
@@ -231,7 +233,8 @@ export default function AppNavigator() {
         initialRouteName={initialRoute}
         screenOptions={{
           headerShown: false,
-          animation: 'slide_from_right',
+          animation: 'default',
+          animationDuration: 220,
           contentStyle: { backgroundColor: colors.background },
         }}
       >
@@ -242,10 +245,10 @@ export default function AppNavigator() {
         <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
         <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
         <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-        <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
-        <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
-        <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
         <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
@@ -255,6 +258,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
         <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+        <Stack.Screen name="EditExpense" component={EditExpenseScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
         <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
         <Stack.Screen name="ContactUs" component={ContactUsScreen} />
