@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "SplitMate",
+    "slug": "splitmate",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#24389C"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#24389C"
+      },
+      "package": "com.splitmate.app",
+      "permissions": [
+        "READ_CONTACTS",
+        "WRITE_CONTACTS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-asset",
+      "@react-native-google-signin/google-signin",
+      "expo-localization",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow SplitMate to access your contacts to easily add friends and split expenses."
+        }
+      ]
+    ]
+  }
+}
