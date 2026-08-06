@@ -31,12 +31,14 @@ import {
   subscribeUserActivityFeed,
   subscribeToUserPendingSettlements,
   subscribeUserMonthlyInsights,
+  subscribeToNotifications,
   UserProfile,
   UserBalanceSummary,
   GroupInvitation,
   ActivityItem,
   SettlementData,
   MonthlyInsights,
+  AppNotification,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
 
@@ -61,6 +63,7 @@ export default function HomeScreen() {
   const [allUsersMap, setAllUsersMap] = useState<Map<string, UserProfile>>(new Map());
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [pendingSettlements, setPendingSettlements] = useState<SettlementData[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState<AppNotification[]>([]);
 
   const [monthlyInsights, setMonthlyInsights] = useState<MonthlyInsights>({
     totalPaid: 0,
@@ -134,6 +137,11 @@ export default function HomeScreen() {
       setPendingSettlements(settlementList);
     });
 
+    const unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
+      const unread = notifList.filter(n => !n.read);
+      setUnreadNotifications(unread);
+    });
+
     const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, (data) => {
       setMonthlyInsights(data);
       setLoading(false);
@@ -144,6 +152,7 @@ export default function HomeScreen() {
       unsubBalance();
       unsubActivity();
       unsubSettlements();
+      unsubNotifications();
       unsubInsights();
     };
   }, [currentUser, groups.length]);
@@ -196,7 +205,7 @@ export default function HomeScreen() {
     return sorted.slice(0, 4);
   }, [groups]);
 
-  const hasUnreadNotifications = pendingInvitations.length > 0 || pendingSettlements.length > 0;
+  const hasUnreadNotifications = pendingInvitations.length > 0 || unreadNotifications.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -236,7 +245,13 @@ export default function HomeScreen() {
           >
             <View style={[styles.notifIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
               <Ionicons name="notifications-outline" size={24} color={colors.onSurface} />
-              {hasUnreadNotifications && <View style={styles.notifBadge} />}
+              {hasUnreadNotifications && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {(pendingInvitations.length + unreadNotifications.length)}
+                  </Text>
+                </View>
+              )}
             </View>
           </TouchableOpacity>
         </View>
@@ -496,21 +511,29 @@ export default function HomeScreen() {
             ) : (
               recentActivities.map((item) => {
                 const actor = allUsersMap.get(item.actorUid);
+                const target = item.targetUid ? allUsersMap.get(item.targetUid) : null;
                 const actorName = item.actorUid === currentUser?.uid ? 'You' : actor?.name || 'Member';
+                const targetName = item.targetUid === currentUser?.uid ? 'you' : target?.name || 'Member';
                 const isNegative = item.type === 'expense' && item.actorUid !== currentUser?.uid;
+
+                let actionText = '';
+                if (item.type === 'expense') actionText = 'added';
+                else if (item.type === 'settlement') actionText = 'recorded';
+                else if (item.type === 'group') actionText = 'created';
+                else if (item.type === 'reminder') actionText = `sent a reminder to ${targetName} for`;
 
                 return (
                   <View key={item.id} style={styles.activityItem}>
-                    <View style={[styles.activityDot, { backgroundColor: item.type === 'expense' ? '#3B82F6' : '#10B981' }]} />
+                    <View style={[styles.activityDot, { backgroundColor: item.type === 'expense' ? '#3B82F6' : item.type === 'reminder' ? '#F59E0B' : '#10B981' }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
-                        <Text style={{ fontWeight: 'bold' }}>{actorName}</Text> {item.type === 'expense' ? 'added' : item.type === 'settlement' ? 'recorded' : 'created'} <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
+                        <Text style={{ fontWeight: 'bold' }}>{actorName}</Text> {actionText} <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
                       </Text>
                       <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>
                         {item.date} • {item.groupName}
                       </Text>
                     </View>
-                    {item.amount > 0 && (
+                    {item.amount > 0 && item.type !== 'reminder' && (
                       <Text style={[styles.activityAmount, { color: isNegative ? '#B91C1C' : '#15803D' }]}>
                         {isNegative ? '-' : '+'}{formatCurrency(item.amount)}
                       </Text>
@@ -747,14 +770,23 @@ const styles = StyleSheet.create({
   },
   notifBadge: {
     position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 10,
+    right: 10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#E11D48',
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  notifBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   unsettledBanner: {
     flexDirection: 'row',

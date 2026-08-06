@@ -23,6 +23,8 @@ import {
   addSettlementToFirestore,
   subscribeToGroupDetail,
   getAllUsersFromFirestore,
+  sendPaymentReminder,
+  canSendReminder,
   ExpenseData,
   SettlementData,
   GroupData,
@@ -49,6 +51,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>>({});
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
 
   useEffect(() => {
     initializeInterstitialAd();
@@ -86,6 +89,21 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   }, [groupId, currentUid]);
 
   const simplifiedDebts = simplifyDebts(expenses, settlements, memberProfiles);
+
+  const totalGroupExpense = expenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const userTotalPaid = expenses
+    .filter((e) => e.paidBy === currentUid)
+    .reduce((acc, e) => acc + e.amount, 0);
+  const userTotalShare = expenses.reduce((acc, e) => acc + (e.splitDetails?.[currentUid] || 0), 0);
+
+  const userReceived = settlements
+    .filter((s) => s.toUserId === currentUid && (s.status === 'completed' || !s.status))
+    .reduce((acc, s) => acc + s.amount, 0);
+  const userSent = settlements
+    .filter((s) => s.fromUserId === currentUid && (s.status === 'completed' || !s.status))
+    .reduce((acc, s) => acc + s.amount, 0);
+
+  const netBalance = Math.round((userTotalPaid - userTotalShare + userSent - userReceived) * 100) / 100;
 
   const handlePayViaUPI = async (debt: SimplifiedDebt) => {
     const upiUrl = `upi://pay?pa=${encodeURIComponent(debt.toPaymentHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;
@@ -147,6 +165,25 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleSendReminder = async (debt: SimplifiedDebt) => {
+    setRemindingId(debt.id);
+    try {
+      const allowed = await canSendReminder(debt.fromUserId, groupId);
+      if (!allowed) {
+        Alert.alert('Reminder Sent', 'Next reminder available in 24 hours.');
+        return;
+      }
+
+      await sendPaymentReminder(debt.fromUserId, groupId, route.params?.groupName || 'Group', debt.amount);
+      Alert.alert('Reminder Sent', `A notification has been sent to ${debt.fromName}.`);
+    } catch (error: any) {
+      console.error('Error sending reminder:', error);
+      Alert.alert('Error', 'Could not send reminder.');
+    } finally {
+      setRemindingId(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Top Header */}
@@ -159,18 +196,41 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Smart Simplification Info Banner */}
-        <View style={styles.infoBanner}>
-          <MaterialIcons name="auto-fix-high" size={24} color={Colors.primary} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.bannerTitle}>Smart Debt Simplification</Text>
-            <Text style={styles.bannerSub}>
-              Crisscrossing group debts are automatically combined into the minimum direct payments.
+        {/* Settlement Summary Card */}
+        <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <Text style={[styles.summaryTitle, { color: colors.onSurfaceVariant }]}>Group Summary</Text>
+          <View style={styles.summaryGrid}>
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Total Expense</Text>
+              <Text style={[styles.summaryValue, { color: colors.onSurface }]}>{formatCurrency(totalGroupExpense)}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>You Paid</Text>
+              <Text style={[styles.summaryValue, { color: colors.positive }]}>{formatCurrency(userTotalPaid)}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Your Share</Text>
+              <Text style={[styles.summaryValue, { color: colors.error }]}>{formatCurrency(userTotalShare)}</Text>
+            </View>
+          </View>
+
+          <View style={[styles.netPositionBox, { backgroundColor: netBalance >= 0 ? colors.positiveContainer : colors.errorContainer }]}>
+            <Ionicons
+              name={netBalance >= 0 ? "trending-up" : "trending-down"}
+              size={20}
+              color={netBalance >= 0 ? colors.positiveText : colors.onErrorContainer}
+            />
+            <Text style={[styles.netPositionText, { color: netBalance >= 0 ? colors.positiveText : colors.onErrorContainer }]}>
+              {netBalance > 0.05
+                ? `You should receive ${formatCurrency(Math.abs(netBalance))}`
+                : netBalance < -0.05
+                  ? `You owe ${formatCurrency(Math.abs(netBalance))}`
+                  : 'You are all settled up!'}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Calculated Group Balances</Text>
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Calculated Group Balances</Text>
 
         {loading ? (
           <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
@@ -183,11 +243,12 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         ) : (
           simplifiedDebts.map((debt) => {
             const isSettling = settlingId === debt.id;
+            const isReminding = remindingId === debt.id;
             const isIowe = debt.fromUserId === currentUid;
             const isOtherOwesMe = debt.toUserId === currentUid;
 
-            // Only show debts involving current user for this specific 'Settle Up' context
-            if (!isIowe && !isOtherOwesMe) return null;
+            // Only show debts involving current user and ignore negligible balances
+            if ((!isIowe && !isOtherOwesMe) || debt.amount <= 0.05) return null;
 
             const otherUser = isIowe
               ? { name: debt.toName, photo: debt.toPhotoUrl, handle: debt.toPaymentHandle }
@@ -238,11 +299,18 @@ export default function SettleUpScreen({ navigation, route }: Props) {
                   ) : isOtherOwesMe ? (
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.secondaryContainer }]}
-                      onPress={() => Alert.alert('Reminder Sent', `A notification has been sent to ${otherUser.name}.`)}
+                      onPress={() => handleSendReminder(debt)}
                       activeOpacity={0.8}
+                      disabled={isReminding}
                     >
-                      <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} style={{ marginRight: 6 }} />
-                      <Text style={[styles.actionBtnText, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
+                      {isReminding ? (
+                        <ActivityIndicator size="small" color={colors.onSecondaryContainer} />
+                      ) : (
+                        <>
+                          <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} style={{ marginRight: 6 }} />
+                          <Text style={[styles.actionBtnText, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
                   ) : null}
 
@@ -281,16 +349,45 @@ const styles = StyleSheet.create({
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   topBarTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600' },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl, gap: Spacing.md },
-  infoBanner: {
+  summaryCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    gap: Spacing.md,
+    ...Shadows.card,
+    marginTop: Spacing.xs,
+  },
+  summaryTitle: {
+    ...Typography.labelMd,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  summaryItem: {
+    gap: 4,
+  },
+  summaryLabel: {
+    ...Typography.bodySm,
+    fontSize: 10,
+  },
+  summaryValue: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+  },
+  netPositionBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
-    backgroundColor: Colors.primaryFixed,
-    borderRadius: BorderRadius.lg,
     padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    gap: 8,
   },
-  bannerTitle: { ...Typography.titleSm, color: Colors.onPrimaryFixed },
-  bannerSub: { ...Typography.bodyMd, color: Colors.onPrimaryFixedVariant, marginTop: 2 },
+  netPositionText: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+  },
   sectionTitle: { ...Typography.titleMd, color: Colors.onBackground, fontWeight: '600', marginTop: Spacing.xs },
   settledCard: {
     backgroundColor: Colors.surfaceContainerLowest,

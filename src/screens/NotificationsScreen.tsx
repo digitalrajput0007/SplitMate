@@ -15,16 +15,16 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
-  subscribeToUserGroups,
-  subscribeUserActivityFeed,
-  ActivityItem,
+  subscribeToNotifications,
+  markNotificationAsRead,
+  AppNotification,
 } from '../services/firestoreService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
 export default function NotificationsScreen({ navigation }: Props) {
   const currentUser = auth.currentUser;
-  const [notifications, setNotifications] = useState<ActivityItem[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -33,24 +33,23 @@ export default function NotificationsScreen({ navigation }: Props) {
       return;
     }
 
-    const unsubGroups = subscribeToUserGroups(currentUser.uid, (groups) => {
-      const gIds = groups.map((g) => g.groupId);
-      if (gIds.length === 0) {
-        setNotifications([]);
-        setLoading(false);
-        return;
-      }
-
-      const unsubFeed = subscribeUserActivityFeed(gIds, (feedItems) => {
-        setNotifications(feedItems);
-        setLoading(false);
-      });
-
-      return () => unsubFeed();
+    const unsub = subscribeToNotifications(currentUser.uid, (notifList) => {
+      setNotifications(notifList);
+      setLoading(false);
     });
 
-    return () => unsubGroups();
+    return () => unsub();
   }, [currentUser]);
+
+  const handlePressNotif = async (item: AppNotification) => {
+    if (!item.read) {
+      await markNotificationAsRead(item.notificationId);
+    }
+    // Optionally navigate to group or expense
+    if (item.groupId) {
+      navigation.navigate('GroupDetail', { groupId: item.groupId, groupName: item.groupName });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -69,21 +68,33 @@ export default function NotificationsScreen({ navigation }: Props) {
           <View style={styles.emptyCard}>
             <Text style={styles.emptyEmoji}>🔔</Text>
             <Text style={styles.emptyTitle}>No Notifications</Text>
-            <Text style={styles.emptySub}>You are all caught up! New group alerts will show up here.</Text>
+            <Text style={styles.emptySub}>You are all caught up! New payment reminders will show up here.</Text>
           </View>
         ) : (
           <View style={styles.list}>
             {notifications.map((item) => (
-              <View key={item.id} style={styles.card}>
-                <View style={styles.iconBox}>
-                  <Text style={styles.emoji}>{item.category ? item.category.split(' ')[0] : '💸'}</Text>
+              <TouchableOpacity
+                key={item.notificationId}
+                style={[styles.card, !item.read && { backgroundColor: Colors.primary + '08', borderColor: Colors.primary }]}
+                onPress={() => handlePressNotif(item)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.iconBox, { backgroundColor: item.type === 'payment_reminder' ? Colors.error + '10' : Colors.surfaceContainerLow }]}>
+                  <MaterialIcons
+                    name={item.type === 'payment_reminder' ? "priority-high" : "notifications"}
+                    size={20}
+                    color={item.type === 'payment_reminder' ? Colors.error : Colors.primary}
+                  />
                 </View>
                 <View style={styles.info}>
-                  <Text style={styles.title}>{item.title}</Text>
-                  <Text style={styles.subtitle}>{item.subtitle} • {formatCurrency(item.amount)}</Text>
+                  <Text style={[styles.title, !item.read && { fontWeight: '700' }]}>{item.title}</Text>
+                  <Text style={styles.subtitle}>{item.message}</Text>
+                  <Text style={styles.date}>
+                    {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
+                  </Text>
                 </View>
-                <Text style={styles.date}>{item.date}</Text>
-              </View>
+                {!item.read && <View style={styles.unreadDot} />}
+              </TouchableOpacity>
             ))}
           </View>
         )}
@@ -133,13 +144,17 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerLow,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emoji: { fontSize: 18 },
   info: { flex: 1 },
   title: { ...Typography.bodyLg, color: Colors.onSurface, fontWeight: '600', fontSize: 14 },
   subtitle: { ...Typography.labelMd, color: Colors.onSurfaceVariant, marginTop: 2 },
-  date: { ...Typography.labelMd, color: Colors.onSurfaceVariant, fontSize: 11 },
+  date: { ...Typography.labelMd, color: Colors.outline, fontSize: 10, marginTop: 4 },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.primary,
+  }
 });

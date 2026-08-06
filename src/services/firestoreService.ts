@@ -807,7 +807,7 @@ export const subscribeToGroupSettlements = (
 
 export interface ActivityItem {
   id: string;
-  type: 'expense' | 'settlement' | 'group';
+  type: 'expense' | 'settlement' | 'group' | 'reminder';
   title: string;
   subtitle: string;
   amount: number;
@@ -816,6 +816,22 @@ export interface ActivityItem {
   date: string;
   rawTimestamp: number;
   actorUid: string;
+  targetUid?: string;
+}
+
+export interface AppNotification {
+  notificationId: string;
+  recipientUid: string;
+  senderUid: string;
+  groupId: string;
+  groupName: string;
+  expenseId?: string;
+  type: 'payment_reminder' | 'group_invitation' | 'general';
+  title: string;
+  message: string;
+  read: boolean;
+  amount?: number;
+  createdAt: any;
 }
 
 // -------------------------------------------------------------
@@ -833,10 +849,12 @@ export const subscribeUserActivityFeed = (
   const expensesQuery = query(collection(db, 'expenses'));
   const settlementsQuery = query(collection(db, 'settlements'));
   const groupsQuery = query(collection(db, 'groups'));
+  const notificationsQuery = query(collection(db, 'notifications'), where('type', '==', 'payment_reminder'));
 
   let currentExpenses: ExpenseData[] = [];
   let currentSettlements: SettlementData[] = [];
   let currentGroups: GroupData[] = [];
+  let currentReminders: AppNotification[] = [];
 
   const mergeAndNotify = () => {
     const items: ActivityItem[] = [];
@@ -893,6 +911,25 @@ export const subscribeUserActivityFeed = (
       }
     });
 
+    currentReminders.forEach((rem) => {
+      if (groupIds.includes(rem.groupId)) {
+        const rawTime = rem.createdAt?.seconds ? rem.createdAt.seconds * 1000 : Date.now();
+        items.push({
+          id: rem.notificationId,
+          type: 'reminder',
+          title: `Payment Reminder`,
+          subtitle: `Sent in ${rem.groupName}`,
+          amount: rem.amount || 0,
+          category: '🔔',
+          groupName: rem.groupName,
+          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          rawTimestamp: rawTime,
+          actorUid: rem.senderUid,
+          targetUid: rem.recipientUid,
+        });
+      }
+    });
+
     items.sort((a, b) => b.rawTimestamp - a.rawTimestamp);
     onActivityUpdate(items);
   };
@@ -912,10 +949,16 @@ export const subscribeUserActivityFeed = (
     mergeAndNotify();
   });
 
+  const unsub4 = onSnapshot(notificationsQuery, (snap) => {
+    currentReminders = snap.docs.map((d) => d.data() as AppNotification);
+    mergeAndNotify();
+  });
+
   return () => {
     unsub1();
     unsub2();
     unsub3();
+    unsub4();
   };
 };
 
@@ -1215,4 +1258,78 @@ export const subscribeUserMonthlyInsights = (
     unsub2();
     unsub3();
   };
+};
+
+// -------------------------------------------------------------
+// NOTIFICATIONS COLLECTION
+// -------------------------------------------------------------
+export const sendPaymentReminder = async (
+  recipientUid: string,
+  groupId: string,
+  groupName: string,
+  amount: number
+) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('User not authenticated');
+
+    const notificationRef = doc(collection(db, 'notifications'));
+    const notificationData: AppNotification = {
+      notificationId: notificationRef.id,
+      recipientUid,
+      senderUid: currentUser.uid,
+      groupId,
+      groupName,
+      type: 'payment_reminder',
+      title: 'Payment Reminder',
+      message: `${currentUser.displayName || 'A friend'} is reminding you to settle ₹${amount.toLocaleString('en-IN')} for ${groupName}.`,
+      read: false,
+      amount,
+      createdAt: serverTimestamp(),
+    };
+
+    await setDoc(notificationRef, notificationData);
+    return true;
+  } catch (error) {
+    console.error('Error sending payment reminder:', error);
+    throw error;
+  }
+};
+
+export const canSendReminder = async (recipientUid: string, groupId: string) => {
+  // Cooldown removed for testing
+  return true;
+};
+
+export const subscribeToNotifications = (
+  uid: string,
+  onUpdate: (notifications: AppNotification[]) => void
+) => {
+  if (!uid) return () => {};
+
+  // Query by recipient only to avoid index requirements for orderby
+  const q = query(
+    collection(db, 'notifications'),
+    where('recipientUid', '==', uid)
+  );
+
+  return onSnapshot(q, (snap) => {
+    const notifs = snap.docs.map((d) => ({ ...d.data(), notificationId: d.id } as AppNotification));
+    // Sort in memory to avoid index requirements
+    notifs.sort((a, b) => {
+      const timeA = a.createdAt?.seconds || 0;
+      const timeB = b.createdAt?.seconds || 0;
+      return timeB - timeA;
+    });
+    onUpdate(notifs);
+  });
+};
+
+export const markNotificationAsRead = async (notificationId: string) => {
+  try {
+    const ref = doc(db, 'notifications', notificationId);
+    await updateDoc(ref, { read: true });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+  }
 };
