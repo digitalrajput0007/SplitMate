@@ -183,13 +183,13 @@ export default function ExpenseForm({
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         quality: 0.7,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setReceiptImage(result.assets[0].uri);
+        onPickReceipt(); // This trigger the parent hook
       }
     } catch (error) {
       console.log('Receipt pick error:', error);

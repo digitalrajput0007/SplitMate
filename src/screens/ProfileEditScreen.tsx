@@ -17,7 +17,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { OutlinedInput } from '../components/OutlinedInput';
-import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
 import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
@@ -39,6 +38,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
   const [dob, setDob] = useState('15-08-1995');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
   const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
+  const [photoMetadata, setPhotoMetadata] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
   const {
@@ -57,6 +57,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
     onSuccess: (urls) => {
       setPhotoUrl(urls.original);
       if (urls.thumbnail !== undefined) setPhotoThumbnailUrl(urls.thumbnail);
+      if (urls.metadata) setPhotoMetadata(urls.metadata);
     },
   });
 
@@ -102,6 +103,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
           dob,
           photoUrl,
           photoThumbnailUrl,
+          photoMetadata,
         });
 
         Alert.alert('Success', 'Profile updated successfully');

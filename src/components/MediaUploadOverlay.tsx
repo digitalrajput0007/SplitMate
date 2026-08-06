@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, StyleSheet, Modal, ActivityIndicator } from 'react-native';
-import { Colors, Typography, BorderRadius, Spacing } from '../theme';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Animated } from 'react-native';
+import { Typography, BorderRadius, Spacing, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 
 export interface MediaUploadOverlayProps {
@@ -9,86 +9,84 @@ export interface MediaUploadOverlayProps {
   title?: string;
 }
 
+/**
+ * Non-blocking Background Upload Pill (Phase 2)
+ * Allows users to continue working while media uploads in background.
+ */
 export function MediaUploadOverlay({
   visible,
   progress,
-  title = 'Uploading...'
+  title = 'Uploading media...'
 }: MediaUploadOverlayProps) {
   const { colors } = useTheme();
+  const [fadeAnim] = useState(new Animated.Value(0));
 
-  if (!visible) return null;
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: visible ? 1 : 0,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  }, [visible]);
+
+  if (!visible && progress === 0) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.container}>
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainerHighest }]}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <View style={styles.textStack}>
-            <Text style={[styles.title, { color: colors.onSurface }]}>{title}</Text>
-            <Text style={[styles.progressText, { color: colors.onSurfaceVariant }]}>
-              {Math.round(progress)}%
-            </Text>
-          </View>
-
-          {/* Progress Bar Track */}
-          <View style={[styles.track, { backgroundColor: colors.surfaceContainerLow }]}>
-            <View
-              style={[
-                styles.fill,
-                {
-                  backgroundColor: colors.primary,
-                  width: `${progress}%`
-                }
-              ]}
-            />
-          </View>
+    <Animated.View
+      style={[
+        styles.floatingPill,
+        {
+          backgroundColor: colors.primary,
+          opacity: fadeAnim,
+          transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }]
+        }
+      ]}
+    >
+      <ActivityIndicator color="#FFFFFF" size="small" />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.pillTitle, { color: '#FFFFFF' }]}>{title}</Text>
+        <View style={[styles.miniTrack, { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+          <View style={[styles.miniFill, { width: `${progress}%`, backgroundColor: '#FFFFFF' }]} />
         </View>
       </View>
-    </Modal>
+      <Text style={[styles.progressText, { color: '#FFFFFF' }]}>{Math.round(progress)}%</Text>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  floatingPill: {
+    position: 'absolute',
+    bottom: 90, // Above tab bar
+    left: 20,
+    right: 20,
+    height: 56,
+    borderRadius: 28,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+    paddingHorizontal: 20,
+    gap: 12,
+    zIndex: 999,
+    ...Shadows.dialog,
   },
-  card: {
-    width: '100%',
-    maxWidth: 300,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    alignItems: 'center',
-    gap: Spacing.md,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-  },
-  textStack: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  title: {
-    ...Typography.titleMd,
+  pillTitle: {
+    ...Typography.labelMd,
     fontWeight: '700',
+  },
+  miniTrack: {
+    height: 3,
+    borderRadius: 2,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  miniFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   progressText: {
     ...Typography.labelMd,
-    fontWeight: '600',
-  },
-  track: {
-    width: '100%',
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  fill: {
-    height: '100%',
-    borderRadius: 4,
+    fontWeight: '900',
+    minWidth: 35,
+    textAlign: 'right',
   },
 });

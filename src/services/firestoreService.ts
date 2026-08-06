@@ -30,6 +30,13 @@ export interface UserProfile {
   email: string;
   photoUrl?: string;
   photoThumbnailUrl?: string;
+  photoMetadata?: {
+    width: number;
+    height: number;
+    fileSize: number;
+    mimeType: string;
+    createdAt: number;
+  };
   paymentHandle?: string;
   paymentMethods?: PaymentMethod[];
   dob?: string;
@@ -86,6 +93,13 @@ export interface GroupData {
   memberExistingExpensesPreference?: Record<string, boolean>;
   photoUrl?: string;
   photoThumbnailUrl?: string;
+  photoMetadata?: {
+    width: number;
+    height: number;
+    fileSize: number;
+    mimeType: string;
+    createdAt: number;
+  };
   createdBy: string;
   createdAt: any;
   isArchived?: boolean;
@@ -108,6 +122,13 @@ export interface ExpenseData {
   date?: string;
   notes?: string;
   receiptUrl?: string;
+  receiptMetadata?: {
+    width: number;
+    height: number;
+    fileSize: number;
+    mimeType: string;
+    createdAt: number;
+  };
   createdAt?: any;
 }
 
@@ -180,6 +201,8 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
         dataToSave.photoThumbnailUrl = profile.photoThumbnailUrl;
       }
     }
+
+    if (profile.photoMetadata !== undefined) dataToSave.photoMetadata = profile.photoMetadata;
 
     if (profile.paymentHandle !== undefined) dataToSave.paymentHandle = profile.paymentHandle;
     if (profile.paymentMethods !== undefined) dataToSave.paymentMethods = profile.paymentMethods;

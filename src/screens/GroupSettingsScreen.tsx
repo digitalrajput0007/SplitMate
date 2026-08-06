@@ -17,7 +17,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
@@ -67,6 +66,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [groupType, setGroupType] = useState<GroupTypeOption>('Other');
   const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
   const [groupPhotoThumbnail, setGroupPhotoThumbnail] = useState<string | null>(null);
+  const [groupPhotoMetadata, setGroupPhotoMetadata] = useState<any>(null);
 
   const {
     isUploading,
@@ -84,6 +84,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     onSuccess: (urls) => {
       setGroupPhoto(urls.original);
       if (urls.thumbnail !== undefined) setGroupPhotoThumbnail(urls.thumbnail);
+      if (urls.metadata) setGroupPhotoMetadata(urls.metadata);
     },
   });
 
@@ -176,34 +177,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     return Math.round(balance * 100) / 100;
   };
 
-  const handlePickPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Please allow photo library access.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setGroupPhoto(result.assets[0].uri);
-      }
-    } catch (e) {
-      console.log('Image picker error:', e);
-    }
-  };
-
-  const handleRemovePhoto = () => {
-    setGroupPhoto(null);
-    setGroupPhotoThumbnail(null);
-  };
-
   const handleUpdateGroup = async () => {
     if (!groupName.trim() || !groupId) {
       Alert.alert('Validation Error', 'Group name cannot be empty.');
@@ -220,6 +193,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         groupType,
         photoUrl: groupPhoto || '',
         photoThumbnailUrl: groupPhotoThumbnail || '',
+        photoMetadata: groupPhotoMetadata,
         enableDates: groupType === 'Trip',
       };
 

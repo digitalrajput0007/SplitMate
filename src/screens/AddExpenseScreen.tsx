@@ -41,6 +41,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
+  const [receiptMetadata, setReceiptMetadata] = useState<any>(null);
 
   const {
     isUploading,
@@ -53,7 +54,12 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   } = useMediaManager({
     purpose: 'receipt',
     id: groupId || 'temp',
-    onSuccess: (urls) => setReceiptUrl(urls.original),
+    onSuccess: (urls) => {
+      setReceiptUrl(urls.original);
+      if (urls.metadata) setReceiptMetadata(urls.metadata);
+      // OCR Architecture Placeholder:
+      // triggerOCR(urls.original).then(data => populateForm(data));
+    },
   });
 
   useEffect(() => {
@@ -76,7 +82,8 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       await addExpenseToFirestore({
         groupId: groupId || '',
         ...formData,
-        receiptUrl: receiptUrl, // Use the uploaded URL from state
+        receiptUrl: receiptUrl,
+        receiptMetadata: receiptMetadata,
       });
       navigation.goBack();
     } catch (error: any) {

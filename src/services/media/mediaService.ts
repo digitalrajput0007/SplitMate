@@ -14,23 +14,32 @@ export interface UploadProgress {
   totalBytes: number;
 }
 
+export interface MediaMetadata {
+  url: string;
+  width?: number;
+  height?: number;
+  fileSize?: number;
+  mimeType?: string;
+  createdAt: number;
+}
+
 /**
- * Core Media Service for SplitMate
- * Handles atomic uploads and deletions in Firebase Storage
+ * Core Media Service for SplitMate Phase 2
+ * Handles atomic uploads, metadata, and cleanup
  */
 class MediaService {
   /**
-   * Deletes a file from Firebase Storage given its full URL or path
+   * Deletes a file from Firebase Storage given its full URL
    */
-  async deleteFile(urlOrPath: string | undefined): Promise<void> {
-    if (!urlOrPath || !urlOrPath.startsWith('http')) return;
+  async deleteFile(url: string | undefined): Promise<void> {
+    if (!url || !url.startsWith('http')) return;
 
     try {
-      const fileRef = ref(storage, urlOrPath);
+      const fileRef = ref(storage, url);
       await deleteObject(fileRef);
     } catch (error) {
-      // Ignore if file doesn't exist, log other errors
-      console.warn('MediaService: Delete failed (might not exist)', error);
+      // Common error: file already deleted or doesn't exist
+      console.warn('MediaService: Non-critical delete failure', error);
     }
   }
 
@@ -89,22 +98,14 @@ class MediaService {
   }
 
   /**
-   * Helper to extract file extension from URI
+   * Utility: Get Info including size
    */
-  getExtension(uri: string): string {
-    return uri.split('.').pop()?.split('?')[0] || 'jpg';
-  }
-
-  /**
-   * Helper to check file size
-   */
-  async getFileSize(uri: string): Promise<number> {
+  async getInfo(uri: string): Promise<{ size: number; exists: boolean }> {
     try {
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      if (!fileInfo.exists) return 0;
-      return fileInfo.size;
+      const info = await FileSystem.getInfoAsync(uri);
+      return { size: info.exists ? info.size : 0, exists: info.exists };
     } catch {
-      return 0;
+      return { size: 0, exists: false };
     }
   }
 }

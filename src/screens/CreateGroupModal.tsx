@@ -19,7 +19,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Contacts from 'expo-contacts';
-import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
@@ -76,6 +75,7 @@ export default function CreateGroupModal({ navigation }: Props) {
   // Screen 1: Group Basics State
   const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
   const [groupPhotoThumb, setGroupPhotoThumb] = useState<string | null>(null);
+  const [groupPhotoMetadata, setGroupPhotoMetadata] = useState<any>(null);
   const [groupName, setGroupName] = useState('');
   const [groupType, setGroupType] = useState<GroupTypeOption>('Trip');
 
@@ -93,6 +93,7 @@ export default function CreateGroupModal({ navigation }: Props) {
     onSuccess: (urls) => {
       setGroupPhoto(urls.original);
       if (urls.thumbnail) setGroupPhotoThumb(urls.thumbnail);
+      if (urls.metadata) setGroupPhotoMetadata(urls.metadata);
     },
   });
 
@@ -152,29 +153,6 @@ export default function CreateGroupModal({ navigation }: Props) {
       loadContactsList();
     }, [loadContactsList])
   );
-
-  const handlePickPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Please allow photo library access.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setGroupPhoto(result.assets[0].uri);
-      }
-    } catch (e) {
-      console.log('Image picker error:', e);
-    }
-  };
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
@@ -255,6 +233,7 @@ export default function CreateGroupModal({ navigation }: Props) {
         groupType,
         photoUrl: groupPhoto || undefined,
         photoThumbnailUrl: groupPhotoThumb || undefined,
+        photoMetadata: groupPhotoMetadata || undefined,
         familyName: groupType === 'Family' && familyName.trim() ? familyName.trim() : undefined,
         setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
         enableDates: groupType === 'Trip',

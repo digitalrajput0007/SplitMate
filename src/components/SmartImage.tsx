@@ -4,15 +4,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Typography } from '../theme';
 
-// Fallback to standard Image if expo-image fails to resolve or load
-let ExpoImage: any = null;
-try {
-  // We use require to avoid compile-time resolution errors if the module is missing
-  ExpoImage = require('expo-image').Image;
-} catch (e) {
-  console.warn('SmartImage: expo-image not found, falling back to react-native Image');
-}
-
 export interface SmartImageProps extends Omit<RNImageProps, 'source'> {
   uri?: string;
   thumbnailUri?: string;
@@ -23,8 +14,9 @@ export interface SmartImageProps extends Omit<RNImageProps, 'source'> {
 }
 
 /**
- * High-performance Image component with disk caching and thumbnail support
- * Includes a safety fallback to standard react-native Image
+ * High-performance Image component (Standard Version)
+ * Reverted to React Native Image to prevent native module crashes (ExpoImage).
+ * Features: Dual-layer strategy and initials fallback.
  */
 export function SmartImage({
   uri,
@@ -38,10 +30,10 @@ export function SmartImage({
 }: SmartImageProps) {
   const { colors } = useTheme();
 
-  const source = mode === 'thumbnail' ? (thumbnailUri || uri) : uri;
-  const placeholder = mode === 'full' ? thumbnailUri : undefined;
+  // 1. Determine if we have any source at all
+  const hasSource = !!(uri || thumbnailUri);
 
-  if (!source) {
+  if (!hasSource) {
     const initials = name
       ? name.trim().split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2)
       : null;
@@ -57,25 +49,14 @@ export function SmartImage({
     );
   }
 
-  // Use ExpoImage if available
-  if (ExpoImage) {
-    return (
-      <ExpoImage
-        source={source}
-        placeholder={placeholder}
-        contentFit="cover"
-        transition={200}
-        cachePolicy="disk"
-        style={[style, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}
-        {...props}
-      />
-    );
-  }
+  // 2. Dual-Layer Strategy
+  // For lists, we prefer the thumbnail. For full view, we use original.
+  const sourceUri = mode === 'thumbnail' ? (thumbnailUri || uri) : (uri || thumbnailUri);
 
-  // Final fallback to React Native Image
+  // 3. Render with standard React Native Image
   return (
     <RNImage
-      source={{ uri: source }}
+      source={{ uri: sourceUri || '' }}
       style={[style, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}
       resizeMode="cover"
       {...props}

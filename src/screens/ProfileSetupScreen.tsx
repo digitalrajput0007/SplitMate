@@ -15,7 +15,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
@@ -44,6 +43,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
+  const [photoMetadata, setPhotoMetadata] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
   const {
@@ -61,6 +61,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
     onSuccess: (urls) => {
       setPhotoUrl(urls.original);
       if (urls.thumbnail !== undefined) setPhotoThumbnailUrl(urls.thumbnail);
+      if (urls.metadata) setPhotoMetadata(urls.metadata);
     },
   });
 
@@ -123,34 +124,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
     loadInitialData();
   }, [route.params]);
 
-  const handlePickImage = async () => {
-    try {
-      if (!ImagePicker || typeof ImagePicker.requestMediaLibraryPermissionsAsync !== 'function') {
-        Alert.alert('Rebuild Required', 'Native image picker module is linking. Please restart the app.');
-        return;
-      }
-
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'Permission to access gallery is required to upload profile photo.');
-        return;
-      }
-
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType ? ImagePicker.MediaType.Images : (ImagePicker as any).MediaTypeOptions?.Images || 'images',
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!pickerResult.canceled && pickerResult.assets && pickerResult.assets.length > 0) {
-        setPhotoUrl(pickerResult.assets[0].uri);
-      }
-    } catch (e: any) {
-      Alert.alert('Image Pick Error', e.message || 'Unable to select image.');
-    }
-  };
-
   const handleCompleteProfile = async () => {
     if (!name.trim()) {
       Alert.alert('Required Field', 'Please enter your Full Name.');
@@ -197,6 +170,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           email: currentUser?.email || '',
           photoUrl: photoUrl || currentUser?.photoURL || '',
           photoThumbnailUrl: photoThumbnailUrl,
+          photoMetadata: photoMetadata,
           paymentHandle: paymentHandle.trim(),
           dob: formattedDob,
           mobile: fullMobile,

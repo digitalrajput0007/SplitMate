@@ -350,6 +350,7 @@ export default function HomeScreen() {
                       thumbnailUri={sender?.photoThumbnailUrl}
                       name={sender?.name}
                       size={40}
+                      mode="thumbnail"
                       style={{ borderRadius: 20 }}
                     />
                     <View style={{ flex: 1 }}>

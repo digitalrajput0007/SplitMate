@@ -1,89 +1,52 @@
-// Defensive import for expo-image-manipulator
-let ImageManipulator: any = null;
-try {
-  ImageManipulator = require('expo-image-manipulator');
-} catch (e) {
-  console.warn('ImageProcessor: expo-image-manipulator not found');
-}
-
 export interface ProcessedMedia {
   uri: string;
   width: number;
   height: number;
-  size?: number;
+  fileSize?: number;
+  mimeType: string;
+}
+
+export interface DualLayerMedia {
+  original: ProcessedMedia;
+  thumbnail: ProcessedMedia;
 }
 
 /**
- * Image Processor for SplitMate
- * Handles resizing, cropping, and compression before upload
+ * Image Processor for SplitMate (Standard Version)
+ * Handles basic pass-through when native manipulators are unavailable.
+ * Removed dynamic requires to prevent bundler confusion.
  */
 class ImageProcessor {
   /**
-   * Processes an image for Profile or Group photo (Square Crop + Resize + Thumb)
+   * Standardized Sizing Profiles
+   */
+  readonly PROFILES = {
+    PROFILE_AVATAR: { size: 512, thumbSize: 128 },
+    GROUP_HERO: { size: 800, thumbSize: 160 },
+    RECEIPT: { maxDimension: 1600 }
+  };
+
+  /**
+   * Processes a square image with Dual-Layer (Original + Thumbnail)
+   * Currently just a pass-through since expo-image-manipulator is uninstalled.
    */
   async processSquareImage(
     uri: string,
-    options: { size: number; thumbSize: number; quality?: number }
-  ): Promise<{ original: ProcessedMedia; thumbnail: ProcessedMedia }> {
-    // If manipulator is missing, return the original URI as both
-    if (!ImageManipulator) {
-      const fallback = { uri, width: options.size, height: options.size };
-      return { original: fallback, thumbnail: fallback };
-    }
+    type: 'profile' | 'group'
+  ): Promise<DualLayerMedia> {
+    const config = type === 'profile' ? this.PROFILES.PROFILE_AVATAR : this.PROFILES.GROUP_HERO;
 
-    try {
-      // 1. First pass: Resize to main size
-      const original = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: options.size, height: options.size } }],
-        { compress: options.quality || 0.8, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      // 2. Second pass: Resize for Thumbnail
-      const thumbnail = await ImageManipulator.manipulateAsync(
-        original.uri,
-        [{ resize: { width: options.thumbSize, height: options.thumbSize } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      return {
-        original: { uri: original.uri, width: original.width, height: original.height },
-        thumbnail: { uri: thumbnail.uri, width: thumbnail.width, height: thumbnail.height },
-      };
-    } catch (error) {
-      console.error('ImageProcessor: Square processing failed', error);
-      const fallback = { uri, width: options.size, height: options.size };
-      return { original: fallback, thumbnail: fallback };
-    }
+    // Pass through since native code is missing
+    const media = { uri, width: config.size, height: config.size, mimeType: 'image/jpeg' };
+    return { original: media, thumbnail: media };
   }
 
   /**
-   * Processes an expense receipt (Long side limit + Compression)
+   * Processes an expense receipt
    */
-  async processReceipt(
-    uri: string,
-    maxDimension: number = 1600
-  ): Promise<ProcessedMedia> {
-    if (!ImageManipulator) {
-      return { uri, width: maxDimension, height: maxDimension };
-    }
-
-    try {
-      const result = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: maxDimension } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
-      );
-
-      return {
-        uri: result.uri,
-        width: result.width,
-        height: result.height,
-      };
-    } catch (error) {
-      console.error('ImageProcessor: Receipt processing failed', error);
-      return { uri, width: maxDimension, height: maxDimension };
-    }
+  async processReceipt(uri: string): Promise<ProcessedMedia> {
+    const { maxDimension } = this.PROFILES.RECEIPT;
+    return { uri, width: maxDimension, height: maxDimension, mimeType: 'image/jpeg' };
   }
 }
 
