@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   StatusBar as RNStatusBar,
   Platform,
+  Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';

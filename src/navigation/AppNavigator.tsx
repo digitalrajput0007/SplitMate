@@ -15,6 +15,7 @@ import EmailVerificationScreen from '../screens/EmailVerificationScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
 import ContactsPermissionScreen from '../screens/ContactsPermissionScreen';
 import HomeScreen from '../screens/HomeScreen';
+import GroupsScreen from '../screens/GroupsScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import SettleUpScreen from '../screens/SettleUpScreen';
@@ -164,7 +165,7 @@ function MainTabNavigator() {
       })}
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
-      <Tab.Screen name="GroupsTab" component={HomeScreen} options={{ title: 'Groups' }} />
+      <Tab.Screen name="GroupsTab" component={GroupsScreen} options={{ title: 'Groups' }} />
       <Tab.Screen name="ContactsTab" component={ContactsScreen} options={{ title: 'Contacts' }} />
       <Tab.Screen name="ActivityTab" component={ActivityScreen} options={{ title: 'Activity' }} />
       <Tab.Screen name="AccountTab" component={AccountScreen} options={{ title: 'Account' }} />
