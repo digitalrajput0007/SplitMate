@@ -10,17 +10,18 @@ import {
   StatusBar as RNStatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import * as LocalAuthentication from 'expo-local-authentication';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useSecurity } from '../context/SecurityContext';
+import { checkBiometricHardware, checkBiometricEnrolled, authenticateBiometric } from '../services/biometricService';
+import { deletePinHash } from '../services/secureStorageService';
 
 export default function PrivacySecurityScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
-
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const { lockSettings, updateLockSettings } = useSecurity();
   const [authenticating, setAuthenticating] = useState(false);
 
   const handleBiometricToggle = async (val: boolean) => {
@@ -28,8 +29,8 @@ export default function PrivacySecurityScreen() {
     setAuthenticating(true);
 
     try {
-      const hasHardware = await LocalAuthentication.hasHardwareAsync();
-      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      const hasHardware = await checkBiometricHardware();
+      const isEnrolled = await checkBiometricEnrolled();
 
       if (!hasHardware || !isEnrolled) {
         setAuthenticating(false);
@@ -40,16 +41,10 @@ export default function PrivacySecurityScreen() {
         return;
       }
 
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: val ? 'Verify identity to enable Biometric Lock' : 'Verify identity to disable Biometric Lock',
-        cancelLabel: 'Cancel',
-        disableDeviceFallback: false,
-      });
-
-      setAuthenticating(false);
+      const result = await authenticateBiometric(val ? 'Verify identity to enable Biometric Lock' : 'Verify identity to disable Biometric Lock');
 
       if (result.success) {
-        setBiometricEnabled(val);
+        await updateLockSettings({ ...lockSettings, isBiometricEnabled: val });
         Alert.alert(
           val ? 'Biometric Lock Enabled' : 'Biometric Lock Disabled',
           val
@@ -57,13 +52,47 @@ export default function PrivacySecurityScreen() {
             : 'Biometric security lock has been turned off.'
         );
       } else {
-        Alert.alert('Authentication Failed', 'Identity verification failed. Biometric settings remain unchanged.');
+        Alert.alert('Authentication Failed', 'Identity verification failed.');
       }
     } catch (e: any) {
-      setAuthenticating(false);
       Alert.alert('Authentication Error', e.message || 'Unable to authenticate with biometrics.');
+    } finally {
+      setAuthenticating(false);
     }
   };
+
+  const handlePinToggle = async (val: boolean) => {
+    if (val) {
+      navigation.navigate('SetupPin');
+    } else {
+      Alert.alert(
+        'Disable PIN',
+        'Are you sure you want to disable PIN lock?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Disable',
+            style: 'destructive',
+            onPress: async () => {
+              await deletePinHash();
+              await updateLockSettings({ ...lockSettings, isPinEnabled: false });
+            }
+          }
+        ]
+      );
+    }
+  };
+
+  const updateTimeout = (seconds: number) => {
+    updateLockSettings({ ...lockSettings, lockTimeout: seconds });
+  };
+
+  const TIMEOUTS = [
+    { label: 'Instantly', value: 0 },
+    { label: '30 Seconds', value: 30 },
+    { label: '1 Minute', value: 60 },
+    { label: '5 Minutes', value: 300 },
+  ];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -78,21 +107,63 @@ export default function PrivacySecurityScreen() {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Security Section */}
-        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>App Security</Text>
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>App Lock</Text>
         <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           <View style={styles.row}>
             <View style={{ flex: 1, paddingRight: Spacing.md }}>
-              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Biometric Lock (Face ID / Touch ID)</Text>
-              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Require fingerprint or face recognition to unlock SplitMate</Text>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Biometric Lock</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Use Face ID or Fingerprint</Text>
             </View>
             <Switch
-              value={biometricEnabled}
+              value={lockSettings.isBiometricEnabled}
               onValueChange={handleBiometricToggle}
               trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryContainer }}
-              thumbColor={biometricEnabled ? colors.primary : colors.outline}
+              thumbColor={lockSettings.isBiometricEnabled ? colors.primary : colors.outline}
               disabled={authenticating}
             />
           </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+          <View style={styles.row}>
+            <View style={{ flex: 1, paddingRight: Spacing.md }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>PIN Lock</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Use a numeric PIN</Text>
+            </View>
+            <Switch
+              value={lockSettings.isPinEnabled}
+              onValueChange={handlePinToggle}
+              trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryContainer }}
+              thumbColor={lockSettings.isPinEnabled ? colors.primary : colors.outline}
+            />
+          </View>
+
+          {lockSettings.isPinEnabled && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+              <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('SetupPin')}>
+                <Text style={[styles.rowTitle, { color: colors.primary }]}>Change PIN</Text>
+                <MaterialIcons name="chevron-right" size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Auto-Lock Timeout</Text>
+        <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          {TIMEOUTS.map((t, idx) => (
+            <React.Fragment key={t.value}>
+              <TouchableOpacity style={styles.row} onPress={() => updateTimeout(t.value)}>
+                <Text style={[styles.rowTitle, { color: colors.onSurface, fontWeight: lockSettings.lockTimeout === t.value ? '700' : '500' }]}>
+                  {t.label}
+                </Text>
+                {lockSettings.lockTimeout === t.value && (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+              {idx < TIMEOUTS.length - 1 && <View style={[styles.divider, { backgroundColor: colors.divider }]} />}
+            </React.Fragment>
+          ))}
         </View>
 
         {/* Account Controls */}
@@ -133,7 +204,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   topBarTitle: { ...Typography.titleMd, fontWeight: '600' },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl, gap: Spacing.md },
-  sectionTitle: { ...Typography.titleMd, fontWeight: '600', marginTop: Spacing.xs },
+  sectionTitle: { ...Typography.titleSm, fontWeight: '600', marginTop: Spacing.xs },
   cardGroup: {
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,

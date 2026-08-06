@@ -44,6 +44,12 @@ import ContactsScreen from '../screens/ContactsScreen';
 import InviteContactsScreen from '../screens/InviteContactsScreen';
 import AppThemeScreen from '../screens/AppThemeScreen';
 
+// App Lock Screens
+import UnlockScreen from '../screens/UnlockScreen';
+import SetupPinScreen from '../screens/SetupPinScreen';
+
+import { useSecurity } from '../context/SecurityContext';
+
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
@@ -69,6 +75,7 @@ export type RootStackParamList = {
   PrivacySecurity: undefined;
   ContactUs: undefined;
   InviteContacts: undefined;
+  SetupPin: undefined;
 };
 
 export type MainTabParamList = {
@@ -179,6 +186,7 @@ import { getUserProfileFromFirestore } from '../services/firestoreService';
 
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
+  const { isUnlocked, isLoading: isSecurityLoading } = useSecurity();
   const [initializing, setInitializing] = React.useState(true);
   const [user, setUser] = React.useState<User | null>(null);
   const [initialRoute, setInitialRoute] = React.useState<keyof RootStackParamList>('Splash');
@@ -206,12 +214,17 @@ export default function AppNavigator() {
     return () => unsubscribe();
   }, []);
 
-  if (initializing) {
+  if (initializing || isSecurityLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#FFFFFF" />
       </View>
     );
+  }
+
+  // Gatekeeper: If app is locked, force UnlockScreen
+  if (!isUnlocked) {
+    return <UnlockScreen />;
   }
 
   const navTheme = {
@@ -260,6 +273,7 @@ export default function AppNavigator() {
         <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
         <Stack.Screen name="ContactUs" component={ContactUsScreen} />
         <Stack.Screen name="InviteContacts" component={InviteContactsScreen} />
+        <Stack.Screen name="SetupPin" component={SetupPinScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

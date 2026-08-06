@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
-interface GroupCardProps {
+export interface GroupCardProps {
   name: string;
   groupPhotoUrl?: string;
   groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Home' | 'Other';
@@ -12,6 +12,8 @@ interface GroupCardProps {
   balanceLabel: 'owed' | 'owe' | 'settled';
   balanceAmount: string;
   onPress: () => void;
+  role?: 'owner' | 'member';
+  lastActivity?: string;
 }
 
 const TYPE_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
@@ -30,13 +32,14 @@ export function GroupCard({
   balanceLabel,
   balanceAmount,
   onPress,
+  role,
+  lastActivity,
 }: GroupCardProps) {
   const { colors } = useTheme();
   const [imgError, setImgError] = React.useState(false);
   const isPositive = balanceLabel === 'owed';
   const isNegative = balanceLabel === 'owe';
 
-  const groupInitial = name ? name.trim().charAt(0).toUpperCase() : 'G';
   const iconName = groupType && TYPE_ICONS[groupType] ? TYPE_ICONS[groupType] : 'groups';
 
   return (
@@ -52,17 +55,14 @@ export function GroupCard({
       activeOpacity={0.7}
     >
       <View style={styles.content}>
-        {/* Group Photo or Icon / Initial Badge */}
+        {/* Group Photo or Icon */}
         <View style={[styles.groupBadgeCircle, { backgroundColor: colors.primaryContainer }]}>
           {groupPhotoUrl && !imgError ? (
             <Image
               source={{ uri: groupPhotoUrl }}
               style={styles.groupBadgeImage}
               resizeMode="cover"
-              onError={(e) => {
-                console.log('Group image failed to load:', e.nativeEvent.error);
-                setImgError(true);
-              }}
+              onError={() => setImgError(true)}
             />
           ) : (
             <View style={[styles.groupBadgeFallback, { backgroundColor: colors.primaryFixed }]}>
@@ -71,9 +71,33 @@ export function GroupCard({
           )}
         </View>
 
-        {/* Title and Avatars */}
+        {/* Info Section */}
         <View style={styles.info}>
-          <Text style={[styles.groupName, { color: colors.onSurface }]} numberOfLines={1}>{name}</Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.groupName, { color: colors.onSurface }]} numberOfLines={1}>
+              {name}
+            </Text>
+            {role && (
+              <View style={[styles.roleBadge, { backgroundColor: role === 'owner' ? colors.primaryContainer : colors.surfaceContainerHigh }]}>
+                <Text style={[styles.roleText, { color: role === 'owner' ? colors.onPrimaryContainer : colors.onSurfaceVariant }]}>
+                  {role === 'owner' ? 'Owner' : 'Member'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.metaRow}>
+            <Text style={[styles.metaText, { color: colors.onSurfaceVariant }]}>
+              {groupType || 'Other'} • {members.length} members
+            </Text>
+          </View>
+
+          {lastActivity && (
+            <Text style={[styles.lastActivity, { color: colors.outline }]}>
+              {lastActivity}
+            </Text>
+          )}
+
           <View style={styles.avatarRow}>
             {members.slice(0, 4).map((m, i) => (
               <View
@@ -92,7 +116,7 @@ export function GroupCard({
                 ) : (
                   <View style={[styles.avatarFallback, { backgroundColor: colors.primaryFixed }]}>
                     <Text style={[styles.avatarText, { color: colors.primary }]}>
-                      {m.name && m.name !== 'Member' ? m.name.trim().charAt(0).toUpperCase() : '?'}
+                      {m.name && m.name !== 'Member' ? m.name.charAt(0).toUpperCase() : '?'}
                     </Text>
                   </View>
                 )}
@@ -116,7 +140,7 @@ export function GroupCard({
           </View>
         </View>
 
-        {/* Balance Status */}
+        {/* Balance Section */}
         <View style={styles.balanceSection}>
           <Text style={[styles.balanceLabelText, { color: colors.onSurfaceVariant }]}>
             {balanceLabel === 'settled' ? 'Settled Up' : balanceLabel === 'owed' ? 'You are owed' : 'You owe'}
@@ -143,6 +167,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     ...Shadows.card,
     borderWidth: 1,
+    marginBottom: Spacing.xs,
   },
   content: {
     flexDirection: 'row',
@@ -169,28 +194,54 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
   },
-  groupBadgeText: {
-    ...Typography.titleLg,
-    fontWeight: '700',
-  },
   info: {
     flex: 1,
-    gap: Spacing.xs,
-    marginRight: Spacing.sm,
+    gap: 2,
+    marginRight: Spacing.xs,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   groupName: {
     ...Typography.titleMd,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    maxWidth: '65%',
+  },
+  roleBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  roleText: {
+    ...Typography.labelMd,
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    ...Typography.bodySm,
+    fontSize: 11,
+  },
+  lastActivity: {
+    ...Typography.bodySm,
+    fontSize: 10,
   },
   avatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
   },
   avatarWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
     overflow: 'hidden',
   },
   avatarImage: {
@@ -204,8 +255,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    ...Typography.labelMd,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '600',
   },
   moreAvatar: {
@@ -213,19 +263,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   moreText: {
-    ...Typography.labelMd,
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: '500',
   },
   balanceSection: {
     alignItems: 'flex-end',
+    minWidth: 80,
   },
   balanceLabelText: {
     ...Typography.labelMd,
+    fontSize: 10,
   },
   balanceAmountText: {
     ...Typography.titleMd,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginTop: 2,
   },
 });

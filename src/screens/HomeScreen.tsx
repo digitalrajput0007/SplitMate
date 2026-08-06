@@ -413,7 +413,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Recent Activity</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Activity')}>
+            <TouchableOpacity onPress={() => navigation.navigate('ActivityTab')}>
               <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
             </TouchableOpacity>
           </View>

@@ -11,34 +11,36 @@ import {
 } from '@expo-google-fonts/inter';
 import AppNavigator from './src/navigation/AppNavigator';
 import { Colors } from './src/theme';
-
 import { Platform, StyleSheet } from 'react-native';
-
 import { ThemeProvider } from './src/context/ThemeContext';
-
 import { useTheme } from './src/context/ThemeContext';
+import { SecurityProvider } from './src/context/SecurityContext';
 
 function MainAppContent() {
   const { colors, isDark } = useTheme();
 
   if (Platform.OS === 'web') {
     return (
-      <SafeAreaProvider>
-        <StatusBar style={isDark ? "light" : "dark"} />
-        <View style={webStyles.outerContainer}>
-          <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
-            <AppNavigator />
+      <SecurityProvider>
+        <SafeAreaProvider>
+          <StatusBar style={isDark ? "light" : "dark"} />
+          <View style={webStyles.outerContainer}>
+            <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
+              <AppNavigator />
+            </View>
           </View>
-        </View>
-      </SafeAreaProvider>
+        </SafeAreaProvider>
+      </SecurityProvider>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style={isDark ? "light" : "dark"} />
-      <AppNavigator />
-    </SafeAreaProvider>
+    <SecurityProvider>
+      <SafeAreaProvider>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <AppNavigator />
+      </SafeAreaProvider>
+    </SecurityProvider>
   );
 }
 

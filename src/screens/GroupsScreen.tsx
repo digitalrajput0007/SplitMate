@@ -3,12 +3,14 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   StatusBar as RNStatusBar,
   Platform,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +24,11 @@ import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
 import { UserProfile, getAllUsersFromFirestore } from '../services/firestoreService';
 
-const CATEGORIES = ['All', 'Trip', 'Family', 'Couple', 'Flatmate', 'Other'];
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const FILTERS = ['All', 'You Owe', 'You Are Owed', 'Settled'];
 
 export default function GroupsScreen() {
   const navigation = useNavigation<any>();
@@ -32,8 +38,11 @@ export default function GroupsScreen() {
   const { groups, groupBalances, loading, refreshGroups, currentUser } = useUserGroups();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [activeFilter, setActiveFilter] = useState('All');
   const [allUsersMap, setAllUsersMap] = useState<Map<string, UserProfile>>(new Map());
+
+  const [ownedExpanded, setOwnedExpanded] = useState(true);
+  const [joinedExpanded, setJoinedExpanded] = useState(true);
 
   // Fetch all users for GroupCard avatars
   React.useEffect(() => {
@@ -44,111 +53,179 @@ export default function GroupsScreen() {
     });
   }, []);
 
-  const filteredGroups = useMemo(() => {
-    return groups.filter((g) => {
+  const toggleOwned = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOwnedExpanded(!ownedExpanded);
+  };
+
+  const toggleJoined = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setJoinedExpanded(!joinedExpanded);
+  };
+
+  const { owned, joined } = useMemo(() => {
+    const filtered = groups.filter((g) => {
+      const balance = groupBalances[g.groupId] || 0;
       const matchesSearch = g.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = selectedCategory === 'All' || g.groupType === selectedCategory;
-      return matchesSearch && matchesCategory;
+      if (!matchesSearch) return false;
+
+      if (activeFilter === 'You Owe') return balance < -0.05;
+      if (activeFilter === 'You Are Owed') return balance > 0.05;
+      if (activeFilter === 'Settled') return Math.abs(balance) <= 0.05;
+
+      return true;
     });
-  }, [groups, searchQuery, selectedCategory]);
+
+    return {
+      owned: filtered.filter(g => g.createdBy === currentUser?.uid),
+      joined: filtered.filter(g => g.createdBy !== currentUser?.uid),
+    };
+  }, [groups, searchQuery, activeFilter, groupBalances, currentUser?.uid]);
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Text style={[styles.title, { color: colors.onSurface }]}>Your Groups</Text>
-      <M3SearchBar
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Search groups..."
-        onClear={() => setSearchQuery('')}
+  const renderGroupCard = (item: any, isOwner: boolean) => {
+    const myShare = groupBalances[item.groupId] || 0;
+    let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
+    let balanceAmount = 'Settled up';
+
+    if (myShare > 0.05) {
+      balanceLabel = 'owed';
+      balanceAmount = formatCurrency(myShare);
+    } else if (myShare < -0.05) {
+      balanceLabel = 'owe';
+      balanceAmount = formatCurrency(Math.abs(myShare));
+    }
+
+    const membersWithImages = (item.memberIds || []).map((mUid: string) => {
+      const profileMatch = allUsersMap.get(mUid);
+      return {
+        name: profileMatch?.name || 'Member',
+        uri: profileMatch?.photoUrl || undefined,
+      };
+    });
+
+    const lastActivityText = item.createdAt
+      ? `Updated ${new Date(item.createdAt.seconds * 1000).toLocaleDateString()}`
+      : undefined;
+
+    return (
+      <GroupCard
+        key={item.groupId}
+        name={item.name}
+        groupPhotoUrl={item.photoUrl}
+        groupType={item.groupType as any}
+        members={membersWithImages}
+        balanceLabel={balanceLabel}
+        balanceAmount={balanceAmount}
+        role={isOwner ? 'owner' : 'member'}
+        lastActivity={lastActivityText}
+        onPress={() =>
+          navigation.navigate('GroupDetail', {
+            groupId: item.groupId,
+            groupName: item.name,
+          })
+        }
       />
-      <FlatList
-        horizontal
-        data={CATEGORIES}
-        keyExtractor={(item) => item}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categoryList}
-        renderItem={({ item }) => (
-          <M3Chip
-            label={item}
-            selected={selectedCategory === item}
-            onPress={() => setSelectedCategory(item)}
-          />
-        )}
-      />
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      <FlatList
-        data={filteredGroups}
-        keyExtractor={(item) => item.groupId}
-        contentContainerStyle={[styles.listContent, { paddingTop: topPadding }]}
-        ListHeaderComponent={renderHeader}
+      <View style={[styles.header, { paddingTop: topPadding }]}>
+        <Text style={[styles.title, { color: colors.onSurface }]}>Groups</Text>
+        <M3SearchBar
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search groups..."
+          onClear={() => setSearchQuery('')}
+        />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          {FILTERS.map((f) => (
+            <M3Chip
+              key={f}
+              label={f}
+              selected={activeFilter === f}
+              onPress={() => setActiveFilter(f)}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={false} onRefresh={refreshGroups} tintColor={colors.primary} />
         }
-        renderItem={({ item }) => {
-          const myShare = groupBalances[item.groupId] || 0;
-          let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
-          let balanceAmount = 'Settled up';
-
-          if (myShare > 0.05) {
-            balanceLabel = 'owed';
-            balanceAmount = formatCurrency(myShare);
-          } else if (myShare < -0.05) {
-            balanceLabel = 'owe';
-            balanceAmount = formatCurrency(Math.abs(myShare));
-          }
-
-          const membersWithImages = (item.memberIds || []).map((mUid) => {
-            const profileMatch = allUsersMap.get(mUid);
-            return {
-              name: profileMatch?.name || 'Member',
-              uri: profileMatch?.photoUrl || undefined,
-            };
-          });
-
-          return (
-            <View style={styles.cardWrapper}>
-              <GroupCard
-                name={item.name}
-                groupPhotoUrl={item.photoUrl}
-                groupType={item.groupType as any}
-                members={membersWithImages}
-                balanceLabel={balanceLabel}
-                balanceAmount={balanceAmount}
-                onPress={() =>
-                  navigation.navigate('GroupDetail', {
-                    groupId: item.groupId,
-                    groupName: item.name,
-                  })
-                }
+      >
+        {loading && groups.length === 0 ? (
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : (
+          <>
+            {/* Your Groups Section */}
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={toggleOwned}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={ownedExpanded ? "chevron-down" : "chevron-forward"}
+                size={20}
+                color={colors.onSurfaceVariant}
               />
-            </View>
-          );
-        }}
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="people-outline" size={64} color={colors.outlineVariant} />
-              <Text style={[styles.emptyText, { color: colors.onSurfaceVariant }]}>
-                {searchQuery || selectedCategory !== 'All'
-                  ? "No groups match your filters"
-                  : "You haven't joined any groups yet"}
+              <Text style={[styles.sectionTitle, { color: colors.onSurfaceVariant }]}>
+                Your Groups ({owned.length})
               </Text>
-            </View>
-          ) : (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-          )
-        }
-      />
+            </TouchableOpacity>
+
+            {ownedExpanded && (
+              <View style={styles.sectionBody}>
+                {owned.length > 0 ? (
+                  owned.map(g => renderGroupCard(g, true))
+                ) : (
+                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
+                    <Text style={[styles.emptyText, { color: colors.outline }]}>
+                      You haven't created any groups yet.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Joined Groups Section */}
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={toggleJoined}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={joinedExpanded ? "chevron-down" : "chevron-forward"}
+                size={20}
+                color={colors.onSurfaceVariant}
+              />
+              <Text style={[styles.sectionTitle, { color: colors.onSurfaceVariant }]}>
+                Joined Groups ({joined.length})
+              </Text>
+            </TouchableOpacity>
+
+            {joinedExpanded && (
+              <View style={styles.sectionBody}>
+                {joined.length > 0 ? (
+                  joined.map(g => renderGroupCard(g, false))
+                ) : (
+                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
+                    <Text style={[styles.emptyText, { color: colors.outline }]}>
+                      You haven't joined any groups yet.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
 
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: colors.primary }]}
@@ -163,39 +240,52 @@ export default function GroupsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  listContent: {
-    paddingHorizontal: Spacing.containerMargin,
-    paddingBottom: 100,
-  },
   header: {
+    paddingHorizontal: Spacing.containerMargin,
     gap: Spacing.md,
-    marginBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
   title: {
     ...Typography.headlineSm,
     fontWeight: 'bold',
-    marginBottom: Spacing.xs,
   },
-  categoryList: {
+  filterRow: {
     gap: Spacing.sm,
     paddingBottom: 4,
+    paddingHorizontal: Spacing.containerMargin,
   },
-  cardWrapper: {
-    marginBottom: Spacing.md,
+  scrollContent: {
+    paddingHorizontal: Spacing.containerMargin,
+    paddingBottom: 120,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    gap: 8,
+  },
+  sectionTitle: {
+    ...Typography.labelLg,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  sectionBody: {
+    gap: Spacing.xs,
   },
   emptyBox: {
+    padding: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 60,
-    gap: Spacing.md,
+    backgroundColor: 'rgba(0,0,0,0.02)',
+    borderRadius: BorderRadius.lg,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    marginBottom: Spacing.md,
   },
   emptyText: {
-    ...Typography.bodyLg,
+    ...Typography.bodyMd,
     textAlign: 'center',
-    paddingHorizontal: 40,
-  },
-  loadingBox: {
-    marginTop: 60,
   },
   fab: {
     position: 'absolute',
