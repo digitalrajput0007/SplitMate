@@ -764,6 +764,19 @@ export const subscribeToGroupSettlements = (
   });
 };
 
+export interface ActivityItem {
+  id: string;
+  type: 'expense' | 'settlement' | 'group';
+  title: string;
+  subtitle: string;
+  amount: number;
+  category?: string;
+  groupName?: string;
+  date: string;
+  rawTimestamp: number;
+  actorUid: string;
+}
+
 // -------------------------------------------------------------
 // ACTIVITY FEED
 // -------------------------------------------------------------
@@ -776,12 +789,13 @@ export const subscribeUserActivityFeed = (
     return () => {};
   }
 
-  // Filter in memory across expenses
   const expensesQuery = query(collection(db, 'expenses'));
   const settlementsQuery = query(collection(db, 'settlements'));
+  const groupsQuery = query(collection(db, 'groups'));
 
   let currentExpenses: ExpenseData[] = [];
   let currentSettlements: SettlementData[] = [];
+  let currentGroups: GroupData[] = [];
 
   const mergeAndNotify = () => {
     const items: ActivityItem[] = [];
@@ -789,11 +803,6 @@ export const subscribeUserActivityFeed = (
     currentExpenses.forEach((exp) => {
       if (groupIds.includes(exp.groupId)) {
         const rawTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
-        const formattedDate = new Date(rawTime).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        });
-
         items.push({
           id: exp.expenseId || Math.random().toString(),
           type: 'expense',
@@ -802,8 +811,9 @@ export const subscribeUserActivityFeed = (
           amount: exp.amount,
           category: exp.category,
           groupName: exp.groupName,
-          date: formattedDate,
+          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
+          actorUid: exp.paidBy,
         });
       }
     });
@@ -811,20 +821,33 @@ export const subscribeUserActivityFeed = (
     currentSettlements.forEach((set) => {
       if (groupIds.includes(set.groupId)) {
         const rawTime = set.createdAt?.seconds ? set.createdAt.seconds * 1000 : Date.now();
-        const formattedDate = new Date(rawTime).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        });
-
         items.push({
           id: set.settlementId || Math.random().toString(),
           type: 'settlement',
-          title: `Settlement Completed`,
-          subtitle: `Payment of ${set.amount} recorded`,
+          title: `Settlement Recorded`,
+          subtitle: `Recorded in ${set.groupName || 'Group'}`,
           amount: set.amount,
           category: '💸',
-          date: formattedDate,
+          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
+          actorUid: set.fromUserId,
+        });
+      }
+    });
+
+    currentGroups.forEach((g) => {
+      if (groupIds.includes(g.groupId)) {
+        const rawTime = g.createdAt?.seconds ? g.createdAt.seconds * 1000 : Date.now();
+        items.push({
+          id: g.groupId,
+          type: 'group',
+          title: `${g.name} created`,
+          subtitle: `New group started!`,
+          amount: 0,
+          category: '👥',
+          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          rawTimestamp: rawTime,
+          actorUid: g.createdBy,
         });
       }
     });
@@ -843,9 +866,15 @@ export const subscribeUserActivityFeed = (
     mergeAndNotify();
   });
 
+  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    currentGroups = snap.docs.map((d) => ({ ...d.data(), groupId: d.id } as GroupData));
+    mergeAndNotify();
+  });
+
   return () => {
     unsub1();
     unsub2();
+    unsub3();
   };
 };
 

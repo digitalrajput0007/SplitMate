@@ -16,7 +16,9 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   subscribeUserActivityFeed,
+  getAllUsersFromFirestore,
   ActivityItem,
+  UserProfile,
 } from '../services/firestoreService';
 
 export default function ActivityScreen() {
@@ -25,7 +27,17 @@ export default function ActivityScreen() {
   const currentUser = auth.currentUser;
 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [userMap, setUserMap] = useState<Record<string, UserProfile>>({});
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Load user profiles for avatar resolution
+    getAllUsersFromFirestore().then((users) => {
+      const mapping: Record<string, UserProfile> = {};
+      users.forEach(u => mapping[u.uid] = u);
+      setUserMap(mapping);
+    });
+  }, []);
 
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -33,7 +45,6 @@ export default function ActivityScreen() {
       return;
     }
 
-    // First get user group IDs
     const unsubGroups = subscribeToUserGroups(currentUser.uid, (groups) => {
       const gIds = groups.map((g) => g.groupId);
       if (gIds.length === 0) {
@@ -55,6 +66,15 @@ export default function ActivityScreen() {
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.sm;
 
+  const getActorInfo = (uid: string) => {
+    const user = userMap[uid];
+    if (!user) return { name: 'Member', photo: null };
+    return {
+      name: uid === currentUser?.uid ? 'You' : user.name,
+      photo: user.photoUrl
+    };
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
@@ -64,7 +84,7 @@ export default function ActivityScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
-        <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Live timeline of all group expenses & settlements</Text>
+        <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Real-time timeline of your group activity</Text>
 
         {loading ? (
           <View style={styles.loadingBox}>
@@ -72,29 +92,50 @@ export default function ActivityScreen() {
           </View>
         ) : activities.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <Text style={styles.emptyEmoji}>📜</Text>
-            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No Activity Yet</Text>
+            <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
+              <MaterialIcons name="history" size={48} color={colors.outline} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No activity yet</Text>
             <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
-              Group expenses and recorded settlements will appear here in chronological order.
+              New expenses, settlements, and groups will appear here as they happen.
             </Text>
           </View>
         ) : (
           <View style={styles.feedList}>
-            {activities.map((item) => (
-              <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                <View style={[styles.feedIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
-                  <Text style={styles.feedEmoji}>{item.category ? item.category.split(' ')[0] : '💸'}</Text>
+            {activities.map((item) => {
+              const actor = getActorInfo(item.actorUid);
+              return (
+                <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                  {/* Actor Avatar */}
+                  <View style={[styles.actorAvatar, { backgroundColor: colors.primaryFixed }]}>
+                    {actor.photo ? (
+                      <Image source={{ uri: actor.photo }} style={styles.avatarImg} />
+                    ) : (
+                      <Text style={[styles.avatarLetter, { color: colors.primary }]}>
+                        {actor.name.charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.feedContent}>
+                    <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
+                      <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
+                      <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.title}</Text>
+                    </Text>
+                    <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
+                    <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
+                  </View>
+
+                  {item.amount > 0 && (
+                    <View style={styles.feedRight}>
+                      <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
+                        {formatCurrency(item.amount)}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View style={styles.feedContent}>
-                  <Text style={[styles.feedTitle, { color: colors.onSurface }]}>{item.title}</Text>
-                  <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
-                </View>
-                <View style={styles.feedRight}>
-                  <Text style={[styles.feedAmount, { color: colors.primary }]}>{formatCurrency(item.amount)}</Text>
-                  <Text style={[styles.feedDate, { color: colors.onSurfaceVariant }]}>{item.date}</Text>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -109,42 +150,51 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
     gap: Spacing.md,
   },
-  headerTitle: { ...Typography.headlineLgMobile },
+  headerTitle: { ...Typography.headlineLgMobile, fontWeight: '700' },
   headerSub: { ...Typography.bodyMd, marginTop: Spacing.xs, marginBottom: Spacing.xs },
   loadingBox: { paddingVertical: Spacing.xxl, alignItems: 'center' },
   emptyCard: {
     padding: Spacing.xl,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.xl,
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: Spacing.sm,
     borderWidth: 1,
-    marginTop: Spacing.md,
+    marginTop: Spacing.lg,
+    ...Shadows.card,
   },
-  emptyEmoji: { fontSize: 36 },
-  emptyTitle: { ...Typography.titleMd },
-  emptySub: { ...Typography.bodyMd, textAlign: 'center' },
-  feedList: { gap: Spacing.sm },
+  emptyIconBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  emptyTitle: { ...Typography.titleLg, fontWeight: '700' },
+  emptySub: { ...Typography.bodyMd, textAlign: 'center', paddingHorizontal: 20 },
+  feedList: { gap: Spacing.md },
   feedCard: {
     flexDirection: 'row',
-    alignItems: 'center',
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     borderWidth: 1,
     ...Shadows.card,
   },
-  feedIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  actorAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  feedEmoji: { fontSize: 18 },
-  feedContent: { flex: 1 },
-  feedTitle: { ...Typography.titleSm, fontWeight: '600' },
-  feedSubtitle: { ...Typography.labelMd, marginTop: 2 },
-  feedRight: { alignItems: 'flex-end' },
-  feedAmount: { ...Typography.titleMd, fontWeight: '600' },
-  feedDate: { ...Typography.labelMd, marginTop: 2 },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarLetter: { ...Typography.titleMd, fontWeight: '700' },
+  feedContent: { flex: 1, gap: 2 },
+  feedTitle: { ...Typography.bodyLg, lineHeight: 20 },
+  feedSubtitle: { ...Typography.bodyMd, opacity: 0.8 },
+  feedDate: { ...Typography.labelMd, marginTop: 4 },
+  feedRight: { justifyContent: 'center' },
+  feedAmount: { ...Typography.titleMd, fontWeight: '700' },
 });
