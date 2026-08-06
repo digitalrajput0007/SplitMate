@@ -246,6 +246,16 @@ export const addContactToUserFirestore = async (currentUid: string, contactUid: 
   }
 };
 
+export const removeContactFromUserFirestore = async (currentUid: string, contactUid: string): Promise<void> => {
+  try {
+    const userContactRef = doc(db, 'users', currentUid, 'user_contacts', contactUid);
+    await deleteDoc(userContactRef);
+  } catch (error) {
+    console.error('Error removing user contact:', error);
+    throw error;
+  }
+};
+
 export const getSavedUserContactsFromFirestore = async (currentUid: string): Promise<UserProfile[]> => {
   try {
     const contactsSnap = await getDocs(collection(db, 'users', currentUid, 'user_contacts'));

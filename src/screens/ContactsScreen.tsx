@@ -17,10 +17,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
-import { UserProfile, getSavedUserContactsFromFirestore } from '../services/firestoreService';
+import { UserProfile, getSavedUserContactsFromFirestore, removeContactFromUserFirestore } from '../services/firestoreService';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import { Alert } from 'react-native';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -51,13 +52,43 @@ export default function ContactsScreen() {
         return;
       }
       const savedContacts = await getSavedUserContactsFromFirestore(currentUser.uid);
-      setAddedContacts(savedContacts);
-      setFilteredContacts(savedContacts);
+
+      // Sort alphabetically
+      const sorted = [...savedContacts].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '')
+      );
+
+      setAddedContacts(sorted);
+      setFilteredContacts(sorted);
     } catch (e) {
       console.log('Error loading added contacts:', e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRemoveContact = async (contact: UserProfile) => {
+    if (!currentUser?.uid) return;
+
+    Alert.alert(
+      'Remove Contact',
+      `Are you sure you want to remove ${contact.name} from your contacts?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeContactFromUserFirestore(currentUser.uid, contact.uid);
+              fetchAddedContacts();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to remove contact.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSearch = (text: string) => {
@@ -94,6 +125,13 @@ export default function ContactsScreen() {
             {item.email || item.mobile || 'SplitMate User'}
           </Text>
         </View>
+        <TouchableOpacity
+          style={styles.removeBtn}
+          onPress={() => handleRemoveContact(item)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <MaterialIcons name="person-remove" size={20} color={colors.outline} />
+        </TouchableOpacity>
       </View>
     );
   };
@@ -111,7 +149,7 @@ export default function ContactsScreen() {
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Loading contacts...</Text>
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing contacts...</Text>
         </View>
       ) : addedContacts.length === 0 ? (
         <ScrollView
@@ -119,7 +157,7 @@ export default function ContactsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Card Graphic */}
-          <View style={[styles.emptyCardContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+          <View style={[styles.emptyCardContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
             <View style={[styles.bluePlusBadge, { backgroundColor: colors.primary }]}>
               <MaterialIcons name="person-add" size={18} color={colors.onPrimary} />
             </View>
@@ -137,7 +175,7 @@ export default function ContactsScreen() {
           {/* Main Title & Subtitle */}
           <Text style={[styles.emptyMainTitle, { color: colors.onBackground }]}>No friends added yet</Text>
           <Text style={[styles.emptyMainSub, { color: colors.onSurfaceVariant }]}>
-            Add friends from your phone contacts or search by email/phone to start splitting bills cleanly.
+            Sync your phone contacts or search by email/phone to start splitting bills cleanly.
           </Text>
 
           {/* Primary CTA */}
@@ -146,8 +184,8 @@ export default function ContactsScreen() {
             onPress={() => navigation.navigate('InviteContacts')}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="person-add" size={22} color={colors.onPrimary} />
-            <Text style={[styles.inviteNowPrimaryText, { color: colors.onPrimary }]}>Add Friends & Contacts</Text>
+            <MaterialIcons name="sync" size={22} color={colors.onPrimary} />
+            <Text style={[styles.inviteNowPrimaryText, { color: colors.onPrimary }]}>Sync & Add Friends</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -265,6 +303,10 @@ const styles = StyleSheet.create({
   contactInfo: { flex: 1 },
   contactName: { ...Typography.titleSm, fontWeight: '600' },
   contactSub: { ...Typography.bodyMd, marginTop: 2 },
+  removeBtn: {
+    padding: 8,
+    marginLeft: 4,
+  },
   chatIconBtn: {
     width: 36,
     height: 36,
