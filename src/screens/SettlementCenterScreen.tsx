@@ -222,7 +222,7 @@ export default function SettlementCenterScreen({ navigation }: Props) {
                   style={[styles.primaryAction, { backgroundColor: colors.primary }]}
                   onPress={() => navigation.navigate('SettleUp', { groupId: debt.groupId })}
                 >
-                  <Ionicons name="logo-google-playstore" size={16} color={colors.onPrimary} />
+                  <MaterialIcons name="payments" size={16} color={colors.onPrimary} />
                   <Text style={[styles.actionTxt, { color: colors.onPrimary }]}>Pay via UPI</Text>
                 </TouchableOpacity>
               ) : (

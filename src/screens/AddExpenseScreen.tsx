@@ -23,6 +23,7 @@ import {
   GroupData,
   UserProfile,
 } from '../services/firestoreService';
+import { uploadExpenseReceipt } from '../services/storageService';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 
@@ -55,9 +56,22 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const handleSave = async (formData: ExpenseFormData) => {
     setSubmitting(true);
     try {
+      // 1. Upload receipt if it's a local URI
+      let finalReceiptUrl = formData.receiptUrl;
+      if (formData.receiptUrl && (formData.receiptUrl.startsWith('file://') || formData.receiptUrl.startsWith('content://'))) {
+        try {
+          const tempId = `expense_${Date.now()}`;
+          finalReceiptUrl = await uploadExpenseReceipt(tempId, formData.receiptUrl);
+        } catch (uploadErr) {
+          console.error('Receipt upload failed:', uploadErr);
+          finalReceiptUrl = ''; // Clear it so we don't save local URI
+        }
+      }
+
       await addExpenseToFirestore({
         groupId: groupId || '',
         ...formData,
+        receiptUrl: finalReceiptUrl,
       });
       navigation.goBack();
     } catch (error: any) {

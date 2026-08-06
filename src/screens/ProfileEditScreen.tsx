@@ -98,11 +98,14 @@ export default function ProfileEditScreen({ navigation }: Props) {
       if (currentUser) {
         // 1. Upload photo if it's a local URI
         let finalPhotoUrl = photoUrl;
-        if (photoUrl && (photoUrl.startsWith('file://') || !photoUrl.startsWith('http'))) {
+        if (photoUrl && (photoUrl.startsWith('file://') || photoUrl.startsWith('content://') || !photoUrl.startsWith('http'))) {
           try {
             finalPhotoUrl = await uploadUserProfilePhoto(currentUser.uid, photoUrl);
           } catch (uploadErr) {
             console.error('Photo upload failed:', uploadErr);
+            // If upload fails, we don't want to save the local URI to Firestore
+            finalPhotoUrl = '';
+            Alert.alert('Upload Failed', 'We couldn\'t upload your profile photo. Saving other changes...');
           }
         }
 

@@ -147,7 +147,16 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
 
     if (profile.name !== undefined) dataToSave.name = profile.name;
     if (profile.email !== undefined) dataToSave.email = profile.email;
-    if (profile.photoUrl !== undefined) dataToSave.photoUrl = profile.photoUrl;
+
+    // Safety: Never allow local URIs to be saved to Firestore users collection
+    if (profile.photoUrl !== undefined) {
+      if (profile.photoUrl.startsWith('file://') || profile.photoUrl.startsWith('content://')) {
+        console.warn('Attempted to save local URI to users collection. Blocking photo update.');
+      } else {
+        dataToSave.photoUrl = profile.photoUrl;
+      }
+    }
+
     if (profile.paymentHandle !== undefined) dataToSave.paymentHandle = profile.paymentHandle;
     if (profile.paymentMethods !== undefined) dataToSave.paymentMethods = profile.paymentMethods;
     if (profile.dob !== undefined) dataToSave.dob = profile.dob;
@@ -428,6 +437,13 @@ export const inviteMemberToGroup = async (
 export const updateGroupInFirestore = async (groupId: string, data: Partial<GroupData>) => {
   try {
     const groupRef = doc(db, 'groups', groupId);
+
+    // Safety: Never allow local URIs to be saved to Firestore
+    if (data.photoUrl && (data.photoUrl.startsWith('file://') || data.photoUrl.startsWith('content://'))) {
+      console.warn('Attempted to save local URI to Firestore. Blocking photo update.');
+      delete data.photoUrl;
+    }
+
     await setDoc(groupRef, { ...data, updatedAt: serverTimestamp() }, { merge: true });
   } catch (error) {
     console.error('Error updating group:', error);

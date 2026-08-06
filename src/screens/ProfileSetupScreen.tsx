@@ -163,11 +163,12 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
       // 1. Upload photo if it's a local URI
       let finalPhotoUrl = photoUrl;
-      if (photoUrl && (photoUrl.startsWith('file://') || !photoUrl.startsWith('http'))) {
+      if (photoUrl && (photoUrl.startsWith('file://') || photoUrl.startsWith('content://') || !photoUrl.startsWith('http'))) {
         try {
           finalPhotoUrl = await uploadUserProfilePhoto(activeUser.uid, photoUrl);
         } catch (uploadErr) {
-          console.error('Photo upload failed, using local URI fallback:', uploadErr);
+          console.error('Photo upload failed:', uploadErr);
+          finalPhotoUrl = ''; // Clear so we don't save local URI
         }
       }
 

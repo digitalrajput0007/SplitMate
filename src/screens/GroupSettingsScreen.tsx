@@ -192,11 +192,12 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
       // 1. Upload photo if it's a local URI
       let finalPhotoUrl = groupPhoto || '';
-      if (groupPhoto && (groupPhoto.startsWith('file://') || !groupPhoto.startsWith('http'))) {
+      if (groupPhoto && (groupPhoto.startsWith('file://') || groupPhoto.startsWith('content://') || !groupPhoto.startsWith('http'))) {
         try {
           finalPhotoUrl = await uploadGroupPhoto(groupId, groupPhoto);
         } catch (uploadErr) {
           console.error('Group photo upload failed:', uploadErr);
+          finalPhotoUrl = ''; // Clear to prevent local URI save
         }
       }
 

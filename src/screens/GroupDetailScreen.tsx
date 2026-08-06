@@ -44,6 +44,14 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const [pendingMembers, setPendingMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Map for easy profile lookups (Reactive)
+  const memberProfilesMap = useMemo(() => {
+    const map = new Map<string, UserProfile>();
+    activeMembers.forEach(u => map.set(u.uid, u));
+    pendingMembers.forEach(u => map.set(u.uid, u));
+    return map;
+  }, [activeMembers, pendingMembers]);
+
   useEffect(() => {
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
       if (data) setGroup(data);
@@ -203,7 +211,8 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           ) : (
             <View style={[styles.expensesContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
               {expenses.map((item, index) => {
-                const payerName = memberNamesMap[item.paidBy] || 'Member';
+                const payerProfile = memberProfilesMap.get(item.paidBy);
+                const payerName = item.paidBy === currentUid ? 'You' : (payerProfile?.name || 'Member');
                 const isLast = index === expenses.length - 1;
                 const dateStr = item.createdAt
                   ? new Date((item.createdAt as any).seconds * 1000).toLocaleDateString('en-IN', {

@@ -232,13 +232,14 @@ export default function CreateGroupModal({ navigation }: Props) {
 
       // 1. Pre-upload photo if it exists
       let finalPhotoUrl = groupPhoto || undefined;
-      if (groupPhoto && (groupPhoto.startsWith('file://') || !groupPhoto.startsWith('http'))) {
+      if (groupPhoto && (groupPhoto.startsWith('file://') || groupPhoto.startsWith('content://'))) {
         try {
           // Use a temporary unique name for the path
           const tempId = `new_group_${Date.now()}`;
           finalPhotoUrl = await uploadGroupPhoto(tempId, groupPhoto);
         } catch (uploadErr) {
           console.error('Group photo upload failed:', uploadErr);
+          finalPhotoUrl = undefined; // Ensure we don't save local path
         }
       }
 

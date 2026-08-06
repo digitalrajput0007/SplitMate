@@ -260,74 +260,65 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             return (
               <View
                 key={debt.id}
-                style={[styles.debtCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+                style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
               >
-                <View style={styles.debtHeaderRow}>
-                  {/* Member Photo */}
-                  <View style={[styles.avatarCircle, { backgroundColor: colors.primaryFixed }]}>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.avatarBox, { backgroundColor: colors.primaryFixed }]}>
                     {otherUser.photo ? (
-                      <Image source={{ uri: otherUser.photo }} style={styles.avatarImg} />
+                      <Image source={{ uri: otherUser.photo }} style={styles.avatar} />
                     ) : (
-                      <Text style={[styles.avatarText, { color: colors.primary }]}>
-                        {otherUser.name.charAt(0).toUpperCase()}
+                      <Text style={[styles.avatarTxt, { color: colors.primary }]}>{otherUser.name.charAt(0)}</Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.name, { color: colors.onSurface }]}>{otherUser.name}</Text>
+                    {isIowe && otherUser.handle ? (
+                      <Text style={[styles.groupName, { color: colors.primary, fontWeight: '600' }]}>
+                        UPI: {otherUser.handle}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.groupName, { color: colors.onSurfaceVariant }]}>
+                        {group?.name || 'Group'}
                       </Text>
                     )}
                   </View>
-
-                  <View style={styles.debtInfo}>
-                    <Text style={[styles.debtName, { color: colors.onSurface }]}>{otherUser.name}</Text>
-                    {isIowe && (
-                      <Text style={[styles.upiSub, { color: otherUser.handle ? colors.primary : colors.onSurfaceVariant }]}>
-                        {otherUser.handle ? `UPI: ${otherUser.handle}` : 'NO UPI ID ADDED'}
-                      </Text>
-                    )}
-                  </View>
-
-                  <Text style={[styles.debtAmount, { color: isOtherOwesMe ? colors.positive : colors.error }]}>
+                  <Text style={[styles.amount, { color: isOtherOwesMe ? colors.positive : colors.error }]}>
                     {formatCurrency(debt.amount)}
                   </Text>
                 </View>
 
-                {/* Actions Row */}
-                <View style={styles.actionsRow}>
+                <View style={styles.actions}>
                   {isIowe ? (
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: otherUser.handle ? colors.primary : colors.surfaceContainerLow }]}
-                      onPress={() => handlePayViaUPI(debt)}
-                      disabled={!otherUser.handle}
-                    >
-                      <MaterialIcons
-                        name="account-balance-wallet"
-                        size={18}
-                        color={otherUser.handle ? '#fff' : colors.outline}
-                      />
-                      <Text style={[styles.actionBtnText, { color: otherUser.handle ? '#fff' : colors.outline }]}>
-                        Pay via UPI
-                      </Text>
-                    </TouchableOpacity>
+                    <>
+                      {otherUser.handle ? (
+                        <TouchableOpacity
+                          style={[styles.primaryAction, { backgroundColor: colors.primary }]}
+                          onPress={() => handlePayViaUPI(debt)}
+                        >
+                          <MaterialIcons name="payments" size={16} color="#fff" />
+                          <Text style={[styles.actionTxt, { color: '#fff' }]}>Pay via UPI</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.disabledAction, { backgroundColor: colors.surfaceContainerLow }]}>
+                          <Text style={[styles.actionTxt, { color: colors.outline }]}>No UPI Available</Text>
+                        </View>
+                      )}
+                    </>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: colors.secondaryContainer }]}
+                      style={[styles.primaryAction, { backgroundColor: colors.secondaryContainer }]}
                       onPress={() => handleSendReminder(debt)}
-                      disabled={isReminding}
                     >
-                      {isReminding ? <ActivityIndicator size="small" color={colors.onSecondaryContainer} /> : (
-                        <>
-                          <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} />
-                          <Text style={[styles.actionBtnText, { color: colors.onSecondaryContainer }]}>Remind</Text>
-                        </>
-                      )}
+                      <MaterialIcons name="notifications-active" size={16} color={colors.onSecondaryContainer} />
+                      <Text style={[styles.actionTxt, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
                     </TouchableOpacity>
                   )}
 
                   <TouchableOpacity
-                    style={[styles.settleBtn, { borderColor: colors.outlineVariant, borderWidth: 1 }]}
+                    style={[styles.secondaryAction, { borderColor: colors.outlineVariant }]}
                     onPress={() => handleRecordSettlement(debt)}
-                    disabled={isSettling}
                   >
-                    {isSettling ? <ActivityIndicator color={colors.primary} size="small" /> : (
-                      <Text style={[styles.settleBtnText, { color: colors.onSurface }]}>Mark Settled</Text>
-                    )}
+                    <Text style={[styles.secondaryActionTxt, { color: colors.onSurface }]}>Mark Settled</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -375,25 +366,25 @@ const styles = StyleSheet.create({
   settledEmoji: { fontSize: 36 },
   settledTitle: { ...Typography.titleMd },
   settledSub: { ...Typography.bodyMd },
-  debtCard: {
-    borderRadius: 20,
-    padding: 16,
+  card: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.md,
     borderWidth: 1,
-    gap: 16,
+    gap: Spacing.md,
     ...Shadows.card,
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.md,
   },
-  debtHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImg: { width: '100%', height: '100%' },
-  avatarText: { ...Typography.titleLg, fontWeight: '700' },
-  debtInfo: { flex: 1 },
-  debtName: { ...Typography.titleSm, fontWeight: '700' },
-  upiSub: { ...Typography.bodySm, fontSize: 10, marginTop: 2 },
-  debtAmount: { ...Typography.titleMd, fontWeight: '700' },
-  actionsRow: { flexDirection: 'row', gap: Spacing.sm },
-  actionBtn: { flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.lg, height: 40, gap: 6 },
-  actionBtnText: { ...Typography.labelMd, fontWeight: '700' },
-  settleBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius: BorderRadius.lg, height: 40 },
-  settleBtnText: { ...Typography.labelMd, fontWeight: '600' },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  avatarBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatar: { width: '100%', height: '100%' },
+  avatarTxt: { ...Typography.titleMd, fontWeight: '700' },
+  name: { ...Typography.titleSm, fontWeight: '700' },
+  groupName: { ...Typography.bodySm, fontSize: 11 },
+  amount: { ...Typography.titleMd, fontWeight: '800' },
+  actions: { flexDirection: 'row', gap: Spacing.sm },
+  primaryAction: { flex: 1.2, height: 40, borderRadius: BorderRadius.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  disabledAction: { flex: 1.2, height: 40, borderRadius: BorderRadius.lg, alignItems: 'center', justifyContent: 'center' },
+  secondaryAction: { flex: 1, height: 40, borderRadius: BorderRadius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  actionTxt: { ...Typography.labelMd, fontWeight: '700' },
+  secondaryActionTxt: { ...Typography.labelMd, fontWeight: '600' },
 });
