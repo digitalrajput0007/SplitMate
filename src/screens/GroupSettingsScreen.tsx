@@ -26,9 +26,11 @@ import {
   updateGroupInFirestore,
   deleteGroupFromFirestore,
   cancelGroupInvitation,
-  getGroupMembersInvitationStatus,
+  leaveGroupInFirestore,
+  subscribeToGroupExpenses,
   GroupData,
   UserProfile,
+  ExpenseData,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
@@ -65,6 +67,9 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [userExpenses, setUserExpenses] = useState<ExpenseData[]>([]);
+
+  const isOwner = group?.createdBy === currentUser?.uid;
 
   const loadMembersStatus = async (gId: string) => {
     const res = await getGroupMembersInvitationStatus(gId);
@@ -87,9 +92,76 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           loadMembersStatus(groupId);
         }
       });
-      return () => unsub();
+
+      const unsubExp = subscribeToGroupExpenses(groupId, (expList) => {
+        setUserExpenses(expList);
+      });
+
+      return () => {
+        unsub();
+        unsubExp();
+      };
     }
   }, [groupId]);
+
+  const calculateUserBalance = () => {
+    let balance = 0;
+    const uid = currentUser?.uid;
+    if (!uid) return 0;
+
+    userExpenses.forEach((item) => {
+      const amt = item.amount || 0;
+      const splits = item.splitDetails || {};
+      if (item.paidBy === uid) {
+        const myShare = splits[uid] || 0;
+        balance += (amt - myShare);
+      } else if (splits[uid]) {
+        balance -= splits[uid];
+      }
+    });
+    return Math.round(balance * 100) / 100;
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!groupId || !currentUser?.uid) return;
+
+    if (isOwner) {
+      Alert.alert('Cannot Leave', 'As the owner, you must delete the group or transfer ownership before leaving.');
+      return;
+    }
+
+    const currentBalance = calculateUserBalance();
+    if (Math.abs(currentBalance) > 0.05) {
+      Alert.alert(
+        'Outstanding Balance',
+        `You cannot leave the group until your balance is zero. Your current balance: ${formatCurrency(currentBalance)}.`
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Leave Group',
+      'Are you sure you want to leave this group? You will no longer be able to see expenses or contribute.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await leaveGroupInFirestore(groupId, currentUser.uid);
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MainTabs' }],
+              });
+            } catch (e) {
+              Alert.alert('Error', 'Failed to leave group.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handlePickPhoto = async () => {
     try {
@@ -243,21 +315,27 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        {/* Photo Upload - Restored with Initials and Remove Option */}
+        {/* Photo Upload */}
         <View style={styles.photoUploadCenter}>
-          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]}
+            onPress={isOwner ? handlePickPhoto : undefined}
+            activeOpacity={isOwner ? 0.8 : 1}
+          >
             {groupPhoto ? (
               <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
             ) : (
               <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{groupInitials}</Text>
             )}
-            <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
-              <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
-            </View>
+            {isOwner && (
+              <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+                <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
+              </View>
+            )}
           </TouchableOpacity>
 
           <View style={styles.photoActions}>
-            {groupPhoto ? (
+            {isOwner && groupPhoto ? (
               <TouchableOpacity onPress={handleRemovePhoto}>
                 <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
@@ -269,15 +347,16 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         <View style={styles.inputGroup}>
           <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group name</Text>
           <TextInput
-            style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }]}
+            style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }, !isOwner && { opacity: 0.7 }]}
             placeholder="e.g., Goa Trip"
             placeholderTextColor={colors.outline}
             value={groupName}
             onChangeText={setGroupName}
+            editable={isOwner}
           />
         </View>
 
-        {/* Group Type Selector - Identical to Create Group */}
+        {/* Group Type Selector */}
         <View style={styles.inputGroup}>
           <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group type</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.singleRowTypeContainer}>
@@ -291,10 +370,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     {
                       backgroundColor: isSelected ? colors.primary : colors.surfaceContainerLowest,
                       borderColor: isSelected ? colors.primary : colors.outlineVariant,
-                      borderWidth: isSelected ? 0 : 1
+                      borderWidth: isSelected ? 0 : 1,
+                      opacity: isOwner || isSelected ? 1 : 0.5
                     },
                   ]}
-                  onPress={() => setGroupType(t.id)}
+                  onPress={isOwner ? () => setGroupType(t.id) : undefined}
                   activeOpacity={0.8}
                 >
                   <MaterialIcons
@@ -312,15 +392,15 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           </ScrollView>
         </View>
 
-        {/* Conditional Fields - Identical to Create Group */}
+        {/* Conditional Fields */}
         {groupType === 'Trip' && (
           <View style={styles.inputGroup}>
             <View style={styles.datesRow}>
               <View style={styles.dateCol}>
                 <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
                 <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
-                  onPress={() => setPickerMode('start')}
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('start') : undefined}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
@@ -331,8 +411,8 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
               <View style={styles.dateCol}>
                 <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
                 <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
-                  onPress={() => setPickerMode('end')}
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('end') : undefined}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
@@ -340,21 +420,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               </View>
             </View>
-
-            {pickerMode && (
-              <DateTimePicker
-                value={pickerMode === 'start' ? startDate : endDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={(event, selected) => {
-                  setPickerMode(null);
-                  if (selected) {
-                    if (pickerMode === 'start') setStartDate(selected);
-                    else setEndDate(selected);
-                  }
-                }}
-              />
-            )}
           </View>
         )}
 
@@ -362,55 +427,61 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
             <TextInput
-              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }]}
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }, !isOwner && { opacity: 0.7 }]}
               placeholder="e.g., The Sharma Household"
               placeholderTextColor={colors.outline}
               value={familyName}
               onChangeText={setFamilyName}
+              editable={isOwner}
             />
           </View>
         )}
 
         {groupType === 'Flatmate' && (
-          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
+          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
               <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
             </View>
             <Switch
               value={setupMonthlySplit}
-              onValueChange={setSetupMonthlySplit}
+              onValueChange={isOwner ? setSetupMonthlySplit : undefined}
               trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
               thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
+              disabled={!isOwner}
             />
           </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.saveBtn, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
-          onPress={handleUpdateGroup}
-          activeOpacity={0.85}
-          disabled={saving}
-        >
-          {saving ? (
-            <ActivityIndicator color={colors.onPrimary} size="small" />
-          ) : (
-            <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Update Group</Text>
-          )}
-        </TouchableOpacity>
+        {isOwner && (
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            onPress={handleUpdateGroup}
+            activeOpacity={0.85}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color={colors.onPrimary} size="small" />
+            ) : (
+              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Update Group</Text>
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Section 2: Members */}
         <View style={styles.section}>
           <View style={styles.membersHeaderRow}>
             <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
-            <TouchableOpacity
-              style={styles.addMemberBtn}
-              onPress={() => setShowAddMemberModal(true)}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="person-add" size={18} color={colors.primary} />
-              <Text style={[styles.addMemberText, { color: colors.primary }]}>Add Members</Text>
-            </TouchableOpacity>
+            {isOwner && (
+              <TouchableOpacity
+                style={styles.addMemberBtn}
+                onPress={() => setShowAddMemberModal(true)}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="person-add" size={18} color={colors.primary} />
+                <Text style={[styles.addMemberText, { color: colors.primary }]}>Add Members</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={[styles.membersCardContainer, { backgroundColor: colors.surfaceContainerLowest }]}>
@@ -441,7 +512,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     </View>
                   </View>
 
-                  {!isMe && (
+                  {isOwner && !isMe && (
                     <TouchableOpacity
                       style={styles.removeIconBtn}
                       onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
@@ -478,12 +549,14 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                   </View>
                 </View>
 
-                <TouchableOpacity
-                  style={styles.removeIconBtn}
-                  onPress={() => handleCancelInvite(u)}
-                >
-                  <MaterialIcons name="close" size={20} color={colors.error} />
-                </TouchableOpacity>
+                {isOwner && (
+                  <TouchableOpacity
+                    style={styles.removeIconBtn}
+                    onPress={() => handleCancelInvite(u)}
+                  >
+                    <MaterialIcons name="close" size={20} color={colors.error} />
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
           </View>
@@ -491,14 +564,25 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
         {/* Section 3: Danger Zone */}
         <View style={styles.dangerSection}>
-          <TouchableOpacity
-            style={[styles.deleteGroupBtn, { backgroundColor: isDark ? 'rgba(186, 26, 26, 0.15)' : 'rgba(186, 26, 26, 0.08)', borderColor: 'rgba(186, 26, 26, 0.2)' }]}
-            onPress={handleDeleteGroup}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="delete-forever" size={22} color={colors.error} />
-            <Text style={[styles.deleteGroupText, { color: colors.error }]}>Delete Group</Text>
-          </TouchableOpacity>
+          {isOwner ? (
+            <TouchableOpacity
+              style={[styles.deleteGroupBtn, { backgroundColor: isDark ? 'rgba(186, 26, 26, 0.15)' : 'rgba(186, 26, 26, 0.08)', borderColor: 'rgba(186, 26, 26, 0.2)' }]}
+              onPress={handleDeleteGroup}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="delete-forever" size={22} color={colors.error} />
+              <Text style={[styles.deleteGroupText, { color: colors.error }]}>Delete Group</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.deleteGroupBtn, { backgroundColor: isDark ? 'rgba(186, 26, 26, 0.15)' : 'rgba(186, 26, 26, 0.08)', borderColor: 'rgba(186, 26, 26, 0.2)' }]}
+              onPress={handleLeaveGroup}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="exit-to-app" size={22} color={colors.error} />
+              <Text style={[styles.deleteGroupText, { color: colors.error }]}>Leave Group</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

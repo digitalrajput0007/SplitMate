@@ -61,16 +61,32 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         const allUsers = await getAllUsersFromFirestore();
         const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
 
-        groupData.memberIds.forEach((uid) => {
-          const user = allUsers.find((u) => u.uid === uid);
-          if (user) {
-            profiles[uid] = {
-              name: uid === currentUid ? 'You' : user.name,
+        // Resolve status by fetching invitations
+        const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
+        const invSnap = await getDocs(invQuery);
+        const acceptedUids = new Set<string>();
+        acceptedUids.add(groupData.createdBy); // Creator always accepted
+        invSnap.docs.forEach(d => {
+          if (d.data().status === 'accepted') {
+            acceptedUids.add(d.data().toUserId);
+          }
+        });
+
+        // Filter: Resolve profiles ONLY for members who have accepted
+        allUsers.forEach((user) => {
+          if (acceptedUids.has(user.uid)) {
+            profiles[user.uid] = {
+              name: user.uid === currentUid ? 'You' : user.name,
               paymentHandle: user.paymentHandle || '',
               photoUrl: user.photoUrl || '',
             };
           }
         });
+
+        if (!profiles[currentUid]) {
+          profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '' };
+        }
+
         setMemberProfiles(profiles);
       }
     });

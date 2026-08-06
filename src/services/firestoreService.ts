@@ -633,20 +633,28 @@ export const subscribeToUserGroups = (
   );
 };
 
-export const getGroupMembersInvitationStatus = async (
-  groupId: string
-): Promise<{ acceptedUsers: UserProfile[]; pendingUsers: UserProfile[] }> => {
-  try {
-    const groupRef = doc(db, 'groups', groupId);
-    const gSnap = await getDoc(groupRef);
-    if (!gSnap.exists()) return { acceptedUsers: [], pendingUsers: [] };
+export const subscribeToAcceptedMembers = (
+  groupId: string,
+  onUpdate: (members: UserProfile[], pending: UserProfile[]) => void
+) => {
+  const groupRef = doc(db, 'groups', groupId);
+
+  return onSnapshot(groupRef, async (gSnap) => {
+    if (!gSnap.exists()) {
+      onUpdate([], []);
+      return;
+    }
 
     const groupData = gSnap.data() as GroupData;
     const memberIds = groupData.memberIds || [];
+    const createdBy = groupData.createdBy;
+
+    // Fetch all user profiles once
     const allUsers = await getAllUsersFromFirestore();
     const userMap = new Map<string, UserProfile>();
     allUsers.forEach((u) => userMap.set(u.uid, u));
 
+    // Fetch invitations for this group to check status
     const invQuery = query(
       collection(db, 'groupInvitations'),
       where('groupId', '==', groupId)
@@ -658,30 +666,28 @@ export const getGroupMembersInvitationStatus = async (
       invMap.set(data.toUserId, data.status);
     });
 
-    const acceptedUsers: UserProfile[] = [];
-    const pendingUsers: UserProfile[] = [];
+    const accepted: UserProfile[] = [];
+    const pending: UserProfile[] = [];
 
     memberIds.forEach((uid) => {
       const user = userMap.get(uid);
       if (!user) return;
 
-      if (uid === groupData.createdBy) {
-        acceptedUsers.push(user);
+      // Creator is always accepted
+      if (uid === createdBy) {
+        accepted.push(user);
       } else {
         const status = invMap.get(uid);
-        if (status === 'pending') {
-          pendingUsers.push(user);
-        } else {
-          acceptedUsers.push(user);
+        if (status === 'accepted') {
+          accepted.push(user);
+        } else if (!status || status === 'pending') {
+          pending.push(user);
         }
       }
     });
 
-    return { acceptedUsers, pendingUsers };
-  } catch (error) {
-    console.error('Error fetching group members invitation status:', error);
-    return { acceptedUsers: [], pendingUsers: [] };
-  }
+    onUpdate(accepted, pending);
+  });
 };
 
 export const subscribeToGroupDetail = (
@@ -1331,5 +1337,37 @@ export const markNotificationAsRead = async (notificationId: string) => {
     await updateDoc(ref, { read: true });
   } catch (error) {
     console.error('Error marking notification as read:', error);
+  }
+};
+
+export const leaveGroupInFirestore = async (groupId: string, uid: string) => {
+  try {
+    const groupRef = doc(db, 'groups', groupId);
+    const snap = await getDoc(groupRef);
+    if (!snap.exists()) throw new Error('Group not found');
+
+    const data = snap.data() as GroupData;
+    const updatedMemberIds = (data.memberIds || []).filter(id => id !== uid);
+
+    await updateDoc(groupRef, {
+      memberIds: updatedMemberIds,
+      updatedAt: serverTimestamp(),
+    });
+
+    // Also mark any invitations as 'declined' so they don't reappear
+    const invQuery = query(
+      collection(db, 'groupInvitations'),
+      where('groupId', '==', groupId),
+      where('toUserId', '==', uid)
+    );
+    const invSnap = await getDocs(invQuery);
+    for (const d of invSnap.docs) {
+      await updateDoc(d.ref, { status: 'declined', updatedAt: serverTimestamp() });
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error leaving group:', error);
+    throw error;
   }
 };

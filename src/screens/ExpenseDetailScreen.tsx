@@ -132,6 +132,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const members = Object.entries(memberMap).map(([uid, name]) => ({ uid, name }));
 
   const payerName = expense ? (memberMap[expense.paidBy] || 'Unknown') : 'Unknown';
+  const isCreator = expense?.paidBy === currentUser?.uid;
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'Recent';
@@ -181,9 +182,13 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
         <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>
           {isEditing ? 'Edit Expense' : 'Expense Details'}
         </Text>
-        <TouchableOpacity style={styles.backBtn} onPress={() => setIsEditing(!isEditing)}>
-          <MaterialIcons name={isEditing ? 'close' : 'edit'} size={22} color={colors.primary} />
-        </TouchableOpacity>
+        {isCreator ? (
+          <TouchableOpacity style={styles.backBtn} onPress={() => setIsEditing(!isEditing)}>
+            <MaterialIcons name={isEditing ? 'close' : 'edit'} size={22} color={colors.primary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
       </View>
 
       {isEditing ? (
@@ -266,17 +271,31 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
             </Text>
           </View>
 
-          {/* 7. Danger Zone */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.deleteBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.errorContainer }]}
-              onPress={handleDelete}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="delete-outline" size={20} color={colors.error} />
-              <Text style={[styles.deleteBtnText, { color: colors.error }]}>Delete Expense</Text>
+          {/* 7. Secondary Actions */}
+          <View style={styles.secondaryActions}>
+            <TouchableOpacity style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}>
+              <MaterialIcons name="comment" size={18} color={colors.primary} />
+              <Text style={[styles.actionChipText, { color: colors.onSurface }]}>Comments</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}>
+              <MaterialIcons name="share" size={18} color={colors.primary} />
+              <Text style={[styles.actionChipText, { color: colors.onSurface }]}>Share</Text>
             </TouchableOpacity>
           </View>
+
+          {/* 8. Danger Zone (Owner Only) */}
+          {isCreator && (
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.deleteBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.errorContainer }]}
+                onPress={handleDelete}
+                activeOpacity={0.8}
+              >
+                <MaterialIcons name="delete-outline" size={20} color={colors.error} />
+                <Text style={[styles.deleteBtnText, { color: colors.error }]}>Delete Expense</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -390,6 +409,20 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   metadataText: { ...Typography.labelMd, fontStyle: 'italic' },
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  actionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.full,
+  },
+  actionChipText: { ...Typography.labelLg },
   actionsRow: { marginTop: Spacing.md, marginBottom: Spacing.xl },
   deleteBtn: {
     flexDirection: 'row',

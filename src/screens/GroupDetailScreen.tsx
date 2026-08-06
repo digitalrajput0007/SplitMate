@@ -21,6 +21,7 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToGroupExpenses,
   subscribeToGroupDetail,
+  subscribeToAcceptedMembers,
   getUserProfileFromFirestore,
   getAllUsersFromFirestore,
   ExpenseData,
@@ -39,22 +40,18 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
-  const [memberMap, setMemberMap] = useState<Record<string, string>>({});
+  const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubGroup = subscribeToGroupDetail(groupId, async (data) => {
-      if (data) {
-        setGroup(data);
-        // Fetch all users to resolve names from UIDs
-        const allUsers = await getAllUsersFromFirestore();
-        const mapping: Record<string, string> = {};
-        data.memberIds.forEach((uid) => {
-          const user = allUsers.find(u => u.uid === uid);
-          mapping[uid] = user ? (uid === currentUid ? 'You' : user.name) : 'Member';
-        });
-        setMemberMap(mapping);
-      }
+    const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
+      if (data) setGroup(data);
+    });
+
+    const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending) => {
+      setActiveMembers(accepted);
+      setPendingMembers(pending);
     });
 
     const unsubExpenses = subscribeToGroupExpenses(groupId, (expList) => {
@@ -64,13 +61,19 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
     return () => {
       unsubGroup();
+      unsubMembers();
       unsubExpenses();
     };
   }, [groupId, currentUid]);
 
   const groupName = group?.name || 'Group Details';
-  const memberCount = group?.memberIds?.length || 0;
+  const memberCount = activeMembers.length;
   const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+  const memberNamesMap = activeMembers.reduce((acc, m) => {
+    acc[m.uid] = m.uid === currentUid ? 'You' : m.name;
+    return acc;
+  }, {} as Record<string, string>);
 
   let netBalance = 0;
   expenses.forEach((item) => {
@@ -181,7 +184,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           ) : (
             <View style={[styles.expensesContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
               {expenses.map((item, index) => {
-                const payerName = memberMap[item.paidBy] || 'Member';
+                const payerName = memberNamesMap[item.paidBy] || 'Member';
                 const isLast = index === expenses.length - 1;
                 const dateStr = item.createdAt
                   ? new Date((item.createdAt as any).seconds * 1000).toLocaleDateString('en-IN', {
@@ -228,6 +231,54 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             </View>
           )}
         </View>
+
+        {/* Group Members Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Group Members ({activeMembers.length})</Text>
+          </View>
+          <View style={styles.membersRow}>
+            {activeMembers.map((m) => (
+              <View key={m.uid} style={styles.memberItem}>
+                <View style={[styles.memberAvatar, { backgroundColor: colors.primaryFixed }]}>
+                  {m.photoUrl ? (
+                    <Image source={{ uri: m.photoUrl }} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={[styles.avatarText, { color: colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
+                  )}
+                </View>
+                <Text style={[styles.memberNameText, { color: colors.onSurface }]} numberOfLines={1}>
+                  {m.uid === currentUid ? 'You' : m.name.split(' ')[0]}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Pending Invitations Section */}
+        {pendingMembers.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Pending Invitations ({pendingMembers.length})</Text>
+            </View>
+            <View style={styles.membersRow}>
+              {pendingMembers.map((m) => (
+                <View key={m.uid} style={[styles.memberItem, { opacity: 0.6 }]}>
+                  <View style={[styles.memberAvatar, { backgroundColor: colors.surfaceContainerHighest }]}>
+                    {m.photoUrl ? (
+                      <Image source={{ uri: m.photoUrl }} style={styles.avatarImage} />
+                    ) : (
+                      <Text style={[styles.avatarText, { color: colors.onSurfaceVariant }]}>{m.name.charAt(0).toUpperCase()}</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.memberNameText, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                    {m.name.split(' ')[0]}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -434,5 +485,35 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     ...Typography.bodyMd,
+  },
+  membersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+  },
+  memberItem: {
+    alignItems: 'center',
+    width: 60,
+    gap: 4,
+  },
+  memberAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarText: {
+    ...Typography.titleMd,
+    fontWeight: '700',
+  },
+  memberNameText: {
+    ...Typography.bodySm,
+    textAlign: 'center',
   },
 });

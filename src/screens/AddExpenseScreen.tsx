@@ -18,8 +18,10 @@ import { auth } from '../config/firebase';
 import {
   addExpenseToFirestore,
   subscribeToGroupDetail,
+  subscribeToAcceptedMembers,
   getAllUsersFromFirestore,
-  GroupData
+  GroupData,
+  UserProfile,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
@@ -32,7 +34,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const { groupId, groupName } = route.params || {};
 
   const [group, setGroup] = useState<GroupData | null>(null);
-  const [memberMap, setMemberMap] = useState<Record<string, string>>({});
+  const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,27 +43,20 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       setLoading(false);
       return;
     }
-    const unsub = subscribeToGroupDetail(groupId, async (data) => {
-      if (data) {
-        setGroup(data);
-        const allUsers = await getAllUsersFromFirestore();
-        const mapping: Record<string, string> = {};
-        data.memberIds.forEach((uid) => {
-          const user = allUsers.find(u => u.uid === uid);
-          mapping[uid] = user ? (uid === currentUser?.uid ? 'You' : user.name) : 'Member';
-        });
-        setMemberMap(mapping);
-      }
+
+    const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted) => {
+      setActiveMembers(accepted);
       setLoading(false);
     });
-    return () => unsub();
-  }, [groupId, currentUser]);
+
+    return () => unsubMembers();
+  }, [groupId]);
 
   const handleSave = async (formData: ExpenseFormData) => {
     setSubmitting(true);
     try {
       await addExpenseToFirestore({
-        groupId: groupId,
+        groupId: groupId || '',
         ...formData,
       });
       navigation.goBack();
@@ -73,7 +68,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     }
   };
 
-  const members = Object.entries(memberMap).map(([uid, name]) => ({ uid, name }));
+  const membersForForm = activeMembers.map((m) => ({
+    uid: m.uid,
+    name: m.uid === currentUser?.uid ? 'You' : m.name,
+  }));
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -100,7 +98,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         ) : (
           <View style={styles.content}>
             <ExpenseForm
-              members={members}
+              members={membersForForm}
               onSubmit={handleSave}
               submitting={submitting}
               submitLabel="Add Expense"

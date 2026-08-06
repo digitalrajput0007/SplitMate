@@ -83,23 +83,17 @@ export const simplifyDebts = (
 
     if (settleAmount > 0.01) {
       const fromProfile = memberProfiles[debtor.uid];
-      const fromName = fromProfile?.name || (debtor.uid.includes('current') ? 'You' : 'Member');
-      const fromPhoto = fromProfile?.photoUrl;
-
-      const toProfile = memberProfiles[creditor.uid] || { name: 'Member', paymentHandle: '' };
-      const toName = toProfile.name || 'Member';
-      const toHandle = toProfile.paymentHandle || ''; // Don't generate fake UPIs anymore
-      const toPhoto = toProfile.photoUrl;
+      const toProfile = memberProfiles[creditor.uid];
 
       simplified.push({
         id: `debt_${debtor.uid}_${creditor.uid}_${simplified.length}`,
         fromUserId: debtor.uid,
-        fromName: fromName,
-        fromPhotoUrl: fromPhoto,
+        fromName: fromProfile?.name || 'Member',
+        fromPhotoUrl: fromProfile?.photoUrl,
         toUserId: creditor.uid,
-        toName: toName,
-        toPhotoUrl: toPhoto,
-        toPaymentHandle: toHandle,
+        toName: toProfile?.name || 'Member',
+        toPhotoUrl: toProfile?.photoUrl,
+        toPaymentHandle: toProfile?.paymentHandle || '',
         amount: settleAmount,
       });
     }
