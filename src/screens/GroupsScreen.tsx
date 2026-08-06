@@ -22,7 +22,7 @@ import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
-import { UserProfile, getAllUsersFromFirestore } from '../services/firestoreService';
+import { UserProfile, getAllUsersFromFirestore, subscribeAllUserProfiles } from '../services/firestoreService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -35,7 +35,7 @@ export default function GroupsScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
 
-  const { groups, groupBalances, loading, refreshGroups, currentUser } = useUserGroups();
+  const { groups, archivedGroups, groupBalances, loading, refreshGroups, currentUser } = useUserGroups();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -43,14 +43,16 @@ export default function GroupsScreen() {
 
   const [ownedExpanded, setOwnedExpanded] = useState(true);
   const [joinedExpanded, setJoinedExpanded] = useState(true);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
 
-  // Fetch all users for GroupCard avatars
+  // Listen to all users for real-time GroupCard avatars
   React.useEffect(() => {
-    getAllUsersFromFirestore().then((users) => {
+    const unsub = subscribeAllUserProfiles((users) => {
       const uMap = new Map<string, UserProfile>();
       users.forEach((u) => uMap.set(u.uid, u));
       setAllUsersMap(uMap);
     });
+    return () => unsub();
   }, []);
 
   const toggleOwned = () => {
@@ -63,8 +65,13 @@ export default function GroupsScreen() {
     setJoinedExpanded(!joinedExpanded);
   };
 
-  const { owned, joined } = useMemo(() => {
-    const filtered = groups.filter((g) => {
+  const toggleArchived = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setArchivedExpanded(!archivedExpanded);
+  };
+
+  const { owned, joined, archived } = useMemo(() => {
+    const filterFn = (g: any) => {
       const balance = groupBalances[g.groupId] || 0;
       const matchesSearch = g.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
@@ -74,13 +81,17 @@ export default function GroupsScreen() {
       if (activeFilter === 'Settled') return Math.abs(balance) <= 0.05;
 
       return true;
-    });
+    };
+
+    const filteredActive = groups.filter(filterFn);
+    const filteredArchived = archivedGroups.filter(filterFn);
 
     return {
-      owned: filtered.filter(g => g.createdBy === currentUser?.uid),
-      joined: filtered.filter(g => g.createdBy !== currentUser?.uid),
+      owned: filteredActive.filter(g => g.createdBy === currentUser?.uid),
+      joined: filteredActive.filter(g => g.createdBy !== currentUser?.uid),
+      archived: filteredArchived,
     };
-  }, [groups, searchQuery, activeFilter, groupBalances, currentUser?.uid]);
+  }, [groups, archivedGroups, searchQuery, activeFilter, groupBalances, currentUser?.uid]);
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
@@ -222,6 +233,32 @@ export default function GroupsScreen() {
                   </View>
                 )}
               </View>
+            )}
+
+            {/* Archived Groups Section */}
+            {archived.length > 0 && (
+              <>
+                <TouchableOpacity
+                  style={styles.sectionHeader}
+                  onPress={toggleArchived}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={archivedExpanded ? "chevron-down" : "chevron-forward"}
+                    size={20}
+                    color={colors.outline}
+                  />
+                  <Text style={[styles.sectionTitle, { color: colors.outline }]}>
+                    Archived Groups ({archived.length})
+                  </Text>
+                </TouchableOpacity>
+
+                {archivedExpanded && (
+                  <View style={[styles.sectionBody, { opacity: 0.8 }]}>
+                    {archived.map(g => renderGroupCard(g, g.createdBy === currentUser?.uid))}
+                  </View>
+                )}
+              </>
             )}
           </>
         )}

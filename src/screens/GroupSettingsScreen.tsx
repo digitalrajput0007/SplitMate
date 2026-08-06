@@ -20,18 +20,26 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
-import { auth } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 import {
   subscribeToGroupDetail,
   updateGroupInFirestore,
   deleteGroupFromFirestore,
   cancelGroupInvitation,
   leaveGroupInFirestore,
+  transferGroupOwnership,
+  toggleGroupArchive,
   subscribeToGroupExpenses,
+  subscribeToGroupSettlements,
+  getGroupMembersInvitationStatus,
   GroupData,
   UserProfile,
   ExpenseData,
+  SettlementData,
+  formatCurrency,
+  subscribeToAcceptedMembers,
 } from '../services/firestoreService';
+import { uploadGroupPhoto } from '../services/storageService';
 import { useTheme } from '../context/ThemeContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
 import { GroupTypeOption } from './CreateGroupModal';
@@ -68,18 +76,13 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [saving, setSaving] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [userExpenses, setUserExpenses] = useState<ExpenseData[]>([]);
+  const [userSettlements, setUserSettlements] = useState<SettlementData[]>([]);
 
   const isOwner = group?.createdBy === currentUser?.uid;
 
-  const loadMembersStatus = async (gId: string) => {
-    const res = await getGroupMembersInvitationStatus(gId);
-    setAcceptedUsers(res.acceptedUsers);
-    setPendingUsers(res.pendingUsers);
-  };
-
   useEffect(() => {
     if (groupId) {
-      const unsub = subscribeToGroupDetail(groupId, (data) => {
+      const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
         if (data) {
           setGroup(data);
           setGroupName(data.name || '');
@@ -89,17 +92,27 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           if (data.endDate) setEndDate(new Date(data.endDate));
           if (data.familyName) setFamilyName(data.familyName);
           if (data.setupMonthlySplit !== undefined) setSetupMonthlySplit(data.setupMonthlySplit);
-          loadMembersStatus(groupId);
         }
+      });
+
+      const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending) => {
+        setAcceptedUsers(accepted);
+        setPendingUsers(pending);
       });
 
       const unsubExp = subscribeToGroupExpenses(groupId, (expList) => {
         setUserExpenses(expList);
       });
 
+      const unsubSet = subscribeToGroupSettlements(groupId, (setList) => {
+        setUserSettlements(setList);
+      });
+
       return () => {
-        unsub();
+        unsubGroup();
+        unsubMembers();
         unsubExp();
+        unsubSet();
       };
     }
   }, [groupId]);
@@ -109,17 +122,158 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     const uid = currentUser?.uid;
     if (!uid) return 0;
 
+    // 1. Calculate from expenses
     userExpenses.forEach((item) => {
       const amt = item.amount || 0;
       const splits = item.splitDetails || {};
       if (item.paidBy === uid) {
+        // I paid: I am owed the amount minus my own share
         const myShare = splits[uid] || 0;
         balance += (amt - myShare);
       } else if (splits[uid]) {
+        // Someone else paid: I owe my share
         balance -= splits[uid];
       }
     });
+
+    // 2. Factor in completed settlements
+    userSettlements.forEach((s) => {
+      if (s.status === 'completed' || !s.status) {
+        if (s.fromUserId === uid) {
+          // I paid off a debt: my negative balance increases (moves toward zero)
+          balance += s.amount;
+        } else if (s.toUserId === uid) {
+          // Someone paid me: my positive balance decreases (moves toward zero)
+          balance -= s.amount;
+        }
+      }
+    });
+
     return Math.round(balance * 100) / 100;
+  };
+
+  const handlePickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow photo library access.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setGroupPhoto(result.assets[0].uri);
+      }
+    } catch (e) {
+      console.log('Image picker error:', e);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setGroupPhoto(null);
+  };
+
+  const handleUpdateGroup = async () => {
+    if (!groupName.trim() || !groupId) {
+      Alert.alert('Validation Error', 'Group name cannot be empty.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
+
+      // 1. Upload photo if it's a local URI
+      let finalPhotoUrl = groupPhoto || '';
+      if (groupPhoto && (groupPhoto.startsWith('file://') || !groupPhoto.startsWith('http'))) {
+        try {
+          finalPhotoUrl = await uploadGroupPhoto(groupId, groupPhoto);
+        } catch (uploadErr) {
+          console.error('Group photo upload failed:', uploadErr);
+        }
+      }
+
+      const updateData: any = {
+        name: groupName.trim(),
+        groupType,
+        photoUrl: finalPhotoUrl,
+        enableDates: groupType === 'Trip',
+      };
+
+      if (groupType === 'Family') updateData.familyName = familyName.trim();
+      if (groupType === 'Flatmate') updateData.setupMonthlySplit = setupMonthlySplit;
+      if (groupType === 'Trip') {
+        updateData.startDate = formattedStart;
+        updateData.endDate = formattedEnd;
+      }
+
+      await updateGroupInFirestore(groupId, updateData);
+      Alert.alert('Group Updated', 'Group settings updated successfully.');
+    } catch (error: any) {
+      console.error('Error updating group:', error);
+      Alert.alert('Error', error.message || 'Failed to update group.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTransferOwnership = (u: UserProfile) => {
+    if (!groupId) return;
+
+    Alert.alert(
+      'Transfer Ownership',
+      `Are you sure you want to make ${u.name} the owner of this group? You will lose administrative privileges.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Transfer',
+          onPress: async () => {
+            try {
+              await transferGroupOwnership(groupId, u.uid);
+              Alert.alert('Success', `${u.name} is now the group owner.`);
+            } catch (e) {
+              Alert.alert('Error', 'Failed to transfer ownership.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleToggleArchive = async () => {
+    if (!groupId) return;
+    const isCurrentlyArchived = group?.isArchived || false;
+
+    Alert.alert(
+      isCurrentlyArchived ? 'Restore Group' : 'Archive Group',
+      isCurrentlyArchived
+        ? 'Do you want to restore this group to your active list?'
+        : 'Archiving hides the group from your main list but keeps all records. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isCurrentlyArchived ? 'Restore' : 'Archive',
+          onPress: async () => {
+            try {
+              await toggleGroupArchive(groupId, !isCurrentlyArchived);
+              Alert.alert('Success', isCurrentlyArchived ? 'Group restored.' : 'Group archived.');
+              if (!isCurrentlyArchived) {
+                navigation.goBack();
+              }
+            } catch (e) {
+              Alert.alert('Error', 'Failed to update archive status.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleLeaveGroup = async () => {
@@ -163,68 +317,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     );
   };
 
-  const handlePickPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Please allow photo library access.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setGroupPhoto(result.assets[0].uri);
-      }
-    } catch (e) {
-      console.log('Image picker error:', e);
-    }
-  };
-
-  const handleUpdateGroup = async () => {
-    if (!groupName.trim() || !groupId) {
-      Alert.alert('Validation Error', 'Group name cannot be empty.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
-      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
-
-      const updateData: any = {
-        name: groupName.trim(),
-        groupType,
-        photoUrl: groupPhoto || '',
-        enableDates: groupType === 'Trip',
-      };
-
-      if (groupType === 'Family') updateData.familyName = familyName.trim();
-      if (groupType === 'Flatmate') updateData.setupMonthlySplit = setupMonthlySplit;
-      if (groupType === 'Trip') {
-        updateData.startDate = formattedStart;
-        updateData.endDate = formattedEnd;
-      }
-
-      await updateGroupInFirestore(groupId, updateData);
-      Alert.alert('Group Updated', 'Group settings updated successfully.');
-    } catch (error: any) {
-      console.error('Error updating group:', error);
-      Alert.alert('Error', error.message || 'Failed to update group.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRemovePhoto = () => {
-    setGroupPhoto(null);
-  };
-
   const handleCancelInvite = (u: UserProfile) => {
     if (!groupId) return;
 
@@ -249,19 +341,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       ]
     );
   };
-
-  const getInitials = (name: string) => {
-    return name
-      .trim()
-      .split(' ')
-      .filter(Boolean)
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) || 'G';
-  };
-
-  const groupInitials = getInitials(groupName);
 
   const handleDeleteGroup = async () => {
     if (!groupId) return;
@@ -290,18 +369,30 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     );
   };
 
+  const getInitials = (name: string) => {
+    return name
+      .trim()
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || 'G';
+  };
+
+  const groupInitials = getInitials(groupName);
+
   const formatDateShort = (date: Date) => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      {/* App Header - Matching Create Group */}
+      {/* App Header */}
       <View style={[styles.topAppBar, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
           style={styles.iconBtn}
@@ -420,6 +511,38 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 </TouchableOpacity>
               </View>
             </View>
+
+            {isOwner && pickerMode && (
+              <DateTimePicker
+                value={pickerMode === 'start' ? startDate : endDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(event, selected) => {
+                  if (Platform.OS === 'android') {
+                    setPickerMode(null);
+                  }
+
+                  if (selected && event.type !== 'dismissed') {
+                    if (pickerMode === 'start') {
+                      setStartDate(selected);
+                      if (selected > endDate) {
+                        setEndDate(selected);
+                      }
+                    } else {
+                      if (selected < startDate) {
+                        setEndDate(startDate);
+                      } else {
+                        setEndDate(selected);
+                      }
+                    }
+                  }
+
+                  if (Platform.OS === 'ios') {
+                    setPickerMode(null);
+                  }
+                }}
+              />
+            )}
           </View>
         )}
 
@@ -512,14 +635,26 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     </View>
                   </View>
 
-                  {isOwner && !isMe && (
-                    <TouchableOpacity
-                      style={styles.removeIconBtn}
-                      onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
-                    >
-                      <MaterialIcons name="person-remove" size={20} color={colors.error} />
-                    </TouchableOpacity>
-                  )}
+                  <View style={styles.memberActionsRow}>
+                    {isOwner && !isMe && !isCreator && (
+                      <TouchableOpacity
+                        style={styles.adminActionBtn}
+                        onPress={() => handleTransferOwnership(u)}
+                      >
+                        <MaterialIcons name="security" size={18} color={colors.primary} />
+                        <Text style={[styles.adminActionText, { color: colors.primary }]}>Make Admin</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {isOwner && !isMe && (
+                      <TouchableOpacity
+                        style={styles.removeIconBtn}
+                        onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
+                      >
+                        <MaterialIcons name="person-remove" size={20} color={colors.error} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               );
             })}
@@ -564,6 +699,23 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
         {/* Section 3: Danger Zone */}
         <View style={styles.dangerSection}>
+          {isOwner && (
+            <TouchableOpacity
+              style={[styles.archiveBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+              onPress={handleToggleArchive}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons
+                name={group?.isArchived ? "unarchive" : "archive"}
+                size={22}
+                color={colors.onSurfaceVariant}
+              />
+              <Text style={[styles.archiveText, { color: colors.onSurfaceVariant }]}>
+                {group?.isArchived ? "Restore Group" : "Archive Group"}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {isOwner ? (
             <TouchableOpacity
               style={[styles.deleteGroupBtn, { backgroundColor: isDark ? 'rgba(186, 26, 26, 0.15)' : 'rgba(186, 26, 26, 0.08)', borderColor: 'rgba(186, 26, 26, 0.2)' }]}
@@ -818,9 +970,42 @@ const styles = StyleSheet.create({
   removeIconBtn: {
     padding: 8,
   },
+  memberActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  adminActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  adminActionText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+  },
   dangerSection: {
     marginTop: Spacing.xl,
     marginBottom: Spacing.xxl,
+    gap: Spacing.md,
+  },
+  archiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.xs,
+    borderWidth: 1,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  archiveText: {
+    ...Typography.titleMd,
+    fontWeight: '700',
   },
   deleteGroupBtn: {
     flexDirection: 'row',

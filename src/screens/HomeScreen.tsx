@@ -32,6 +32,7 @@ import {
   subscribeToUserPendingSettlements,
   subscribeUserMonthlyInsights,
   subscribeToNotifications,
+  subscribeAllUserProfiles,
   UserProfile,
   UserBalanceSummary,
   GroupInvitation,
@@ -105,13 +106,14 @@ export default function HomeScreen() {
     });
   }, [currentUser]);
 
-  // Pre-fetch all user profiles for avatars
+  // Listen to all users for real-time profile pictures
   useEffect(() => {
-    getAllUsersFromFirestore().then((users) => {
+    const unsub = subscribeAllUserProfiles((users) => {
       const uMap = new Map<string, UserProfile>();
       users.forEach((u) => uMap.set(u.uid, u));
       setAllUsersMap(uMap);
     });
+    return () => unsub();
   }, []);
 
   // Dashboard Subscriptions
@@ -261,7 +263,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={[styles.unsettledBanner, { backgroundColor: '#E0E7FF' }]}
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('SettleUp')}
+            onPress={() => navigation.navigate('SettlementCenter')}
           >
             <View style={[styles.bannerIconCircle, { backgroundColor: colors.primary }]}>
               <MaterialIcons name="account-balance-wallet" size={20} color={colors.onPrimary} />
@@ -312,11 +314,11 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={[styles.settleUpBtn, { backgroundColor: colors.onPrimary }]}
-            onPress={() => navigation.navigate('SettleUp')}
+            onPress={() => navigation.navigate('SettlementCenter')}
             activeOpacity={0.9}
           >
-            <Ionicons name="cash-outline" size={20} color={colors.primary} />
-            <Text style={[styles.settleUpText, { color: colors.primary }]}>Settle Up</Text>
+            <Ionicons name="list-outline" size={20} color={colors.primary} />
+            <Text style={[styles.settleUpText, { color: colors.primary }]}>View Settlements</Text>
           </TouchableOpacity>
         </View>
 
@@ -394,7 +396,7 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Pending Settlements</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SettleUp')}>
+              <TouchableOpacity onPress={() => navigation.navigate('SettlementCenter')}>
                 <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
               </TouchableOpacity>
             </View>
@@ -429,7 +431,7 @@ export default function HomeScreen() {
                   </View>
                   <TouchableOpacity
                     style={[styles.settleNowBtn, { backgroundColor: isOwed ? colors.secondary : '#1E3A8A' }]}
-                    onPress={() => navigation.navigate('SettleUp', { settlementId: s.settlementId })}
+                    onPress={() => navigation.navigate('SettleUp', { groupId: s.groupId })}
                   >
                     <Ionicons name={isOwed ? "notifications-outline" : "wallet-outline"} size={18} color="#FFFFFF" />
                     <Text style={styles.settleNowText}>{isOwed ? 'Remind' : 'Settle Now'}</Text>

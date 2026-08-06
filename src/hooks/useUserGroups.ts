@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { auth } from '../config/firebase';
 import {
   subscribeToUserGroups,
@@ -8,7 +8,7 @@ import {
 
 export function useUserGroups() {
   const currentUser = auth.currentUser;
-  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [allGroups, setAllGroups] = useState<GroupData[]>([]);
   const [groupBalances, setGroupBalances] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -19,7 +19,7 @@ export function useUserGroups() {
     }
 
     const unsubGroups = subscribeToUserGroups(currentUser.uid, (groupList) => {
-      setGroups(groupList);
+      setAllGroups(groupList);
       setLoading(false);
     });
 
@@ -33,15 +33,23 @@ export function useUserGroups() {
     };
   }, [currentUser]);
 
+  const activeGroups = useMemo(() => {
+    return allGroups.filter(g => !g.isArchived);
+  }, [allGroups]);
+
+  const archivedGroups = useMemo(() => {
+    return allGroups.filter(g => g.isArchived);
+  }, [allGroups]);
+
   const refreshGroups = () => {
-    // In a real app with pull-to-refresh, you might re-fetch.
-    // With Firestore onSnapshot, it's mostly automatic, but we can toggle loading for UX.
     setLoading(true);
-    // The snapshot will trigger again if there's a change or re-sync
   };
 
   return {
-    groups,
+    groups: activeGroups, // Default to active groups for backward compatibility
+    activeGroups,
+    archivedGroups,
+    allGroups,
     groupBalances,
     loading,
     refreshGroups,

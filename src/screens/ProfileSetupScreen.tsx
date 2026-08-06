@@ -27,6 +27,7 @@ import {
   getUserProfileFromFirestore,
   isMobileNumberRegistered,
 } from '../services/firestoreService';
+import { uploadUserProfilePhoto } from '../services/storageService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
@@ -148,6 +149,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
     try {
       const activeUser = auth.currentUser;
+      if (!activeUser) throw new Error('User not authenticated');
+
       const isDuplicate = await isMobileNumberRegistered(cleanedMobile, activeUser?.uid);
       if (isDuplicate) {
         setSaving(false);
@@ -158,13 +161,26 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         return;
       }
 
-      await updateUserProfile(name.trim(), photoUrl || undefined);
+      // 1. Upload photo if it's a local URI
+      let finalPhotoUrl = photoUrl;
+      if (photoUrl && (photoUrl.startsWith('file://') || !photoUrl.startsWith('http'))) {
+        try {
+          finalPhotoUrl = await uploadUserProfilePhoto(activeUser.uid, photoUrl);
+        } catch (uploadErr) {
+          console.error('Photo upload failed, using local URI fallback:', uploadErr);
+        }
+      }
+
+      // 2. Update Auth Profile
+      await updateUserProfile(name.trim(), finalPhotoUrl || undefined);
+
+      // 3. Save to Firestore
       if (currentUser?.uid) {
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
           name: name.trim(),
           email: currentUser?.email || '',
-          photoUrl: photoUrl || currentUser?.photoURL || '',
+          photoUrl: finalPhotoUrl || currentUser?.photoURL || '',
           paymentHandle: paymentHandle.trim(),
           dob: formattedDob,
           mobile: fullMobile,

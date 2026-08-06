@@ -29,6 +29,7 @@ import {
   getSavedUserContactsFromFirestore,
   UserProfile,
 } from '../services/firestoreService';
+import { uploadGroupPhoto } from '../services/storageService';
 import { auth } from '../config/firebase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
@@ -58,12 +59,12 @@ export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
 
-  const AVATAR_COLORS = [
+  const AVATAR_COLORS = React.useMemo(() => [
     { bg: colors.primaryContainer, text: colors.onPrimaryContainer },
     { bg: colors.surfaceContainerHighest, text: colors.onSurface },
     { bg: colors.secondaryContainer, text: colors.onSecondaryContainer },
     { bg: colors.primaryFixed, text: colors.onPrimaryFixed },
-  ];
+  ], [colors]);
 
   // Screen Flow Steps:
   // Screen 1 (Basics) -> Screen 2 (Add Members) -> Screen 3 (Confirm) -> Screen 4 (Success)
@@ -75,8 +76,8 @@ export default function CreateGroupModal({ navigation }: Props) {
   const [groupType, setGroupType] = useState<GroupTypeOption>('Trip');
 
   // Conditional Fields
-  const [startDate, setStartDate] = useState<Date>(new Date(2026, 7, 10)); // Aug 10
-  const [endDate, setEndDate] = useState<Date>(new Date(2026, 7, 15));   // Aug 15
+  const [startDate, setStartDate] = useState<Date>(new Date());
+  const [endDate, setEndDate] = useState<Date>(new Date());
   const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
   const [familyName, setFamilyName] = useState('');
   const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
@@ -229,9 +230,21 @@ export default function CreateGroupModal({ navigation }: Props) {
       const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
       const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
 
+      // 1. Pre-upload photo if it exists
+      let finalPhotoUrl = groupPhoto || undefined;
+      if (groupPhoto && (groupPhoto.startsWith('file://') || !groupPhoto.startsWith('http'))) {
+        try {
+          // Use a temporary unique name for the path
+          const tempId = `new_group_${Date.now()}`;
+          finalPhotoUrl = await uploadGroupPhoto(tempId, groupPhoto);
+        } catch (uploadErr) {
+          console.error('Group photo upload failed:', uploadErr);
+        }
+      }
+
       const newId = await createGroupInFirestore(groupName.trim(), memberUids, {
         groupType,
-        photoUrl: groupPhoto || undefined,
+        photoUrl: finalPhotoUrl,
         familyName: groupType === 'Family' && familyName.trim() ? familyName.trim() : undefined,
         setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
         enableDates: groupType === 'Trip',
@@ -688,10 +701,29 @@ export default function CreateGroupModal({ navigation }: Props) {
                 mode="date"
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
                 onChange={(event, selected) => {
-                  setPickerMode(null);
-                  if (selected) {
-                    if (pickerMode === 'start') setStartDate(selected);
-                    else setEndDate(selected);
+                  if (Platform.OS === 'android') {
+                    setPickerMode(null);
+                  }
+
+                  if (selected && event.type !== 'dismissed') {
+                    if (pickerMode === 'start') {
+                      setStartDate(selected);
+                      // If start date is after end date, adjust end date to match
+                      if (selected > endDate) {
+                        setEndDate(selected);
+                      }
+                    } else {
+                      // If end date is before start date, adjust end date to start date
+                      if (selected < startDate) {
+                        setEndDate(startDate);
+                      } else {
+                        setEndDate(selected);
+                      }
+                    }
+                  }
+
+                  if (Platform.OS === 'ios') {
+                    setPickerMode(null);
                   }
                 }}
               />

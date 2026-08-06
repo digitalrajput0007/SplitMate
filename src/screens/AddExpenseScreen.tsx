@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -68,10 +68,18 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     }
   };
 
-  const membersForForm = activeMembers.map((m) => ({
-    uid: m.uid,
-    name: m.uid === currentUser?.uid ? 'You' : m.name,
-  }));
+  const membersForForm = useMemo(() => {
+    const list = activeMembers.map((m) => ({
+      uid: m.uid,
+      name: m.uid === currentUser?.uid ? 'You' : m.name,
+    }));
+    // Sort so "You" is always in the first position
+    return list.sort((a, b) => {
+      if (a.uid === currentUser?.uid) return -1;
+      if (b.uid === currentUser?.uid) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [activeMembers, currentUser?.uid]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -99,6 +107,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           <View style={styles.content}>
             <ExpenseForm
               members={membersForForm}
+              initialData={{ paidBy: currentUser?.uid || '' }}
               onSubmit={handleSave}
               submitting={submitting}
               submitLabel="Add Expense"

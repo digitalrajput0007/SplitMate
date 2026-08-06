@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -70,6 +70,14 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const memberCount = activeMembers.length;
   const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
 
+  const sortedMembers = useMemo(() => {
+    return [...activeMembers].sort((a, b) => {
+      if (a.uid === currentUid) return -1;
+      if (b.uid === currentUid) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [activeMembers, currentUid]);
+
   const memberNamesMap = activeMembers.reduce((acc, m) => {
     acc[m.uid] = m.uid === currentUid ? 'You' : m.name;
     return acc;
@@ -105,12 +113,23 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
         </TouchableOpacity>
 
         <View style={styles.topTitleContainer}>
-          <Text style={[styles.topTitle, { color: colors.onBackground }]} numberOfLines={1}>
-            {groupName}
-          </Text>
-          <Text style={[styles.topSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
-            {memberCount} member{memberCount !== 1 ? 's' : ''}
-          </Text>
+          <View style={styles.titleWithAvatar}>
+            <View style={[styles.groupHeaderAvatar, { backgroundColor: colors.primaryFixed }]}>
+              {group?.photoUrl ? (
+                <Image source={{ uri: group.photoUrl }} style={styles.avatarImage} />
+              ) : (
+                <MaterialIcons name={group?.groupType === 'Trip' ? 'flight' : 'groups'} size={20} color={colors.primary} />
+              )}
+            </View>
+            <View>
+              <Text style={[styles.topTitle, { color: colors.onBackground }]} numberOfLines={1}>
+                {groupName}
+              </Text>
+              <Text style={[styles.topSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                {memberCount} member{memberCount !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.topRightActions}>
@@ -238,7 +257,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Group Members ({activeMembers.length})</Text>
           </View>
           <View style={styles.membersRow}>
-            {activeMembers.map((m) => (
+            {sortedMembers.map((m) => (
               <View key={m.uid} style={styles.memberItem}>
                 <View style={[styles.memberAvatar, { backgroundColor: colors.primaryFixed }]}>
                   {m.photoUrl ? (
@@ -318,8 +337,20 @@ const styles = StyleSheet.create({
   },
   topTitleContainer: {
     flex: 1,
-    alignItems: 'center',
     paddingHorizontal: Spacing.xs,
+  },
+  titleWithAvatar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  groupHeaderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   topTitle: {
     ...Typography.titleMd,

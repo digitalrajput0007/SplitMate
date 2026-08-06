@@ -8,12 +8,14 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Share,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { formatCurrency } from '../services/currencyService';
 import { auth } from '../config/firebase';
 import {
@@ -22,8 +24,11 @@ import {
   subscribeToGroupDetail,
   subscribeToExpenseDetail,
   getAllUsersFromFirestore,
+  addCommentToExpense,
+  subscribeToExpenseComments,
   ExpenseData,
   GroupData,
+  ExpenseComment,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
@@ -40,13 +45,25 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const [saving, setSaving] = useState(false);
   const [group, setGroup] = useState<GroupData | null>(null);
   const [memberMap, setMemberMap] = useState<Record<string, string>>({});
+  const [comments, setComments] = useState<ExpenseComment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [showComments, setShowComments] = useState(false);
+  const [sendingComment, setSendingComment] = useState(false);
 
   useEffect(() => {
     if (initialExpense?.expenseId) {
       const unsub = subscribeToExpenseDetail(initialExpense.expenseId, (data) => {
         setExpense(data);
       });
-      return () => unsub();
+
+      const unsubComments = subscribeToExpenseComments(initialExpense.expenseId, (commentList) => {
+        setComments(commentList);
+      });
+
+      return () => {
+        unsub();
+        unsubComments();
+      };
     }
   }, [initialExpense]);
 
@@ -83,9 +100,16 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Expense Details</Text>
           <View style={{ width: 40 }} />
         </View>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
       </SafeAreaView>
     );
   }
+
+  const members = Object.entries(memberMap).map(([uid, name]) => ({ uid, name }));
+  const payerName = memberMap[expense.paidBy] || 'Unknown';
+  const isCreator = (expense.createdBy || expense.paidBy) === currentUser?.uid;
 
   const handleUpdate = async (formData: ExpenseFormData) => {
     if (!expense?.expenseId) return;
@@ -129,10 +153,30 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
     );
   };
 
-  const members = Object.entries(memberMap).map(([uid, name]) => ({ uid, name }));
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !expense?.expenseId) return;
+    setSendingComment(true);
+    try {
+      await addCommentToExpense(expense.expenseId, newComment);
+      setNewComment('');
+    } catch (e) {
+      Alert.alert('Error', 'Failed to add comment');
+    } finally {
+      setSendingComment(false);
+    }
+  };
 
-  const payerName = expense ? (memberMap[expense.paidBy] || 'Unknown') : 'Unknown';
-  const isCreator = expense?.paidBy === currentUser?.uid;
+  const handleShare = async () => {
+    if (!expense) return;
+    try {
+      const shareMessage = `SplitMate Expense: ${expense.title}\nAmount: ${formatCurrency(expense.amount)}\nPaid by: ${payerName}\nGroup: ${group?.name || ''}`;
+      await Share.share({
+        message: shareMessage,
+      });
+    } catch (e) {
+      console.log('Share error:', e);
+    }
+  };
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'Recent';
@@ -155,23 +199,6 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
       minute: '2-digit',
     });
   };
-
-  if (!expense) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
-          </TouchableOpacity>
-          <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Expense Details</Text>
-          <View style={{ width: 40 }} />
-        </View>
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -273,15 +300,64 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
 
           {/* 7. Secondary Actions */}
           <View style={styles.secondaryActions}>
-            <TouchableOpacity style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}>
+            <TouchableOpacity
+              style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}
+              onPress={() => setShowComments(!showComments)}
+            >
               <MaterialIcons name="comment" size={18} color={colors.primary} />
-              <Text style={[styles.actionChipText, { color: colors.onSurface }]}>Comments</Text>
+              <Text style={[styles.actionChipText, { color: colors.onSurface }]}>
+                Comments {comments.length > 0 ? `(${comments.length})` : ''}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}>
+            <TouchableOpacity
+              style={[styles.actionChip, { backgroundColor: colors.surfaceContainerLow }]}
+              onPress={handleShare}
+            >
               <MaterialIcons name="share" size={18} color={colors.primary} />
               <Text style={[styles.actionChipText, { color: colors.onSurface }]}>Share</Text>
             </TouchableOpacity>
           </View>
+
+          {/* 7.5 Comments Section */}
+          {showComments && (
+            <View style={styles.commentsContainer}>
+              <View style={[styles.commentInputRow, { borderBottomColor: colors.divider }]}>
+                <TextInput
+                  style={[styles.commentInput, { color: colors.onSurface, backgroundColor: colors.surfaceContainerLow }]}
+                  placeholder="Add a comment..."
+                  placeholderTextColor={colors.outline}
+                  value={newComment}
+                  onChangeText={setNewComment}
+                  multiline
+                />
+                <TouchableOpacity
+                  style={[styles.sendCommentBtn, { backgroundColor: colors.primary }, !newComment.trim() && { opacity: 0.5 }]}
+                  onPress={handleAddComment}
+                  disabled={sendingComment || !newComment.trim()}
+                >
+                  {sendingComment ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={18} color="#fff" />}
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.commentList}>
+                {comments.length === 0 ? (
+                  <Text style={[styles.noCommentsText, { color: colors.outline }]}>No comments yet.</Text>
+                ) : (
+                  comments.map((c) => (
+                    <View key={c.commentId} style={styles.commentItem}>
+                      <View style={styles.commentHeader}>
+                        <Text style={[styles.commentUser, { color: colors.onSurface }]}>{c.userName}</Text>
+                        <Text style={[styles.commentTime, { color: colors.outline }]}>
+                          {c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                        </Text>
+                      </View>
+                      <Text style={[styles.commentText, { color: colors.onSurfaceVariant }]}>{c.text}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          )}
 
           {/* 8. Danger Zone (Owner Only) */}
           {isCreator && (
@@ -423,6 +499,64 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   actionChipText: { ...Typography.labelLg },
+  commentsContainer: {
+    padding: Spacing.md,
+    backgroundColor: '#FFFFFF', // Use static color to avoid ReferenceError if Colors fails
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+    marginTop: -16,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  commentInput: {
+    flex: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 40,
+    ...Typography.bodyMd,
+  },
+  sendCommentBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentList: {
+    paddingTop: 16,
+    gap: 16,
+  },
+  commentItem: {
+    gap: 2,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  commentUser: {
+    ...Typography.labelLg,
+    fontWeight: '700',
+  },
+  commentTime: {
+    fontSize: 10,
+  },
+  commentText: {
+    ...Typography.bodyMd,
+  },
+  noCommentsText: {
+    textAlign: 'center',
+    ...Typography.bodyMd,
+    fontStyle: 'italic',
+  },
   actionsRow: { marginTop: Spacing.md, marginBottom: Spacing.xl },
   deleteBtn: {
     flexDirection: 'row',

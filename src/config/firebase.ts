@@ -11,6 +11,7 @@ import {
   memoryLocalCache, 
   getFirestore 
 } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const firebaseConfig = {
@@ -47,4 +48,7 @@ try {
   db = getFirestore(app);
 }
 
-export { app, auth, db };
+// Initialize Firebase Storage
+const storage = getStorage(app);
+
+export { app, auth, db, storage };

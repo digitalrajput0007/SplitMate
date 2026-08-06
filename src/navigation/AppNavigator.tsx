@@ -20,6 +20,7 @@ import AddExpenseScreen from '../screens/AddExpenseScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import SettleUpScreen from '../screens/SettleUpScreen';
 import CreateGroupModal from '../screens/CreateGroupModal';
+import SettlementCenterScreen from '../screens/SettlementCenterScreen';
 
 // Account Tab Suite
 import AccountScreen from '../screens/AccountScreen';
@@ -62,6 +63,7 @@ export type RootStackParamList = {
   CreateGroup: undefined;
   GroupDetail: { groupId: string; groupName: string };
   SettleUp: { groupId: string };
+  SettlementCenter: undefined;
   ProfileEdit: undefined;
   PaymentMethods: undefined;
   NotificationSettings: undefined;
@@ -260,6 +262,7 @@ export default function AppNavigator() {
         <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
         <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
         <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
+        <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
         <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
         <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />

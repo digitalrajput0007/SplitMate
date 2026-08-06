@@ -93,13 +93,6 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
-        externalNativeBuild {
-            cmake {
-                cFlags "-Wl,-z,max-page-size=16384"
-                cppFlags "-Wl,-z,max-page-size=16384"
-                arguments "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
-            }
-        }
     }
     signingConfigs {
         debug {

@@ -84,6 +84,7 @@ export interface GroupData {
   photoUrl?: string;
   createdBy: string;
   createdAt: any;
+  isArchived?: boolean;
   balanceLabel?: 'owed' | 'owe' | 'settled';
   balanceAmount?: string;
 }
@@ -96,6 +97,7 @@ export interface ExpenseData {
   amount: number;
   paidBy: string;
   paidByName?: string;
+  createdBy: string;
   splitType: 'equal' | 'exact' | 'percentage';
   splitDetails: Record<string, number>;
   category: string;
@@ -232,6 +234,13 @@ export const getAllUsersFromFirestore = async (): Promise<UserProfile[]> => {
     console.log('Error fetching all users from Firestore:', error);
     return [];
   }
+};
+
+export const subscribeAllUserProfiles = (onUpdate: (users: UserProfile[]) => void) => {
+  return onSnapshot(collection(db, 'users'), (snap) => {
+    const users = snap.docs.map(d => d.data() as UserProfile);
+    onUpdate(users);
+  });
 };
 
 export const addContactToUserFirestore = async (currentUid: string, contactUid: string): Promise<void> => {
@@ -638,32 +647,24 @@ export const subscribeToAcceptedMembers = (
   onUpdate: (members: UserProfile[], pending: UserProfile[]) => void
 ) => {
   const groupRef = doc(db, 'groups', groupId);
+  const usersQuery = query(collection(db, 'users'));
+  const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
 
-  return onSnapshot(groupRef, async (gSnap) => {
-    if (!gSnap.exists()) {
-      onUpdate([], []);
-      return;
-    }
+  let currentGroup: GroupData | null = null;
+  let allUsers: UserProfile[] = [];
+  let allInvitations: any[] = [];
 
-    const groupData = gSnap.data() as GroupData;
-    const memberIds = groupData.memberIds || [];
-    const createdBy = groupData.createdBy;
+  const mergeAndNotify = () => {
+    if (!currentGroup) return;
 
-    // Fetch all user profiles once
-    const allUsers = await getAllUsersFromFirestore();
+    const memberIds = currentGroup.memberIds || [];
+    const createdBy = currentGroup.createdBy;
     const userMap = new Map<string, UserProfile>();
     allUsers.forEach((u) => userMap.set(u.uid, u));
 
-    // Fetch invitations for this group to check status
-    const invQuery = query(
-      collection(db, 'groupInvitations'),
-      where('groupId', '==', groupId)
-    );
-    const invSnap = await getDocs(invQuery);
     const invMap = new Map<string, string>(); // toUserId -> status
-    invSnap.docs.forEach((d) => {
-      const data = d.data();
-      invMap.set(data.toUserId, data.status);
+    allInvitations.forEach((d) => {
+      invMap.set(d.toUserId, d.status);
     });
 
     const accepted: UserProfile[] = [];
@@ -673,7 +674,6 @@ export const subscribeToAcceptedMembers = (
       const user = userMap.get(uid);
       if (!user) return;
 
-      // Creator is always accepted
       if (uid === createdBy) {
         accepted.push(user);
       } else {
@@ -687,7 +687,30 @@ export const subscribeToAcceptedMembers = (
     });
 
     onUpdate(accepted, pending);
+  };
+
+  const unsub1 = onSnapshot(groupRef, (snap) => {
+    if (snap.exists()) {
+      currentGroup = snap.data() as GroupData;
+      mergeAndNotify();
+    }
   });
+
+  const unsub2 = onSnapshot(usersQuery, (snap) => {
+    allUsers = snap.docs.map(d => d.data() as UserProfile);
+    mergeAndNotify();
+  });
+
+  const unsub3 = onSnapshot(invQuery, (snap) => {
+    allInvitations = snap.docs.map(d => d.data());
+    mergeAndNotify();
+  });
+
+  return () => {
+    unsub1();
+    unsub2();
+    unsub3();
+  };
 };
 
 export const subscribeToGroupDetail = (
@@ -704,15 +727,28 @@ export const subscribeToGroupDetail = (
   });
 };
 
+export interface ExpenseComment {
+  commentId: string;
+  expenseId: string;
+  uid: string;
+  userName: string;
+  text: string;
+  createdAt: any;
+}
+
 // -------------------------------------------------------------
 // EXPENSES COLLECTION
 // -------------------------------------------------------------
 export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseId' | 'createdAt'>): Promise<string> => {
   try {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Unauthenticated');
+
     const expenseRef = doc(collection(db, 'expenses'));
     const expenseData = {
       ...expense,
       expenseId: expenseRef.id,
+      createdBy: user.uid,
       createdAt: serverTimestamp(),
     };
     await setDoc(expenseRef, expenseData);
@@ -754,6 +790,43 @@ export const subscribeToExpenseDetail = (
     } else {
       onUpdate(null);
     }
+  });
+};
+
+export const addCommentToExpense = async (expenseId: string, text: string) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Unauthenticated');
+
+    const commentRef = doc(collection(db, 'expenses', expenseId, 'comments'));
+    const commentData = {
+      commentId: commentRef.id,
+      expenseId,
+      uid: user.uid,
+      userName: user.displayName || 'Member',
+      text: text.trim(),
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(commentRef, commentData);
+    return true;
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    throw error;
+  }
+};
+
+export const subscribeToExpenseComments = (
+  expenseId: string,
+  onUpdate: (comments: ExpenseComment[]) => void
+) => {
+  const q = query(
+    collection(db, 'expenses', expenseId, 'comments'),
+    orderBy('createdAt', 'asc')
+  );
+
+  return onSnapshot(q, (snap) => {
+    const comments = snap.docs.map(d => d.data() as ExpenseComment);
+    onUpdate(comments);
   });
 };
 
@@ -1368,6 +1441,34 @@ export const leaveGroupInFirestore = async (groupId: string, uid: string) => {
     return true;
   } catch (error) {
     console.error('Error leaving group:', error);
+    throw error;
+  }
+};
+
+export const transferGroupOwnership = async (groupId: string, newOwnerUid: string) => {
+  try {
+    const groupRef = doc(db, 'groups', groupId);
+    await updateDoc(groupRef, {
+      createdBy: newOwnerUid,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error('Error transferring group ownership:', error);
+    throw error;
+  }
+};
+
+export const toggleGroupArchive = async (groupId: string, isArchived: boolean) => {
+  try {
+    const groupRef = doc(db, 'groups', groupId);
+    await updateDoc(groupRef, {
+      isArchived,
+      updatedAt: serverTimestamp(),
+    });
+    return true;
+  } catch (error) {
+    console.error('Error toggling group archive:', error);
     throw error;
   }
 };

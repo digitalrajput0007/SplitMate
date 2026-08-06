@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
 import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
+import { uploadUserProfilePhoto } from '../services/storageService';
 import { useTheme } from '../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
@@ -95,14 +96,25 @@ export default function ProfileEditScreen({ navigation }: Props) {
     setSaving(true);
     try {
       if (currentUser) {
-        await updateUserProfile(name, photoUrl);
+        // 1. Upload photo if it's a local URI
+        let finalPhotoUrl = photoUrl;
+        if (photoUrl && (photoUrl.startsWith('file://') || !photoUrl.startsWith('http'))) {
+          try {
+            finalPhotoUrl = await uploadUserProfilePhoto(currentUser.uid, photoUrl);
+          } catch (uploadErr) {
+            console.error('Photo upload failed:', uploadErr);
+          }
+        }
+
+        // 2. Update Auth and Firestore
+        await updateUserProfile(name, finalPhotoUrl);
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
           name,
           email,
           mobile,
           dob,
-          photoUrl,
+          photoUrl: finalPhotoUrl,
         });
 
         Alert.alert('Success', 'Profile updated successfully');

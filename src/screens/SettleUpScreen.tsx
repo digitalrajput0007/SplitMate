@@ -23,6 +23,7 @@ import {
   addSettlementToFirestore,
   subscribeToGroupDetail,
   getAllUsersFromFirestore,
+  subscribeAllUserProfiles,
   sendPaymentReminder,
   canSendReminder,
   ExpenseData,
@@ -56,12 +57,11 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   useEffect(() => {
     initializeInterstitialAd();
 
+    let acceptedUidsGlobal = new Set<string>();
+
     const unsubGroup = subscribeToGroupDetail(groupId, async (groupData) => {
       if (groupData) {
-        const allUsers = await getAllUsersFromFirestore();
-        const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
-
-        // Resolve status by fetching invitations
+        // Resolve status by fetching invitations once
         const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
         const invSnap = await getDocs(invQuery);
         const acceptedUids = new Set<string>();
@@ -71,24 +71,30 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             acceptedUids.add(d.data().toUserId);
           }
         });
-
-        // Filter: Resolve profiles ONLY for members who have accepted
-        allUsers.forEach((user) => {
-          if (acceptedUids.has(user.uid)) {
-            profiles[user.uid] = {
-              name: user.uid === currentUid ? 'You' : user.name,
-              paymentHandle: user.paymentHandle || '',
-              photoUrl: user.photoUrl || '',
-            };
-          }
-        });
-
-        if (!profiles[currentUid]) {
-          profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '' };
-        }
-
-        setMemberProfiles(profiles);
+        acceptedUidsGlobal = acceptedUids;
       }
+    });
+
+    const unsubProfiles = subscribeAllUserProfiles((allUsers) => {
+      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
+
+      allUsers.forEach((user) => {
+        // If they are in the accepted list or it's the current user
+        if (acceptedUidsGlobal.has(user.uid) || user.uid === currentUid) {
+          profiles[user.uid] = {
+            name: user.uid === currentUid ? 'You' : user.name,
+            paymentHandle: user.paymentHandle || '',
+            photoUrl: user.photoUrl || '',
+          };
+        }
+      });
+
+      // Ensure current user is handled even if not in list
+      if (!profiles[currentUid]) {
+        profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '' };
+      }
+
+      setMemberProfiles(profiles);
     });
 
     const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
@@ -99,6 +105,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
     return () => {
       unsubGroup();
+      unsubProfiles();
       unsubExp();
       unsubSet();
     };
@@ -271,7 +278,12 @@ export default function SettleUpScreen({ navigation, route }: Props) {
               : { name: debt.fromName, photo: debt.fromPhotoUrl, handle: null };
 
             return (
-              <View key={debt.id} style={styles.debtCard}>
+              <TouchableOpacity
+                key={debt.id}
+                style={[styles.debtCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+                onPress={() => {}} // Deep navigation handled by buttons
+                activeOpacity={1}
+              >
                 <View style={styles.debtHeaderRow}>
                   {/* Profile Photo */}
                   <View style={[styles.avatarCircle, { backgroundColor: colors.primaryFixed }]}>
@@ -286,12 +298,13 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
                   <View style={styles.debtInfo}>
                     <Text style={[styles.debtName, { color: colors.onSurface }]}>{otherUser.name}</Text>
-                    <Text style={[styles.debtStatusLabel, { color: isOtherOwesMe ? colors.positive : colors.error }]}>
-                      {isOtherOwesMe ? 'Owes You' : 'You Owe'}
-                    </Text>
-                    {isIowe && (
-                      <Text style={[styles.upiSub, { color: colors.onSurfaceVariant }]}>
-                        {otherUser.handle ? `UPI: ${otherUser.handle}` : 'Payment Method Not Available'}
+                    {isIowe && otherUser.handle ? (
+                      <Text style={[styles.upiSub, { color: colors.primary, fontWeight: '600' }]}>
+                        UPI: {otherUser.handle}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.cardGroupName, { color: colors.onSurfaceVariant }]}>
+                        {route.params?.groupName || 'Group'}
                       </Text>
                     )}
                   </View>
@@ -303,47 +316,48 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
                 {/* Actions Row */}
                 <View style={styles.actionsRow}>
-                  {isIowe && otherUser.handle ? (
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                      onPress={() => handlePayViaUPI(debt)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="logo-google-playstore" size={18} color={colors.onPrimary} style={{ marginRight: 6 }} />
-                      <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Pay via UPI</Text>
-                    </TouchableOpacity>
-                  ) : isOtherOwesMe ? (
+                  {isIowe ? (
+                    <>
+                      {otherUser.handle ? (
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                          onPress={() => handlePayViaUPI(debt)}
+                        >
+                          <MaterialIcons name="account-balance-wallet" size={18} color="#fff" />
+                          <Text style={[styles.actionBtnText, { color: '#fff' }]}>Pay via UPI</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.actionBtn, { backgroundColor: colors.surfaceContainerLow }]}>
+                          <Text style={[styles.actionBtnText, { color: colors.outline }]}>No UPI Available</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.secondaryContainer }]}
                       onPress={() => handleSendReminder(debt)}
-                      activeOpacity={0.8}
                       disabled={isReminding}
                     >
-                      {isReminding ? (
-                        <ActivityIndicator size="small" color={colors.onSecondaryContainer} />
-                      ) : (
+                      {isReminding ? <ActivityIndicator size="small" color={colors.onSecondaryContainer} /> : (
                         <>
-                          <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} style={{ marginRight: 6 }} />
+                          <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} />
                           <Text style={[styles.actionBtnText, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
                         </>
                       )}
                     </TouchableOpacity>
-                  ) : null}
+                  )}
 
                   <TouchableOpacity
                     style={[styles.settleBtn, { borderColor: colors.outlineVariant, borderWidth: 1 }]}
                     onPress={() => handleRecordSettlement(debt)}
-                    activeOpacity={0.8}
                     disabled={isSettling}
                   >
-                    {isSettling ? (
-                      <ActivityIndicator color={colors.primary} size="small" />
-                    ) : (
-                      <Text style={[styles.settleBtnText, { color: colors.onSurface }]}>Mark as Settled</Text>
+                    {isSettling ? <ActivityIndicator color={colors.primary} size="small" /> : (
+                      <Text style={[styles.settleBtnText, { color: colors.onSurface }]}>Mark Settled</Text>
                     )}
                   </TouchableOpacity>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -418,18 +432,17 @@ const styles = StyleSheet.create({
   settledTitle: { ...Typography.titleMd, color: Colors.onBackground },
   settledSub: { ...Typography.bodyMd, color: Colors.onSurfaceVariant },
   debtCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    gap: Spacing.md,
+    borderRadius: 20,
+    padding: 16,
     borderWidth: 1,
-    borderColor: Colors.divider,
+    gap: 16,
     ...Shadows.card,
+    marginBottom: Spacing.md,
   },
   debtHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 12,
   },
   avatarPair: {
     flexDirection: 'row',
@@ -437,9 +450,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   avatarCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -448,29 +461,28 @@ const styles = StyleSheet.create({
   avatarText: { ...Typography.titleLg, fontWeight: '700' },
   debtInfo: { flex: 1 },
   debtName: { ...Typography.titleSm, fontWeight: '700' },
-  debtStatusLabel: { ...Typography.labelMd, marginTop: 2 },
-  upiSub: { ...Typography.bodySm, fontSize: 10, marginTop: 2 },
-  debtAmount: { ...Typography.titleLg, fontWeight: '700' },
+  cardGroupName: { ...Typography.bodySm, fontSize: 11, marginTop: 2 },
+  debtAmount: { ...Typography.titleMd, fontWeight: '700' },
   actionsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    marginTop: Spacing.sm,
   },
   actionBtn: {
     flex: 1.2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.md,
-    height: 44,
+    borderRadius: BorderRadius.lg,
+    height: 40,
+    gap: 6,
   },
-  actionBtnText: { ...Typography.labelLg, fontWeight: '700' },
+  actionBtnText: { ...Typography.labelMd, fontWeight: '700' },
   settleBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: BorderRadius.md,
-    height: 44,
+    borderRadius: BorderRadius.lg,
+    height: 40,
   },
-  settleBtnText: { ...Typography.labelLg, fontWeight: '600' },
+  settleBtnText: { ...Typography.labelMd, fontWeight: '600' },
 });
