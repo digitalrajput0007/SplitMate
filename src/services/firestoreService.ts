@@ -1104,3 +1104,115 @@ export const subscribeUserBalanceSummary = (
     unsub2();
   };
 };
+
+// -------------------------------------------------------------
+// USER PENDING SETTLEMENTS SUBSCRIBER
+// -------------------------------------------------------------
+export const subscribeToUserPendingSettlements = (
+  uid: string,
+  onUpdate: (settlements: SettlementData[]) => void
+) => {
+  if (!uid) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  // Find settlements where user is either 'from' or 'to' and status is 'pending'
+  const q = query(
+    collection(db, 'settlements'),
+    where('status', '==', 'pending')
+  );
+
+  return onSnapshot(q, (snap) => {
+    const allPending = snap.docs.map((d) => ({ ...d.data(), settlementId: d.id } as SettlementData));
+    const userPending = allPending.filter(s => s.fromUserId === uid || s.toUserId === uid);
+    onUpdate(userPending);
+  });
+};
+
+// -------------------------------------------------------------
+// USER MONTHLY INSIGHTS SUBSCRIBER
+// -------------------------------------------------------------
+export interface MonthlyInsights {
+  totalPaid: number;
+  totalReceived: number;
+  largestExpense: { title: string; amount: number };
+  activeGroupsCount: number;
+}
+
+export const subscribeUserMonthlyInsights = (
+  uid: string,
+  onUpdate: (insights: MonthlyInsights) => void
+) => {
+  if (!uid) return () => {};
+
+  const expensesQuery = query(collection(db, 'expenses'));
+  const settlementsQuery = query(collection(db, 'settlements'));
+  const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
+
+  let allExpenses: ExpenseData[] = [];
+  let allSettlements: SettlementData[] = [];
+  let activeGroupsCount = 0;
+
+  const calculate = () => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    let totalPaid = 0;
+    let totalReceived = 0;
+    let largestExp = { title: 'None', amount: 0 };
+
+    allExpenses.forEach((exp) => {
+      const expDate = exp.createdAt?.seconds ? new Date(exp.createdAt.seconds * 1000) : new Date();
+      if (expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear) {
+        // User paid for an expense
+        if (exp.paidBy === uid) {
+          totalPaid += exp.amount;
+          if (exp.amount > largestExp.amount) {
+            largestExp = { title: exp.title, amount: exp.amount };
+          }
+        }
+      }
+    });
+
+    allSettlements.forEach((s) => {
+      const sDate = s.createdAt?.seconds ? new Date(s.createdAt.seconds * 1000) : new Date();
+      if (sDate.getMonth() === currentMonth && sDate.getFullYear() === currentYear) {
+        if (s.status === 'completed' || !s.status) {
+          if (s.toUserId === uid) {
+            totalReceived += s.amount;
+          }
+        }
+      }
+    });
+
+    onUpdate({
+      totalPaid,
+      totalReceived,
+      largestExpense: largestExp,
+      activeGroupsCount,
+    });
+  };
+
+  const unsub1 = onSnapshot(expensesQuery, (snap) => {
+    allExpenses = snap.docs.map((d) => d.data() as ExpenseData);
+    calculate();
+  });
+
+  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
+    allSettlements = snap.docs.map((d) => d.data() as SettlementData);
+    calculate();
+  });
+
+  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    activeGroupsCount = snap.docs.length;
+    calculate();
+  });
+
+  return () => {
+    unsub1();
+    unsub2();
+    unsub3();
+  };
+};

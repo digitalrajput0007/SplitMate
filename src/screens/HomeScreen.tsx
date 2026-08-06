@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Image,
   StatusBar as RNStatusBar,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,11 +27,14 @@ import {
   declineGroupInvitation,
   getAllUsersFromFirestore,
   subscribeUserActivityFeed,
+  subscribeToUserPendingSettlements,
+  subscribeUserMonthlyInsights,
   UserProfile,
   UserBalanceSummary,
   GroupInvitation,
   ActivityItem,
   SettlementData,
+  MonthlyInsights,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
 
@@ -56,14 +60,16 @@ export default function HomeScreen() {
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [pendingSettlements, setPendingSettlements] = useState<SettlementData[]>([]);
 
-  const [monthlyInsights] = useState({
-    totalSpent: 8450, // Mock for now as per design screenshot
-    totalReceived: 12200,
-    largestExpense: { title: 'Flight to Goa', amount: 4200 },
-    settlementsThisMonth: 14,
+  const [monthlyInsights, setMonthlyInsights] = useState<MonthlyInsights>({
+    totalPaid: 0,
+    totalReceived: 0,
+    largestExpense: { title: 'None', amount: 0 },
+    activeGroupsCount: 0,
   });
 
-  // Resolve display name: Firestore profile → Auth displayName → email prefix → generic
+  const [loading, setLoading] = useState(true);
+
+  // Resolve display name
   useEffect(() => {
     const resolveDisplayName = async () => {
       if (currentUser?.uid) {
@@ -77,18 +83,13 @@ export default function HomeScreen() {
         setFirstName(currentUser.displayName.split(' ')[0]);
         return;
       }
-      if (currentUser?.email) {
-        const prefix = currentUser.email.split('@')[0];
-        setFirstName(prefix.charAt(0).toUpperCase() + prefix.slice(1));
-        return;
-      }
       setFirstName('Friend');
     };
 
     resolveDisplayName();
   }, [currentUser]);
 
-  // Load frequent contacts for horizontal row
+  // Load frequent contacts
   useEffect(() => {
     if (!currentUser?.uid) return;
     getSavedUserContactsFromFirestore(currentUser.uid).then((contacts) => {
@@ -96,7 +97,7 @@ export default function HomeScreen() {
     });
   }, [currentUser]);
 
-  // Pre-fetch all user profiles in system once for fast avatar rendering in GroupCard
+  // Pre-fetch all user profiles for avatars
   useEffect(() => {
     getAllUsersFromFirestore().then((users) => {
       const uMap = new Map<string, UserProfile>();
@@ -107,7 +108,10 @@ export default function HomeScreen() {
 
   // Dashboard Subscriptions
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      setLoading(false);
+      return;
+    }
 
     const unsubInvites = subscribeToPendingInvitations(currentUser.uid, (invList) => {
       setPendingInvitations(invList);
@@ -121,10 +125,21 @@ export default function HomeScreen() {
       setRecentActivities(activities.slice(0, 5));
     });
 
+    const unsubSettlements = subscribeToUserPendingSettlements(currentUser.uid, (settlementList) => {
+      setPendingSettlements(settlementList);
+    });
+
+    const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, (data) => {
+      setMonthlyInsights(data);
+      setLoading(false);
+    });
+
     return () => {
       unsubInvites();
       unsubBalance();
       unsubActivity();
+      unsubSettlements();
+      unsubInsights();
     };
   }, [currentUser, groups.length]);
 
@@ -153,7 +168,17 @@ export default function HomeScreen() {
     return 'Good Evening,';
   };
 
-  const recentGroups = groups.slice(0, 4);
+  const recentGroups = useMemo(() => {
+    // Sort groups by createdAt descending (assuming it's a proxy for recent activity)
+    const sorted = [...groups].sort((a, b) => {
+      const timeA = a.createdAt?.seconds || 0;
+      const timeB = b.createdAt?.seconds || 0;
+      return timeB - timeA;
+    });
+    return sorted.slice(0, 4);
+  }, [groups]);
+
+  const hasUnreadNotifications = pendingInvitations.length > 0 || pendingSettlements.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -177,8 +202,12 @@ export default function HomeScreen() {
               <Text style={[styles.greetingLabel, { color: colors.onSurfaceVariant }]}>{getGreeting()}</Text>
               <Text style={[styles.userName, { color: colors.primary }]}>{firstName}</Text>
               <View style={styles.pendingStatus}>
-                <View style={[styles.statusDot, { backgroundColor: '#E11D48' }]} />
-                <Text style={[styles.pendingText, { color: colors.onSurfaceVariant }]}>You have {pendingSettlements.length || 3} pending settlements</Text>
+                <View style={[styles.statusDot, { backgroundColor: pendingSettlements.length > 0 ? '#E11D48' : '#10B981' }]} />
+                <Text style={[styles.pendingText, { color: colors.onSurfaceVariant }]}>
+                  {pendingSettlements.length > 0
+                    ? `You have ${pendingSettlements.length} pending settlements`
+                    : 'All balances settled'}
+                </Text>
               </View>
             </View>
           </View>
@@ -189,51 +218,62 @@ export default function HomeScreen() {
           >
             <View style={[styles.notifIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
               <Ionicons name="notifications-outline" size={24} color={colors.onSurface} />
-              <View style={styles.notifBadge} />
+              {hasUnreadNotifications && <View style={styles.notifBadge} />}
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Unsettled Balances Banner */}
-        <TouchableOpacity
-          style={[styles.unsettledBanner, { backgroundColor: '#E0E7FF' }]}
-          activeOpacity={0.8}
-        >
-          <View style={[styles.bannerIconCircle, { backgroundColor: colors.primary }]}>
-            <MaterialIcons name="location-on" size={20} color={colors.onPrimary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.bannerTitle, { color: colors.onSurface }]}>You have 2 unsettled balances</Text>
-            <Text style={[styles.bannerSub, { color: colors.onSurfaceVariant }]}>Tap to review and clear them.</Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color={colors.onSurfaceVariant} />
-        </TouchableOpacity>
+        {pendingSettlements.length > 0 && (
+          <TouchableOpacity
+            style={[styles.unsettledBanner, { backgroundColor: '#E0E7FF' }]}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('SettleUp')}
+          >
+            <View style={[styles.bannerIconCircle, { backgroundColor: colors.primary }]}>
+              <MaterialIcons name="account-balance-wallet" size={20} color={colors.onPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.bannerTitle, { color: colors.onSurface }]}>You have {pendingSettlements.length} unsettled balances</Text>
+              <Text style={[styles.bannerSub, { color: colors.onSurfaceVariant }]}>Tap to review and clear them.</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={colors.onSurfaceVariant} />
+          </TouchableOpacity>
+        )}
 
-        {/* Total Balance Card Redesign */}
+        {/* Total Balance Card */}
         <View style={[styles.netBalanceCard, { backgroundColor: colors.primary }]}>
           <View style={styles.netBalanceHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Text style={[styles.netBalanceLabel, { color: colors.onPrimary, opacity: 0.8 }]}>NET BALANCE</Text>
               <MaterialIcons name="info-outline" size={14} color={colors.onPrimary} />
             </View>
-            <TouchableOpacity style={styles.walletIconBtn}>
+            <TouchableOpacity style={styles.walletIconBtn} onPress={() => navigation.navigate('PaymentMethods')}>
               <Ionicons name="wallet-outline" size={20} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.amountDisplay}>
-            <Text style={[styles.plusSign, { color: colors.onPrimary }]}>+</Text>
-            <Text style={[styles.totalAmount, { color: colors.onPrimary }]}>₹{balanceSummary.totalBalance.toLocaleString('en-IN')}</Text>
+            <Text style={[styles.plusSign, { color: colors.onPrimary }]}>
+              {balanceSummary.totalBalance >= 0 ? '+' : ''}
+            </Text>
+            <Text style={[styles.totalAmount, { color: colors.onPrimary }]}>
+              {formatCurrency(balanceSummary.totalBalance)}
+            </Text>
           </View>
 
           <View style={styles.balanceBreakdown}>
             <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
               <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You are owed</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>₹{balanceSummary.youAreOwed.toLocaleString('en-IN')}</Text>
+              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
+                {formatCurrency(balanceSummary.youAreOwed)}
+              </Text>
             </View>
             <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
               <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You owe</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>₹{balanceSummary.youOwe.toLocaleString('en-IN')}</Text>
+              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
+                {formatCurrency(balanceSummary.youOwe)}
+              </Text>
             </View>
           </View>
 
@@ -278,7 +318,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Pending Invitations Banner / Section */}
+        {/* Pending Invitations */}
         {pendingInvitations.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -290,7 +330,7 @@ export default function HomeScreen() {
               {pendingInvitations.map((inv) => (
                 <View key={inv.invitationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
                   <View style={[styles.invitationIconCircle, { backgroundColor: '#92400E' }]}>
-                    <MaterialIcons name="flight" size={20} color="#FFFFFF" />
+                    <MaterialIcons name="group" size={20} color="#FFFFFF" />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>{inv.groupName}</Text>
@@ -317,68 +357,73 @@ export default function HomeScreen() {
         )}
 
         {/* Pending Settlements */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Pending Settlements</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('SettleUp')}>
-              <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={[styles.settlementCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={styles.settlementHeader}>
-              <View style={[styles.settlementAvatar, { backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }]}>
-                <Ionicons name="person" size={24} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settlementName, { color: colors.onSurface }]}>Priya S.</Text>
-                <Text style={[styles.settlementContext, { color: colors.onSurfaceVariant }]}>Goa Trip '24</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[styles.settlementAmount, { color: '#B91C1C' }]}>₹1,200</Text>
-                <Text style={[styles.settlementStatus, { color: '#B91C1C' }]}>You owe</Text>
-              </View>
+        {pendingSettlements.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Pending Settlements</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('SettleUp')}>
+                <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={[styles.settleNowBtn, { backgroundColor: '#1E3A8A' }]}>
-              <Ionicons name="wallet-outline" size={18} color="#FFFFFF" />
-              <Text style={styles.settleNowText}>Settle Now</Text>
-            </TouchableOpacity>
-          </View>
 
-          <View style={[styles.settlementCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={styles.settlementHeader}>
-              <View style={[styles.settlementAvatar, { backgroundColor: '#FFEDD5', alignItems: 'center', justifyContent: 'center' }]}>
-                <Text style={{ color: '#92400E', fontWeight: 'bold' }}>R</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.settlementName, { color: colors.onSurface }]}>Rahul K.</Text>
-                <Text style={[styles.settlementContext, { color: colors.onSurfaceVariant }]}>Dinner at Taj</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={[styles.settlementAmount, { color: '#15803D' }]}>₹4,500</Text>
-                <Text style={[styles.settlementStatus, { color: '#15803D' }]}>Owes you</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={[styles.remindBtn, { borderColor: colors.outlineVariant, borderWidth: 1 }]}>
-              <Ionicons name="notifications-outline" size={18} color={colors.onSurface} />
-              <Text style={[styles.remindText, { color: colors.onSurface }]}>Remind</Text>
-            </TouchableOpacity>
+            {pendingSettlements.slice(0, 3).map((s) => {
+              const otherUid = s.fromUserId === currentUser?.uid ? s.toUserId : s.fromUserId;
+              const otherUser = allUsersMap.get(otherUid);
+              const isOwed = s.toUserId === currentUser?.uid;
+
+              return (
+                <View key={s.settlementId} style={[styles.settlementCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                  <View style={styles.settlementHeader}>
+                    {otherUser?.photoUrl ? (
+                      <Image source={{ uri: otherUser.photoUrl }} style={styles.settlementAvatar} />
+                    ) : (
+                      <View style={[styles.settlementAvatar, { backgroundColor: colors.surfaceContainerLow, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ fontWeight: 'bold' }}>{(otherUser?.name || 'M').charAt(0)}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.settlementName, { color: colors.onSurface }]}>{otherUser?.name || 'Member'}</Text>
+                      <Text style={[styles.settlementContext, { color: colors.onSurfaceVariant }]}>{s.groupName || 'In Group'}</Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={[styles.settlementAmount, { color: isOwed ? '#15803D' : '#B91C1C' }]}>
+                        {formatCurrency(s.amount)}
+                      </Text>
+                      <Text style={[styles.settlementStatus, { color: isOwed ? '#15803D' : '#B91C1C' }]}>
+                        {isOwed ? 'Owes you' : 'You owe'}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.settleNowBtn, { backgroundColor: isOwed ? colors.secondary : '#1E3A8A' }]}
+                    onPress={() => navigation.navigate('SettleUp', { settlementId: s.settlementId })}
+                  >
+                    <Ionicons name={isOwed ? "notifications-outline" : "wallet-outline"} size={18} color="#FFFFFF" />
+                    <Text style={styles.settleNowText}>{isOwed ? 'Remind' : 'Settle Now'}</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
-        </View>
+        )}
 
         {/* Monthly Insights */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Monthly Insights</Text>
-            <Text style={[styles.insightMonth, { color: colors.onSurfaceVariant }]}>October</Text>
+            <Text style={[styles.insightMonth, { color: colors.onSurfaceVariant }]}>
+              {new Date().toLocaleString('en-IN', { month: 'long' })}
+            </Text>
           </View>
           <View style={styles.insightsGrid}>
             <View style={[styles.insightBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
               <View style={styles.insightHeader}>
                 <MaterialIcons name="trending-up" size={16} color={colors.onSurfaceVariant} />
-                <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Total Spent</Text>
+                <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Total Paid</Text>
               </View>
-              <Text style={[styles.insightValue, { color: colors.onSurface }]}>₹8,450</Text>
+              <Text style={[styles.insightValue, { color: colors.onSurface }]}>
+                {formatCurrency(monthlyInsights.totalPaid)}
+              </Text>
             </View>
 
             <View style={[styles.insightBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
@@ -386,7 +431,9 @@ export default function HomeScreen() {
                 <MaterialIcons name="trending-down" size={16} color={colors.onSurfaceVariant} />
                 <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Total Received</Text>
               </View>
-              <Text style={[styles.insightValue, { color: colors.onSurface }]}>₹12,200</Text>
+              <Text style={[styles.insightValue, { color: colors.onSurface }]}>
+                {formatCurrency(monthlyInsights.totalReceived)}
+              </Text>
             </View>
 
             <View style={[styles.insightBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
@@ -394,17 +441,23 @@ export default function HomeScreen() {
                 <Ionicons name="receipt-outline" size={16} color={colors.onSurfaceVariant} />
                 <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Largest Expense</Text>
               </View>
-              <Text style={[styles.insightValue, { color: colors.onSurface }]}>₹4,200</Text>
-              <Text style={[styles.insightSubValue, { color: colors.onSurfaceVariant }]}>Flight to Goa</Text>
+              <Text style={[styles.insightValue, { color: colors.onSurface }]} numberOfLines={1}>
+                {formatCurrency(monthlyInsights.largestExpense.amount)}
+              </Text>
+              <Text style={[styles.insightSubValue, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                {monthlyInsights.largestExpense.title}
+              </Text>
             </View>
 
             <View style={[styles.insightBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
               <View style={styles.insightHeader}>
-                <Ionicons name="checkmark-circle-outline" size={16} color={colors.onSurfaceVariant} />
-                <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Settlements</Text>
+                <Ionicons name="people-outline" size={16} color={colors.onSurfaceVariant} />
+                <Text style={[styles.insightLabel, { color: colors.onSurfaceVariant }]}>Active Groups</Text>
               </View>
-              <Text style={[styles.insightValue, { color: colors.onSurface }]}>14</Text>
-              <Text style={[styles.insightSubValue, { color: colors.onSurfaceVariant }]}>This month</Text>
+              <Text style={[styles.insightValue, { color: colors.onSurface }]}>
+                {monthlyInsights.activeGroupsCount}
+              </Text>
+              <Text style={[styles.insightSubValue, { color: colors.onSurfaceVariant }]}>Joined</Text>
             </View>
           </View>
         </View>
@@ -418,98 +471,99 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <View style={[styles.activityList, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider, borderWidth: 1 }]}>
-            <View style={styles.activityItem}>
-              <View style={[styles.activityDot, { backgroundColor: '#3B82F6' }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
-                  <Text style={{ fontWeight: 'bold' }}>Rahul</Text> added <Text style={{ fontWeight: 'bold' }}>Dinner</Text>
-                </Text>
-                <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>2h ago • Goa Trip '24</Text>
+            {recentActivities.length === 0 ? (
+              <View style={{ padding: Spacing.md, alignItems: 'center' }}>
+                <Text style={{ color: colors.outline }}>No recent activity</Text>
               </View>
-              <Text style={[styles.activityAmount, { color: '#B91C1C' }]}>-₹850</Text>
-            </View>
+            ) : (
+              recentActivities.map((item) => {
+                const actor = allUsersMap.get(item.actorUid);
+                const actorName = item.actorUid === currentUser?.uid ? 'You' : actor?.name || 'Member';
+                const isNegative = item.type === 'expense' && item.actorUid !== currentUser?.uid;
 
-            <View style={styles.activityItem}>
-              <View style={[styles.activityDot, { backgroundColor: '#10B981' }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
-                  <Text style={{ fontWeight: 'bold' }}>Neha</Text> paid you back
-                </Text>
-                <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>Yesterday • Movies</Text>
-              </View>
-              <Text style={[styles.activityAmount, { color: '#15803D' }]}>+₹400</Text>
-            </View>
-
-            <View style={styles.activityItem}>
-              <View style={[styles.activityDot, { backgroundColor: '#6366F1' }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
-                  You created <Text style={{ fontWeight: 'bold' }}>Flat 302</Text>
-                </Text>
-                <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>Oct 12</Text>
-              </View>
-            </View>
+                return (
+                  <View key={item.id} style={styles.activityItem}>
+                    <View style={[styles.activityDot, { backgroundColor: item.type === 'expense' ? '#3B82F6' : '#10B981' }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
+                        <Text style={{ fontWeight: 'bold' }}>{actorName}</Text> {item.type === 'expense' ? 'added' : item.type === 'settlement' ? 'recorded' : 'created'} <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
+                      </Text>
+                      <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>
+                        {item.date} • {item.groupName}
+                      </Text>
+                    </View>
+                    {item.amount > 0 && (
+                      <Text style={[styles.activityAmount, { color: isNegative ? '#B91C1C' : '#15803D' }]}>
+                        {isNegative ? '-' : '+'}{formatCurrency(item.amount)}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })
+            )}
           </View>
         </View>
 
         {/* Recent Groups */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Recent Groups</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('GroupsTab')}>
-              <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All Groups</Text>
-            </TouchableOpacity>
+        {recentGroups.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Recent Groups</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('GroupsTab')}>
+                <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All Groups</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsScroll}>
+              {recentGroups.map((group) => {
+                const myShare = groupBalances[group.groupId] || 0;
+                let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
+                let badgeColor = colors.surfaceContainerLow;
+                let badgeTextColor = colors.onSurfaceVariant;
+                let displayAmount = '0';
+
+                if (myShare > 0.05) {
+                  balanceLabel = 'owed';
+                  badgeColor = '#DCFCE7';
+                  badgeTextColor = '#15803D';
+                  displayAmount = `+${formatCurrency(Math.round(myShare))}`;
+                } else if (myShare < -0.05) {
+                  balanceLabel = 'owe';
+                  badgeColor = '#FEE2E2';
+                  badgeTextColor = '#B91C1C';
+                  displayAmount = `-${formatCurrency(Math.round(Math.abs(myShare)))}`;
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={group.groupId}
+                    style={[styles.recentGroupCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+                    onPress={() => navigation.navigate('GroupDetail', { groupId: group.groupId, groupName: group.name })}
+                  >
+                    <View style={[styles.groupIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
+                      {group.photoUrl ? (
+                        <Image source={{ uri: group.photoUrl }} style={styles.recentGroupImg} />
+                      ) : (
+                        <View style={[styles.recentGroupImg, { backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center' }]}>
+                          <MaterialIcons name={group.groupType === 'Trip' ? 'flight' : group.groupType === 'Home' ? 'home' : 'groups'} size={24} color={colors.primary} />
+                        </View>
+                      )}
+                      {balanceLabel !== 'settled' && (
+                        <View style={[styles.groupBadge, { backgroundColor: badgeColor }]}>
+                          <Text style={{ color: badgeTextColor, fontSize: 10, fontWeight: 'bold' }}>{displayAmount}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.recentGroupName, { color: colors.onSurface }]} numberOfLines={1}>{group.name}</Text>
+                    <View style={styles.groupMemberCount}>
+                      <Ionicons name="people-outline" size={12} color={colors.onSurfaceVariant} />
+                      <Text style={[styles.memberCountText, { color: colors.onSurfaceVariant }]}>{group.memberIds?.length || 0} members</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.groupsScroll}>
-            {recentGroups.map((group) => {
-              const myShare = groupBalances[group.groupId] || 0;
-              let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
-              let badgeColor = colors.surfaceContainerLow;
-              let badgeTextColor = colors.onSurfaceVariant;
-              let displayAmount = '0';
-
-              if (myShare > 0.05) {
-                balanceLabel = 'owed';
-                badgeColor = '#DCFCE7';
-                badgeTextColor = '#15803D';
-                displayAmount = `+₹${Math.round(myShare).toLocaleString()}`;
-              } else if (myShare < -0.05) {
-                balanceLabel = 'owe';
-                badgeColor = '#FEE2E2';
-                badgeTextColor = '#B91C1C';
-                displayAmount = `-₹${Math.round(Math.abs(myShare)).toLocaleString()}`;
-              }
-
-              return (
-                <TouchableOpacity
-                  key={group.groupId}
-                  style={[styles.recentGroupCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
-                  onPress={() => navigation.navigate('GroupDetail', { groupId: group.groupId, groupName: group.name })}
-                >
-                  <View style={[styles.groupIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
-                    {group.photoUrl ? (
-                      <Image source={{ uri: group.photoUrl }} style={styles.recentGroupImg} />
-                    ) : (
-                      <View style={[styles.recentGroupImg, { backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center' }]}>
-                        <MaterialIcons name={group.groupType === 'Trip' ? 'flight' : group.groupType === 'Home' ? 'home' : 'groups'} size={24} color={colors.primary} />
-                      </View>
-                    )}
-                    {balanceLabel !== 'settled' && (
-                      <View style={[styles.groupBadge, { backgroundColor: badgeColor }]}>
-                        <Text style={{ color: badgeTextColor, fontSize: 10, fontWeight: 'bold' }}>{displayAmount}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={[styles.recentGroupName, { color: colors.onSurface }]} numberOfLines={1}>{group.name}</Text>
-                  <View style={styles.groupMemberCount}>
-                    <Ionicons name="people-outline" size={12} color={colors.onSurfaceVariant} />
-                    <Text style={[styles.memberCountText, { color: colors.onSurfaceVariant }]}>{group.memberIds?.length || 0} members</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+        )}
 
         {/* AdMob Banner Slot */}
         <BannerAdSlot />
