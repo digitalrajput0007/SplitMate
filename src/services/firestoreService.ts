@@ -99,6 +99,9 @@ export interface ExpenseData {
   splitType: 'equal' | 'exact' | 'percentage';
   splitDetails: Record<string, number>;
   category: string;
+  date?: string;
+  notes?: string;
+  receiptUrl?: string;
   createdAt?: any;
 }
 
