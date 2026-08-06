@@ -4,8 +4,10 @@ export interface SimplifiedDebt {
   id: string;
   fromUserId: string;
   fromName: string;
+  fromPhotoUrl?: string;
   toUserId: string;
   toName: string;
+  toPhotoUrl?: string;
   toPaymentHandle: string;
   amount: number;
 }
@@ -13,7 +15,7 @@ export interface SimplifiedDebt {
 export const simplifyDebts = (
   expenses: ExpenseData[],
   settlements: SettlementData[],
-  memberProfiles: Record<string, { name: string; paymentHandle?: string }>
+  memberProfiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>
 ): SimplifiedDebt[] => {
   // Step 1: Calculate net balance for every member
   const netBalances: Record<string, number> = {};
@@ -80,17 +82,23 @@ export const simplifyDebts = (
     const settleAmount = Math.round(Math.min(debtor.amount, creditor.amount) * 100) / 100;
 
     if (settleAmount > 0.01) {
-      const fromName = memberProfiles[debtor.uid]?.name || (debtor.uid.includes('current') ? 'You' : 'Member');
+      const fromProfile = memberProfiles[debtor.uid];
+      const fromName = fromProfile?.name || (debtor.uid.includes('current') ? 'You' : 'Member');
+      const fromPhoto = fromProfile?.photoUrl;
+
       const toProfile = memberProfiles[creditor.uid] || { name: 'Member', paymentHandle: '' };
       const toName = toProfile.name || 'Member';
-      const toHandle = toProfile.paymentHandle || `${toName.toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`;
+      const toHandle = toProfile.paymentHandle || ''; // Don't generate fake UPIs anymore
+      const toPhoto = toProfile.photoUrl;
 
       simplified.push({
         id: `debt_${debtor.uid}_${creditor.uid}_${simplified.length}`,
         fromUserId: debtor.uid,
         fromName: fromName,
+        fromPhotoUrl: fromPhoto,
         toUserId: creditor.uid,
         toName: toName,
+        toPhotoUrl: toPhoto,
         toPaymentHandle: toHandle,
         amount: settleAmount,
       });

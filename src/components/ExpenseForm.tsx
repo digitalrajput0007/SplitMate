@@ -61,6 +61,58 @@ export default function ExpenseForm({
 
   const [description, setDescription] = useState(initialData?.title || '');
   const [amount, setAmount] = useState(initialData?.amount?.toString() || '');
+  const [displayAmount, setDisplayAmount] = useState('');
+
+  useEffect(() => {
+    if (initialData?.amount) {
+      handleAmountChange(initialData.amount.toString());
+    }
+  }, [initialData?.amount]);
+
+  const handleAmountChange = (text: string) => {
+    // Remove everything except numbers and one decimal point
+    const cleanText = text.replace(/[^0-9.]/g, '');
+    const parts = cleanText.split('.');
+
+    // Prevent multiple decimal points
+    if (parts.length > 2) return;
+
+    // Limit decimal places to 2
+    if (parts[1] && parts[1].length > 2) {
+      parts[1] = parts[1].slice(0, 2);
+    }
+
+    const rawValue = parts.join('.');
+    setAmount(rawValue);
+
+    // If in "Exact" mode, we should probably clear custom amounts as the total changed
+    if (splitType === 'exact') {
+      setCustomAmounts({});
+    }
+
+    // Format for display with separators (Indian style if possible, or standard)
+    if (rawValue === '') {
+      setDisplayAmount('');
+      return;
+    }
+
+    let integerPart = parts[0];
+    const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
+
+    // Indian formatting logic: Last 3 digits grouped, then groups of 2
+    // e.g. 12,34,567
+    if (integerPart.length > 3) {
+      let lastThree = integerPart.substring(integerPart.length - 3);
+      let otherParts = integerPart.substring(0, integerPart.length - 3);
+      if (otherParts !== '') {
+        otherParts = otherParts.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+        integerPart = otherParts + ',' + lastThree;
+      }
+    }
+
+    setDisplayAmount(integerPart + decimalPart);
+  };
+
   const [selectedCategory, setSelectedCategory] = useState(initialData?.category || '🍕 Food');
   const [splitType, setSplitType] = useState<'equal' | 'exact' | 'percentage'>(initialData?.splitType || 'equal');
   const [paidByUserId, setPaidByUserId] = useState<string>(initialData?.paidBy || members[0]?.uid || '');
@@ -72,6 +124,50 @@ export default function ExpenseForm({
 
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
+  const [manuallyEdited, setManuallyEdited] = useState<Set<string>>(new Set());
+
+  const handleCustomAmountChange = (uid: string, val: string) => {
+    const cleanVal = val.replace(/[^0-9.]/g, '');
+    const updated = { ...customAmounts, [uid]: cleanVal };
+    const newEdited = new Set(manuallyEdited).add(uid);
+    setManuallyEdited(newEdited);
+
+    // Auto-calculate for the "remaining" person
+    // Remaining person is the only one NOT in newEdited, OR the last one in members list if all are in newEdited
+    const notEdited = members.filter(m => !newEdited.has(m.uid));
+
+    if (notEdited.length === 1 && cleanVal !== '' && parsedAmount > 0) {
+      const targetUid = notEdited[0].uid;
+      const othersSum = members
+        .filter(m => m.uid !== targetUid)
+        .reduce((acc, m) => acc + (parseFloat(updated[m.uid] || '0') || 0), 0);
+
+      const remaining = Math.max(0, parsedAmount - othersSum);
+      updated[targetUid] = remaining.toFixed(2).replace(/\.00$/, '');
+    }
+    setCustomAmounts(updated);
+  };
+
+  const handleCustomPercentageChange = (uid: string, val: string) => {
+    const cleanVal = val.replace(/[^0-9.]/g, '');
+    const updated = { ...customPercentages, [uid]: cleanVal };
+    const newEdited = new Set(manuallyEdited).add(uid);
+    setManuallyEdited(newEdited);
+
+    // Auto-calculate for the "remaining" person
+    const notEdited = members.filter(m => !newEdited.has(m.uid));
+
+    if (notEdited.length === 1 && cleanVal !== '') {
+      const targetUid = notEdited[0].uid;
+      const othersSum = members
+        .filter(m => m.uid !== targetUid)
+        .reduce((acc, m) => acc + (parseFloat(updated[m.uid] || '0') || 0), 0);
+
+      const remaining = Math.max(0, 100 - othersSum);
+      updated[targetUid] = remaining.toFixed(2).replace(/\.00$/, '');
+    }
+    setCustomPercentages(updated);
+  };
 
   const handlePickReceipt = async () => {
     try {
@@ -104,12 +200,21 @@ export default function ExpenseForm({
   const numMembers = members.length;
   const perPersonEqual = parsedAmount > 0 ? parsedAmount / numMembers : 0;
 
+  const handleSplitTypeChange = (type: 'equal' | 'exact' | 'percentage') => {
+    setSplitType(type);
+    setManuallyEdited(new Set());
+  };
+
   const calculateSplitDetails = (): Record<string, number> | null => {
     const details: Record<string, number> = {};
 
     if (splitType === 'equal') {
-      members.forEach((m) => {
-        details[m.uid] = Math.round(perPersonEqual * 100) / 100;
+      const share = Math.floor((parsedAmount / numMembers) * 100) / 100;
+      const remainder = Math.round((parsedAmount - (share * numMembers)) * 100) / 100;
+
+      members.forEach((m, idx) => {
+        // Distribute remainder to the first person
+        details[m.uid] = idx === 0 ? Math.round((share + remainder) * 100) / 100 : share;
       });
       return details;
     }
@@ -118,13 +223,13 @@ export default function ExpenseForm({
       let sum = 0;
       for (const m of members) {
         const val = parseFloat(customAmounts[m.uid] || '0') || 0;
-        details[m.uid] = val;
-        sum += val;
+        details[m.uid] = Math.round(val * 100) / 100;
+        sum += details[m.uid];
       }
-      if (Math.abs(sum - parsedAmount) > 0.05) {
+      if (Math.abs(sum - parsedAmount) > 0.01) {
         Alert.alert(
           'Split Amount Mismatch',
-          `The sum of individual amounts (${formatCurrency(sum)}) must equal total expense amount (${formatCurrency(parsedAmount)}).`
+          `The sum of individual amounts (${formatCurrency(sum)}) must equal total expense amount (${formatCurrency(parsedAmount)}). Difference: ${formatCurrency(Math.abs(sum - parsedAmount))}`
         );
         return null;
       }
@@ -133,12 +238,24 @@ export default function ExpenseForm({
 
     if (splitType === 'percentage') {
       let pctSum = 0;
-      for (const m of members) {
+      let calculatedSum = 0;
+
+      for (let i = 0; i < members.length; i++) {
+        const m = members[i];
         const pct = parseFloat(customPercentages[m.uid] || '0') || 0;
         pctSum += pct;
-        details[m.uid] = Math.round(((parsedAmount * pct) / 100) * 100) / 100;
+
+        if (i === members.length - 1) {
+          // Last person gets the remaining balance to ensure total matches exactly
+          details[m.uid] = Math.round((parsedAmount - calculatedSum) * 100) / 100;
+        } else {
+          const share = Math.round(((parsedAmount * pct) / 100) * 100) / 100;
+          details[m.uid] = share;
+          calculatedSum += share;
+        }
       }
-      if (Math.abs(pctSum - 100) > 0.1) {
+
+      if (Math.abs(pctSum - 100) > 0.01) {
         Alert.alert(
           'Percentage Mismatch',
           `The total percentage shares must add up to 100%. Current sum: ${pctSum.toFixed(1)}%.`
@@ -192,11 +309,12 @@ export default function ExpenseForm({
           <Text style={[styles.amountCurrency, { color: colors.onPrimary }]}>₹</Text>
           <TextInput
             style={[styles.amountInput, { color: colors.onPrimary }]}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="0.00"
-            placeholderTextColor="rgba(255,255,255,0.5)"
+            value={displayAmount}
+            onChangeText={handleAmountChange}
+            placeholder="0"
+            placeholderTextColor="rgba(255,255,255,0.4)"
             keyboardType="decimal-pad"
+            autoFocus={!initialData?.amount}
           />
         </View>
       </View>
@@ -274,7 +392,7 @@ export default function ExpenseForm({
                   { backgroundColor: colors.surfaceContainer },
                   isActive && { backgroundColor: colors.primary }
                 ]}
-                onPress={() => setSplitType(t.id)}
+                onPress={() => handleSplitTypeChange(t.id)}
               >
                 <Text style={[styles.splitBtnText, { color: colors.onSurfaceVariant }, isActive && { color: colors.onPrimary, fontWeight: '600' }]}>
                   {t.label}
@@ -295,7 +413,8 @@ export default function ExpenseForm({
               shareText = formatCurrency(parseFloat(customAmounts[m.uid] || '0'));
             } else if (splitType === 'percentage') {
               const pct = parseFloat(customPercentages[m.uid] || '0');
-              shareText = `${formatCurrency((parsedAmount * pct) / 100)} (${pct}%)`;
+              const share = Math.round(((parsedAmount * pct) / 100) * 100) / 100;
+              shareText = `${formatCurrency(share)} (${pct}%)`;
             }
 
             return (
@@ -311,7 +430,7 @@ export default function ExpenseForm({
                     <TextInput
                       style={[styles.customInput, { color: colors.onSurface }]}
                       value={customAmounts[m.uid] || ''}
-                      onChangeText={(val) => setCustomAmounts({ ...customAmounts, [m.uid]: val })}
+                      onChangeText={(val) => handleCustomAmountChange(m.uid, val)}
                       placeholder="0"
                       keyboardType="numeric"
                     />
@@ -321,7 +440,7 @@ export default function ExpenseForm({
                     <TextInput
                       style={[styles.customInput, { color: colors.onSurface }]}
                       value={customPercentages[m.uid] || ''}
-                      onChangeText={(val) => setCustomPercentages({ ...customPercentages, [m.uid]: val })}
+                      onChangeText={(val) => handleCustomPercentageChange(m.uid, val)}
                       placeholder="0"
                       keyboardType="numeric"
                     />
@@ -423,12 +542,25 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   amountLabel: { ...Typography.labelMd },
-  amountInputRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  amountCurrency: { ...Typography.headlineLg, fontWeight: '700' },
+  amountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  amountCurrency: {
+    ...Typography.numericDisplay,
+    fontSize: 40,
+    fontWeight: '300',
+  },
   amountInput: {
     ...Typography.numericDisplay,
-    minWidth: 120,
-    textAlign: 'center',
+    fontSize: 44,
+    lineHeight: 52,
+    minWidth: 40,
+    textAlign: 'left',
+    paddingVertical: 4,
+    margin: 0,
   },
   field: { gap: Spacing.sm, marginBottom: Spacing.lg },
   fieldLabel: { ...Typography.labelMd, fontWeight: '600' },

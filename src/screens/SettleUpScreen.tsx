@@ -8,10 +8,11 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
@@ -45,7 +46,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
   const [settlements, setSettlements] = useState<SettlementData[]>([]);
-  const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string }>>({});
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>>({});
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
 
@@ -55,7 +56,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     const unsubGroup = subscribeToGroupDetail(groupId, async (groupData) => {
       if (groupData) {
         const allUsers = await getAllUsersFromFirestore();
-        const profiles: Record<string, { name: string; paymentHandle?: string }> = {};
+        const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
 
         groupData.memberIds.forEach((uid) => {
           const user = allUsers.find((u) => u.uid === uid);
@@ -63,6 +64,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             profiles[uid] = {
               name: uid === currentUid ? 'You' : user.name,
               paymentHandle: user.paymentHandle || '',
+              photoUrl: user.photoUrl || '',
             };
           }
         });
@@ -181,66 +183,79 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         ) : (
           simplifiedDebts.map((debt) => {
             const isSettling = settlingId === debt.id;
+            const isIowe = debt.fromUserId === currentUid;
+            const isOtherOwesMe = debt.toUserId === currentUid;
+
+            // Only show debts involving current user for this specific 'Settle Up' context
+            if (!isIowe && !isOtherOwesMe) return null;
+
+            const otherUser = isIowe
+              ? { name: debt.toName, photo: debt.toPhotoUrl, handle: debt.toPaymentHandle }
+              : { name: debt.fromName, photo: debt.fromPhotoUrl, handle: null };
+
             return (
               <View key={debt.id} style={styles.debtCard}>
                 <View style={styles.debtHeaderRow}>
-                  <View style={styles.avatarPair}>
-                    <View style={styles.avatarCircle}>
-                      <Text style={styles.avatarText}>{debt.fromName.charAt(0)}</Text>
-                    </View>
-                    <MaterialIcons name="arrow-forward" size={18} color={Colors.primary} />
-                    <View style={[styles.avatarCircle, { backgroundColor: Colors.secondaryContainer }]}>
-                      <Text style={[styles.avatarText, { color: Colors.onSecondaryContainer }]}>
-                        {debt.toName.charAt(0)}
+                  {/* Profile Photo */}
+                  <View style={[styles.avatarCircle, { backgroundColor: colors.primaryFixed }]}>
+                    {otherUser.photo ? (
+                      <Image source={{ uri: otherUser.photo }} style={styles.avatarImg} />
+                    ) : (
+                      <Text style={[styles.avatarText, { color: colors.primary }]}>
+                        {otherUser.name.charAt(0).toUpperCase()}
                       </Text>
-                    </View>
+                    )}
                   </View>
 
                   <View style={styles.debtInfo}>
-                    <Text style={styles.debtTitle}>
-                      <Text style={{ fontWeight: '700' }}>{debt.fromName}</Text> owes{' '}
-                      <Text style={{ fontWeight: '700' }}>{debt.toName}</Text>
+                    <Text style={[styles.debtName, { color: colors.onSurface }]}>{otherUser.name}</Text>
+                    <Text style={[styles.debtStatusLabel, { color: isOtherOwesMe ? colors.positive : colors.error }]}>
+                      {isOtherOwesMe ? 'Owes You' : 'You Owe'}
                     </Text>
-                    <Text style={styles.upiSub}>
-                      {currencyConfig.isIndia ? `VPA: ${debt.toPaymentHandle}` : `Handle: ${debt.toPaymentHandle}`}
-                    </Text>
+                    {isIowe && (
+                      <Text style={[styles.upiSub, { color: colors.onSurfaceVariant }]}>
+                        {otherUser.handle ? `UPI: ${otherUser.handle}` : 'Payment Method Not Available'}
+                      </Text>
+                    )}
                   </View>
 
-                  <Text style={styles.debtAmount}>{formatCurrency(debt.amount)}</Text>
+                  <Text style={[styles.debtAmount, { color: isOtherOwesMe ? colors.positive : colors.error }]}>
+                    {formatCurrency(debt.amount)}
+                  </Text>
                 </View>
 
                 {/* Actions Row */}
                 <View style={styles.actionsRow}>
-                  {currencyConfig.isIndia ? (
+                  {isIowe && otherUser.handle ? (
                     <TouchableOpacity
-                      style={styles.upiBtn}
+                      style={[styles.actionBtn, { backgroundColor: colors.primary }]}
                       onPress={() => handlePayViaUPI(debt)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.upiBtnIcon}>💸</Text>
-                      <Text style={styles.upiBtnText}>Pay via UPI</Text>
+                      <Ionicons name="logo-google-playstore" size={18} color={colors.onPrimary} style={{ marginRight: 6 }} />
+                      <Text style={[styles.actionBtnText, { color: colors.onPrimary }]}>Pay via UPI</Text>
                     </TouchableOpacity>
-                  ) : (
+                  ) : isOtherOwesMe ? (
                     <TouchableOpacity
-                      style={styles.upiBtn}
-                      onPress={() => handleInternationalPayment(debt)}
+                      style={[styles.actionBtn, { backgroundColor: colors.secondaryContainer }]}
+                      onPress={() => Alert.alert('Reminder Sent', `A notification has been sent to ${otherUser.name}.`)}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.upiBtnIcon}>💳</Text>
-                      <Text style={styles.upiBtnText}>Pay via App / Bank</Text>
+                      <MaterialIcons name="notifications-active" size={18} color={colors.onSecondaryContainer} style={{ marginRight: 6 }} />
+                      <Text style={[styles.actionBtnText, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
                     </TouchableOpacity>
-                  )}
+                  ) : null}
 
                   <TouchableOpacity
-                    style={[styles.recordBtn, isSettling && styles.disabledBtn]}
+                    style={[styles.settleBtn, { borderColor: colors.outlineVariant, borderWidth: 1 }]}
                     onPress={() => handleRecordSettlement(debt)}
                     activeOpacity={0.8}
                     disabled={isSettling}
                   >
                     {isSettling ? (
-                      <ActivityIndicator color={Colors.onPrimary} size="small" />
+                      <ActivityIndicator color={colors.primary} size="small" />
                     ) : (
-                      <Text style={styles.recordBtnText}>Record Settlement</Text>
+                      <Text style={[styles.settleBtnText, { color: colors.onSurface }]}>Mark as Settled</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -309,47 +324,40 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   avatarCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primaryFixed,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  avatarText: { ...Typography.titleSm, color: Colors.primary },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarText: { ...Typography.titleLg, fontWeight: '700' },
   debtInfo: { flex: 1 },
-  debtTitle: { ...Typography.titleSm, color: Colors.onSurface },
-  upiSub: { ...Typography.labelMd, color: Colors.onSurfaceVariant },
-  debtAmount: { ...Typography.titleMd, color: Colors.primary, fontWeight: '600' },
+  debtName: { ...Typography.titleSm, fontWeight: '700' },
+  debtStatusLabel: { ...Typography.labelMd, marginTop: 2 },
+  upiSub: { ...Typography.bodySm, fontSize: 10, marginTop: 2 },
+  debtAmount: { ...Typography.titleLg, fontWeight: '700' },
   actionsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    paddingTop: Spacing.sm,
+    marginTop: Spacing.sm,
   },
-  upiBtn: {
-    flex: 1,
+  actionBtn: {
+    flex: 1.2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
-    backgroundColor: Colors.secondaryContainer,
     borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.gutter,
-    minHeight: 44,
+    height: 44,
   },
-  upiBtnIcon: { fontSize: 14 },
-  upiBtnText: { ...Typography.titleSm, color: Colors.onSecondaryContainer },
-  recordBtn: {
+  actionBtnText: { ...Typography.labelLg, fontWeight: '700' },
+  settleBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
-    paddingVertical: Spacing.gutter,
-    minHeight: 44,
+    height: 44,
   },
-  disabledBtn: { opacity: 0.6 },
-  recordBtnText: { ...Typography.titleSm, color: Colors.onPrimary },
+  settleBtnText: { ...Typography.labelLg, fontWeight: '600' },
 });

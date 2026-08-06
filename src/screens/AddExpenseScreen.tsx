@@ -29,7 +29,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 export default function AddExpenseScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const currentUser = auth.currentUser;
-  const groupId = route.params?.groupId || 'goa_trip';
+  const { groupId, groupName } = route.params || {};
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [memberMap, setMemberMap] = useState<Record<string, string>>({});
@@ -37,6 +37,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (!groupId) {
+      setLoading(false);
+      return;
+    }
     const unsub = subscribeToGroupDetail(groupId, async (data) => {
       if (data) {
         setGroup(data);
@@ -82,7 +86,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
-          <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Add Expense</Text>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Add Expense</Text>
+            {groupName && <Text style={[styles.groupSubtitle, { color: colors.primary }]}>{groupName}</Text>}
+          </View>
           <View style={{ width: 40 }} />
         </View>
 
@@ -117,6 +124,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   topBarTitle: { ...Typography.titleMd, fontWeight: '600' },
+  groupSubtitle: { ...Typography.bodySm, fontWeight: '700', marginTop: -2 },
   content: { flex: 1, paddingHorizontal: Spacing.containerMargin },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });

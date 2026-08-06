@@ -16,6 +16,8 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { BannerAdSlot } from '../components/BannerAdSlot';
+import { M3Dialog } from '../components/M3Dialog';
+import { M3BottomSheet } from '../components/M3BottomSheet';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -68,6 +70,9 @@ export default function HomeScreen() {
   });
 
   const [loading, setLoading] = useState(true);
+
+  const [showNoGroupsDialog, setShowNoGroupsDialog] = useState(false);
+  const [showSelectGroupSheet, setShowSelectGroupSheet] = useState(false);
 
   // Resolve display name
   useEffect(() => {
@@ -156,6 +161,19 @@ export default function HomeScreen() {
       await declineGroupInvitation(inv.invitationId || '', inv.groupId);
     } catch (e) {
       console.log('Error declining invitation:', e);
+    }
+  };
+
+  const handleAddExpensePress = () => {
+    if (groups.length === 0) {
+      setShowNoGroupsDialog(true);
+    } else if (groups.length === 1) {
+      navigation.navigate('AddExpense', {
+        groupId: groups[0].groupId,
+        groupName: groups[0].name,
+      });
+    } else {
+      setShowSelectGroupSheet(true);
     }
   };
 
@@ -289,7 +307,7 @@ export default function HomeScreen() {
 
         {/* Action Buttons Row */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('AddExpense')}>
+          <TouchableOpacity style={styles.actionItem} onPress={handleAddExpensePress}>
             <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
               <MaterialIcons name="add" size={24} color={colors.primary} />
             </View>
@@ -568,6 +586,103 @@ export default function HomeScreen() {
         {/* AdMob Banner Slot */}
         <BannerAdSlot />
       </ScrollView>
+
+      {/* Case 1: No Groups Dialog */}
+      <M3Dialog
+        visible={showNoGroupsDialog}
+        title="No Groups Found"
+        message="You need to create a group before adding shared expenses."
+        confirmLabel="Create Group"
+        onConfirm={() => {
+          setShowNoGroupsDialog(false);
+          navigation.navigate('CreateGroup');
+        }}
+        onDismiss={() => setShowNoGroupsDialog(false)}
+      />
+
+      {/* Case 3: Select Group Bottom Sheet */}
+      <M3BottomSheet
+        visible={showSelectGroupSheet}
+        onDismiss={() => setShowSelectGroupSheet(false)}
+        title="Select a Group"
+      >
+        <View style={styles.sheetContent}>
+          {groups.map((group) => {
+            const myShare = groupBalances[group.groupId] || 0;
+            let balanceLabel = 'settled';
+            let badgeColor = colors.surfaceContainerLow;
+            let badgeTextColor = colors.onSurfaceVariant;
+            let displayAmount = '0';
+
+            if (myShare > 0.05) {
+              balanceLabel = 'owed';
+              badgeColor = '#DCFCE7';
+              badgeTextColor = '#15803D';
+              displayAmount = `+₹${Math.round(myShare).toLocaleString()}`;
+            } else if (myShare < -0.05) {
+              balanceLabel = 'owe';
+              badgeColor = '#FEE2E2';
+              badgeTextColor = '#B91C1C';
+              displayAmount = `-₹${Math.round(Math.abs(myShare)).toLocaleString()}`;
+            }
+
+            return (
+              <TouchableOpacity
+                key={group.groupId}
+                style={[styles.sheetItem, { borderColor: colors.divider }]}
+                onPress={() => {
+                  setShowSelectGroupSheet(false);
+                  navigation.navigate('AddExpense', {
+                    groupId: group.groupId,
+                    groupName: group.name,
+                  });
+                }}
+              >
+                <View style={styles.sheetItemLeft}>
+                  {group.photoUrl ? (
+                    <Image source={{ uri: group.photoUrl }} style={styles.sheetItemImg} />
+                  ) : (
+                    <View style={[styles.sheetItemImg, { backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center' }]}>
+                      <MaterialIcons
+                        name={group.groupType === 'Trip' ? 'flight' : group.groupType === 'Home' ? 'home' : 'groups'}
+                        size={20}
+                        color={colors.primary}
+                      />
+                    </View>
+                  )}
+                  <View>
+                    <Text style={[styles.sheetItemName, { color: colors.onSurface }]}>{group.name}</Text>
+                    <Text style={[styles.sheetItemSub, { color: colors.onSurfaceVariant }]}>
+                      {group.groupType} • {group.memberIds?.length || 0} members
+                    </Text>
+                    {group.createdAt && (
+                      <Text style={[styles.sheetItemActivity, { color: colors.outline }]}>
+                        Last activity: {new Date(group.createdAt.seconds * 1000).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+                {balanceLabel !== 'settled' && (
+                  <View style={[styles.sheetBadge, { backgroundColor: badgeColor }]}>
+                    <Text style={{ color: badgeTextColor, fontSize: 10, fontWeight: 'bold' }}>{displayAmount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity
+            style={[styles.sheetAddBtn, { borderColor: colors.primary }]}
+            onPress={() => {
+              setShowSelectGroupSheet(false);
+              navigation.navigate('CreateGroup');
+            }}
+          >
+            <MaterialIcons name="add" size={20} color={colors.primary} />
+            <Text style={[styles.sheetAddText, { color: colors.primary }]}>Create New Group</Text>
+          </TouchableOpacity>
+        </View>
+      </M3BottomSheet>
     </View>
   );
 }
@@ -959,5 +1074,61 @@ const styles = StyleSheet.create({
   memberCountText: {
     ...Typography.bodySm,
     fontSize: 10,
+  },
+  sheetContent: {
+    gap: Spacing.sm,
+    paddingBottom: 20,
+  },
+  sheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+  },
+  sheetItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    flex: 1,
+  },
+  sheetItemImg: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+  },
+  sheetItemName: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+  },
+  sheetItemSub: {
+    ...Typography.bodySm,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  sheetItemActivity: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    marginTop: 1,
+  },
+  sheetBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  sheetAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.sm,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.lg,
+    gap: 8,
+  },
+  sheetAddText: {
+    ...Typography.titleSm,
+    fontWeight: '700',
   },
 });
