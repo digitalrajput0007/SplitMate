@@ -158,9 +158,6 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Group Expenses</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('GroupSettings', { groupId })}>
-              <Text style={[styles.settingsLinkText, { color: colors.primary }]}>Group Info</Text>
-            </TouchableOpacity>
           </View>
 
           {loading ? (
@@ -348,10 +345,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...Typography.titleMd,
     fontWeight: '700',
-  },
-  settingsLinkText: {
-    ...Typography.labelMd,
-    fontWeight: '600',
   },
   expensesContainer: {
     borderRadius: BorderRadius.lg,

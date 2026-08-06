@@ -22,6 +22,7 @@ import {
   subscribeToUserGroups,
   getUserProfileFromFirestore,
   subscribeUserBalanceSummary,
+  subscribeUserGroupBalances,
   getSavedUserContactsFromFirestore,
   subscribeToPendingInvitations,
   acceptGroupInvitation,
@@ -42,6 +43,7 @@ export default function HomeScreen() {
 
   const [firstName, setFirstName] = useState('');
   const [groups, setGroups] = useState<GroupData[]>([]);
+  const [groupBalances, setGroupBalances] = useState<Record<string, number>>({});
   const [pendingInvitations, setPendingInvitations] = useState<GroupInvitation[]>([]);
   const [frequentContacts, setFrequentContacts] = useState<UserProfile[]>([]);
   const [balanceSummary, setBalanceSummary] = useState<UserBalanceSummary>({
@@ -115,10 +117,15 @@ export default function HomeScreen() {
       setBalanceSummary(summary);
     });
 
+    const unsubGroupBalances = subscribeUserGroupBalances(currentUser.uid, (balances) => {
+      setGroupBalances(balances);
+    });
+
     return () => {
       unsubGroups();
       unsubInvites();
       unsubBalance();
+      unsubGroupBalances();
     };
   }, [currentUser]);
 
@@ -307,25 +314,24 @@ export default function HomeScreen() {
             <View style={styles.groupsList}>
               {groups.map((group) => {
                 const myUid = currentUser?.uid || '';
-                const myShare = group.memberNetShares?.[myUid] || 0;
+                const myShare = groupBalances[group.groupId] || 0;
                 let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
                 let balanceAmount = 'Settled up';
 
-                if (myShare > 0.01) {
+                if (myShare > 0.05) {
                   balanceLabel = 'owed';
                   balanceAmount = formatCurrency(myShare);
-                } else if (myShare < -0.01) {
+                } else if (myShare < -0.05) {
                   balanceLabel = 'owe';
                   balanceAmount = formatCurrency(Math.abs(myShare));
                 }
 
                 // Map member profile images accurately from Firestore lookup or group cache
-                const membersWithImages = (group.members || []).map((m: any) => {
-                  const mUid = m.uid || m.id;
+                const membersWithImages = (group.memberIds || []).map((mUid) => {
                   const profileMatch = allUsersMap.get(mUid);
                   return {
-                    name: m.displayName || m.name || profileMatch?.displayName || 'Member',
-                    uri: m.photoURL || m.photoUrl || profileMatch?.photoURL || profileMatch?.photoUrl || undefined,
+                    name: profileMatch?.name || 'Member',
+                    uri: profileMatch?.photoUrl || undefined,
                   };
                 });
 
@@ -333,7 +339,7 @@ export default function HomeScreen() {
                   <GroupCard
                     key={group.groupId}
                     name={group.name}
-                    groupPhotoUrl={group.groupPhotoUrl}
+                    groupPhotoUrl={group.photoUrl}
                     groupType={group.groupType as any}
                     members={membersWithImages}
                     balanceLabel={balanceLabel}

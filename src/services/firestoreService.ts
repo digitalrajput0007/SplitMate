@@ -512,6 +512,37 @@ export const declineGroupInvitation = async (invitationId: string, groupId: stri
   }
 };
 
+export const cancelGroupInvitation = async (groupId: string, toUserId: string) => {
+  try {
+    // 1. Find and delete the pending invitation
+    const invQuery = query(
+      collection(db, 'groupInvitations'),
+      where('groupId', '==', groupId),
+      where('toUserId', '==', toUserId),
+      where('status', '==', 'pending')
+    );
+    const invSnap = await getDocs(invQuery);
+    for (const docSnap of invSnap.docs) {
+      await deleteDoc(docSnap.ref);
+    }
+
+    // 2. Remove user from group memberIds
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (groupSnap.exists()) {
+      const gData = groupSnap.data() as GroupData;
+      const updatedMemberIds = (gData.memberIds || []).filter((id) => id !== toUserId);
+      await updateDoc(groupRef, {
+        memberIds: updatedMemberIds,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    console.error('Error cancelling group invitation:', error);
+    throw error;
+  }
+};
+
 export const subscribeToPendingInvitations = (
   uid: string,
   onInvitationsUpdate: (invitations: GroupInvitation[]) => void
@@ -885,6 +916,92 @@ export const subscribeUserActivityFeed = (
     unsub1();
     unsub2();
     unsub3();
+  };
+};
+
+export const subscribeUserGroupBalances = (
+  uid: string,
+  onBalancesUpdate: (balances: Record<string, number>) => void
+) => {
+  if (!uid) {
+    onBalancesUpdate({});
+    return () => {};
+  }
+
+  const expensesQuery = query(collection(db, 'expenses'));
+  const settlementsQuery = query(collection(db, 'settlements'));
+
+  let allExpenses: ExpenseData[] = [];
+  let allSettlements: SettlementData[] = [];
+
+  const recalculate = async () => {
+    const groupBalances: Record<string, number> = {};
+
+    // Fetch user groups for preferences
+    const userGroupsSnap = await getDocs(query(collection(db, 'groups'), where('memberIds', 'array-contains', uid)));
+    const userGroupsMap = new Map<string, GroupData>();
+    userGroupsSnap.docs.forEach((docSnap) => {
+      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+    });
+
+    allExpenses.forEach((exp) => {
+      const gId = exp.groupId;
+      if (!userGroupsMap.has(gId)) return;
+
+      const groupData = userGroupsMap.get(gId);
+      const joinedAt = groupData?.membersJoinedAt?.[uid];
+      const includeExisting = groupData?.memberExistingExpensesPreference?.[uid] ?? true;
+      const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+
+      if (!includeExisting && joinedAt && expTime < joinedAt) return;
+
+      const splitDetails = exp.splitDetails || {};
+      const isPayer = exp.paidBy === uid;
+      const userShare = splitDetails[uid] || 0;
+
+      if (!(gId in groupBalances)) groupBalances[gId] = 0;
+
+      if (isPayer) {
+        groupBalances[gId] += (exp.amount - userShare);
+      } else if (userShare > 0) {
+        groupBalances[gId] -= userShare;
+      }
+    });
+
+    allSettlements.forEach((s) => {
+      const gId = s.groupId;
+      if (!userGroupsMap.has(gId)) return;
+      if (s.status === 'completed' || !s.status) {
+        if (!(gId in groupBalances)) groupBalances[gId] = 0;
+        if (s.fromUserId === uid) {
+          groupBalances[gId] += s.amount;
+        } else if (s.toUserId === uid) {
+          groupBalances[gId] -= s.amount;
+        }
+      }
+    });
+
+    // Round values
+    Object.keys(groupBalances).forEach(gId => {
+      groupBalances[gId] = Math.round(groupBalances[gId] * 100) / 100;
+    });
+
+    onBalancesUpdate(groupBalances);
+  };
+
+  const unsub1 = onSnapshot(expensesQuery, (snap) => {
+    allExpenses = snap.docs.map((d) => d.data() as ExpenseData);
+    recalculate();
+  });
+
+  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
+    allSettlements = snap.docs.map((d) => d.data() as SettlementData);
+    recalculate();
+  });
+
+  return () => {
+    unsub1();
+    unsub2();
   };
 };
 

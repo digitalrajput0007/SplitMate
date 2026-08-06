@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,12 +15,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Contacts from 'expo-contacts';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import {
   createGroupInFirestore,
@@ -53,17 +54,16 @@ const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeo
   { id: 'Other', label: 'Other', icon: 'more-horiz' },
 ];
 
-const AVATAR_COLORS = [
-  { bg: Colors.primaryContainer, text: Colors.onPrimaryContainer },
-  { bg: Colors.surfaceContainerHighest, text: Colors.onSurface },
-  { bg: Colors.secondaryContainer, text: Colors.onSecondaryContainer },
-  { bg: Colors.primaryFixed, text: Colors.onPrimaryFixed },
-];
-
 export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
-  const theme = { colors, isDark };
+
+  const AVATAR_COLORS = [
+    { bg: colors.primaryContainer, text: colors.onPrimaryContainer },
+    { bg: colors.surfaceContainerHighest, text: colors.onSurface },
+    { bg: colors.secondaryContainer, text: colors.onSecondaryContainer },
+    { bg: colors.primaryFixed, text: colors.onPrimaryFixed },
+  ];
 
   // Screen Flow Steps:
   // Screen 1 (Basics) -> Screen 2 (Add Members) -> Screen 3 (Confirm) -> Screen 4 (Success)
@@ -96,11 +96,7 @@ export default function CreateGroupModal({ navigation }: Props) {
   const [creating, setCreating] = useState(false);
   const [createdGroupId, setCreatedGroupId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadContactsList();
-  }, []);
-
-  const loadContactsList = async () => {
+  const loadContactsList = useCallback(async () => {
     try {
       const list: ContactItem[] = [];
 
@@ -124,11 +120,16 @@ export default function CreateGroupModal({ navigation }: Props) {
 
       setAllContacts(list);
       setFilteredContacts(list);
-      setSelectedIds(new Set());
     } catch (e) {
       console.log('Error loading contacts:', e);
     }
-  };
+  }, [currentUser?.uid, AVATAR_COLORS]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadContactsList();
+    }, [loadContactsList])
+  );
 
   const handlePickPhoto = async () => {
     try {
@@ -258,42 +259,42 @@ export default function CreateGroupModal({ navigation }: Props) {
   // =============================================================
   if (currentStep === 4) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.successCanvas}>
           {/* Success Icon */}
-          <View style={styles.successIconCircle}>
-            <MaterialIcons name="check-circle" size={64} color={Colors.primary} />
+          <View style={[styles.successIconCircle, { backgroundColor: colors.surfaceContainerLowest }]}>
+            <MaterialIcons name="check-circle" size={64} color={colors.primary} />
           </View>
 
           {/* Typography Stack */}
-          <Text style={styles.successHeadline}>Group created!</Text>
-          <Text style={styles.successTitle}>{groupName || 'Goa Trip'} is ready. What's next?</Text>
-          <Text style={styles.successSubtitle}>Add the first expense to get started</Text>
+          <Text style={[styles.successHeadline, { color: colors.onBackground }]}>Group created!</Text>
+          <Text style={[styles.successTitle, { color: colors.onSurface }]}>{groupName || 'Goa Trip'} is ready. What's next?</Text>
+          <Text style={[styles.successSubtitle, { color: colors.onSurfaceVariant }]}>Add the first expense to get started</Text>
 
           {/* Action Stack */}
           <View style={styles.actionStack}>
             {/* Primary Action */}
             <TouchableOpacity
-              style={styles.stitchPrimaryBtn}
+              style={[styles.stitchPrimaryBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.85}
               onPress={() => {
                 navigation.replace('AddExpense', { groupId: createdGroupId || undefined });
               }}
             >
-              <MaterialIcons name="add" size={20} color={Colors.onPrimary} style={{ marginRight: 8 }} />
-              <Text style={styles.stitchPrimaryBtnText}>Add Expense</Text>
+              <MaterialIcons name="add" size={20} color={colors.onPrimary} style={{ marginRight: 8 }} />
+              <Text style={[styles.stitchPrimaryBtnText, { color: colors.onPrimary }]}>Add Expense</Text>
             </TouchableOpacity>
 
             {/* Secondary Action */}
             <TouchableOpacity
-              style={styles.stitchSecondaryBtn}
+              style={[styles.stitchSecondaryBtn, { borderColor: colors.primary }]}
               activeOpacity={0.85}
               onPress={() => {
                 navigation.replace('InviteContacts');
               }}
             >
-              <MaterialIcons name="person-add" size={20} color={Colors.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.stitchSecondaryBtnText}>Invite more people</Text>
+              <MaterialIcons name="person-add" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.stitchSecondaryBtnText, { color: colors.primary }]}>Invite more people</Text>
             </TouchableOpacity>
 
             {/* Tertiary Action */}
@@ -304,7 +305,7 @@ export default function CreateGroupModal({ navigation }: Props) {
                 navigation.goBack();
               }}
             >
-              <Text style={styles.stitchTertiaryBtnText}>Skip for now</Text>
+              <Text style={[styles.stitchTertiaryBtnText, { color: colors.primary }]}>Skip for now</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -317,9 +318,9 @@ export default function CreateGroupModal({ navigation }: Props) {
   // =============================================================
   if (currentStep === 3) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Top App Bar */}
-        <View style={[styles.topAppBar, { backgroundColor: colors.background }]}>
+        <View style={[styles.topAppBar, { backgroundColor: colors.surface }]}>
           <TouchableOpacity
             style={styles.iconBtn}
             onPress={() => setCurrentStep(2)}
@@ -387,12 +388,20 @@ export default function CreateGroupModal({ navigation }: Props) {
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 {/* User avatar */}
                 <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-                  <Text style={[styles.avatarCircleText, { color: colors.onPrimaryContainer }]}>You</Text>
+                  {currentUser?.photoURL ? (
+                    <Image source={{ uri: currentUser.photoURL }} style={styles.avatarImg} />
+                  ) : (
+                    <Text style={[styles.avatarCircleText, { color: colors.onPrimaryContainer }]}>You</Text>
+                  )}
                 </View>
                 {/* Selected members avatars */}
                 {selectedContactsList.slice(0, 5).map((item) => (
                   <View key={item.id} style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHighest }]}>
-                    <Text style={[styles.avatarCircleText, { color: colors.onSurface }]}>{item.initial}</Text>
+                    {item.photoUrl ? (
+                      <Image source={{ uri: item.photoUrl }} style={styles.avatarImg} />
+                    ) : (
+                      <Text style={[styles.avatarCircleText, { color: colors.onSurface }]}>{item.initial}</Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -431,45 +440,43 @@ export default function CreateGroupModal({ navigation }: Props) {
   // =============================================================
   if (currentStep === 2) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         {/* TopAppBar */}
-        <View style={styles.topAppBar}>
+        <View style={[styles.topAppBar, { backgroundColor: colors.surface }]}>
           <TouchableOpacity
             style={styles.iconBtn}
             onPress={() => setCurrentStep(1)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <MaterialIcons name="arrow-back" size={24} color={Colors.onSurfaceVariant} />
+            <MaterialIcons name="arrow-back" size={24} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
-          <Text style={styles.topAppBarTitlePrimary} numberOfLines={1}>
+          <Text style={[styles.topAppBarTitlePrimary, { color: colors.primary }]} numberOfLines={1}>
             Add members to {groupName || 'Goa Trip'}
           </Text>
-          <TouchableOpacity style={styles.iconBtn}>
-            <MaterialIcons name="more-vert" size={24} color={Colors.onSurfaceVariant} />
-          </TouchableOpacity>
+          <View style={{ width: 44 }} />
         </View>
 
         {/* Main Content */}
         <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md }}>
           {/* Search Field */}
-          <View style={styles.searchBox}>
-            <MaterialIcons name="search" size={20} color={Colors.outline} style={{ marginRight: 8 }} />
+          <View style={[styles.searchBox, { borderColor: colors.outline, backgroundColor: colors.surfaceContainerLow }]}>
+            <MaterialIcons name="search" size={20} color={colors.outline} style={{ marginRight: 8 }} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.onSurface }]}
               placeholder="Search contacts"
-              placeholderTextColor={Colors.onSurfaceVariant}
+              placeholderTextColor={colors.onSurfaceVariant}
               value={searchQuery}
               onChangeText={handleSearch}
             />
             {searchQuery !== '' && (
               <TouchableOpacity onPress={() => handleSearch('')}>
-                <MaterialIcons name="close" size={18} color={Colors.onSurfaceVariant} />
+                <MaterialIcons name="close" size={18} color={colors.onSurfaceVariant} />
               </TouchableOpacity>
             )}
           </View>
 
           {/* Contact List Container Card */}
-          <View style={styles.contactsCardContainer}>
+          <View style={[styles.contactsCardContainer, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
             <FlatList
               data={filteredContacts}
               keyExtractor={(item) => item.id}
@@ -478,22 +485,30 @@ export default function CreateGroupModal({ navigation }: Props) {
                 const isChecked = selectedIds.has(item.id);
                 return (
                   <TouchableOpacity
-                    style={styles.contactListItem}
+                    style={[styles.contactListItem, { borderBottomColor: colors.outlineVariant }]}
                     onPress={() => toggleContact(item.id)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.contactLeftCol}>
                       <View style={[styles.avatarCircle, { backgroundColor: item.avatarBg }]}>
-                        <Text style={styles.avatarCircleText}>{item.initial}</Text>
+                        {item.photoUrl ? (
+                          <Image source={{ uri: item.photoUrl }} style={styles.avatarImg} />
+                        ) : (
+                          <Text style={[styles.avatarCircleText, { color: colors.onPrimaryContainer }]}>{item.initial}</Text>
+                        )}
                       </View>
                       <View style={{ marginLeft: Spacing.md }}>
-                        <Text style={styles.contactItemName}>{item.name}</Text>
-                        <Text style={styles.contactItemSub}>{item.subText}</Text>
+                        <Text style={[styles.contactItemName, { color: colors.onSurface }]}>{item.name}</Text>
+                        <Text style={[styles.contactItemSub, { color: colors.onSurfaceVariant }]}>{item.subText}</Text>
                       </View>
                     </View>
 
-                    <View style={[styles.customCheckbox, isChecked && styles.customCheckboxChecked]}>
-                      {isChecked && <MaterialIcons name="check" size={14} color={Colors.onPrimary} />}
+                    <View style={[
+                      styles.customCheckbox,
+                      { borderColor: colors.primary },
+                      isChecked && [styles.customCheckboxChecked, { backgroundColor: colors.primary }]
+                    ]}>
+                      {isChecked && <MaterialIcons name="check" size={14} color={colors.onPrimary} />}
                     </View>
                   </TouchableOpacity>
                 );
@@ -506,36 +521,36 @@ export default function CreateGroupModal({ navigation }: Props) {
                     onPress={() => navigation.navigate('InviteContacts')}
                     activeOpacity={0.8}
                   >
-                    <View style={styles.dottedPhoneCircle}>
-                      <MaterialIcons name="person-add" size={20} color={Colors.primary} />
+                    <View style={[styles.dottedPhoneCircle, { borderColor: colors.primary }]}>
+                      <MaterialIcons name="person-add" size={20} color={colors.primary} />
                     </View>
-                    <Text style={styles.integratedInviteText}>Invite new members</Text>
+                    <Text style={[styles.integratedInviteText, { color: colors.onSurface }]}>Invite new members</Text>
                   </TouchableOpacity>
 
                   {showPhoneInvite && (
-                    <View style={styles.phoneInviteCard}>
-                      <Text style={styles.phoneInviteTitle}>Enter Indian Mobile Number (+91)</Text>
+                    <View style={[styles.phoneInviteCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLow }]}>
+                      <Text style={[styles.phoneInviteTitle, { color: colors.onSurface }]}>Enter Indian Mobile Number (+91)</Text>
                       <TextInput
-                        style={styles.textInputFull}
+                        style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }]}
                         placeholder="Member Name (Optional)"
-                        placeholderTextColor={Colors.onSurfaceVariant}
+                        placeholderTextColor={colors.onSurfaceVariant}
                         value={customName}
                         onChangeText={setCustomName}
                       />
-                      <View style={[styles.phoneInputRow, { marginTop: 8 }]}>
-                        <Text style={styles.phonePrefix}>+91</Text>
+                      <View style={[styles.phoneInputRow, { marginTop: 8, borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
+                        <Text style={[styles.phonePrefix, { color: colors.onSurface }]}>+91</Text>
                         <TextInput
-                          style={styles.phoneInputText}
+                          style={[styles.phoneInputText, { color: colors.onSurface }]}
                           placeholder="10-digit mobile number"
-                          placeholderTextColor={Colors.onSurfaceVariant}
+                          placeholderTextColor={colors.onSurfaceVariant}
                           keyboardType="number-pad"
                           maxLength={10}
                           value={customPhone}
                           onChangeText={setCustomPhone}
                         />
                       </View>
-                      <TouchableOpacity style={styles.addMemberSubmitBtn} onPress={handleAddCustomPhone}>
-                        <Text style={styles.addMemberSubmitText}>Add Member</Text>
+                      <TouchableOpacity style={[styles.addMemberSubmitBtn, { backgroundColor: colors.primary }]} onPress={handleAddCustomPhone}>
+                        <Text style={[styles.addMemberSubmitText, { color: colors.onPrimary }]}>Add Member</Text>
                       </TouchableOpacity>
                     </View>
                   )}
@@ -547,15 +562,15 @@ export default function CreateGroupModal({ navigation }: Props) {
 
         {/* Bottom Action Area with Pill Badge + Full-width Create Group Button */}
         <View style={styles.bottomActionAreaCenter}>
-          <View style={styles.countPillBadge}>
-            <Text style={styles.countPillText}>
+          <View style={[styles.countPillBadge, { backgroundColor: colors.primaryFixed }]}>
+            <Text style={[styles.countPillText, { color: colors.onPrimaryFixed }]}>
               {selectedIds.size} {selectedIds.size === 1 ? 'member' : 'members'} selected
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.bottomPrimaryBtn} onPress={handleMembersNext} activeOpacity={0.85}>
-            <Text style={styles.bottomPrimaryBtnText}>Create Group</Text>
-            <MaterialIcons name="arrow-forward" size={20} color={Colors.onPrimary} style={{ marginLeft: 6 }} />
+          <TouchableOpacity style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary }]} onPress={handleMembersNext} activeOpacity={0.85}>
+            <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>Create Group</Text>
+            <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} style={{ marginLeft: 6 }} />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -566,42 +581,42 @@ export default function CreateGroupModal({ navigation }: Props) {
   // SCREEN 1: CREATE GROUP BASICS (Stitch ID: de45dbe388304e60bec686c33551b919)
   // =============================================================
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       {/* TopAppBar */}
-      <View style={styles.topAppBar}>
+      <View style={[styles.topAppBar, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <MaterialIcons name="arrow-back" size={24} color={Colors.primary} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.topAppBarTitle}>Create a Group</Text>
+        <Text style={[styles.topAppBarTitle, { color: colors.onSurface }]}>Create a Group</Text>
       </View>
 
       {/* Main Content */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.basicsMainContent}>
         {/* Photo Upload */}
         <View style={styles.photoUploadCenter}>
-          <TouchableOpacity style={styles.photoCircleContainer} onPress={handlePickPhoto} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
             {groupPhoto ? (
               <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
             ) : (
-              <MaterialIcons name="photo-camera" size={28} color={Colors.onSurfaceVariant} />
+              <MaterialIcons name="photo-camera" size={28} color={colors.onSurfaceVariant} />
             )}
-            <View style={styles.photoAddBadge}>
-              <MaterialIcons name="add" size={12} color={Colors.onPrimary} />
+            <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+              <MaterialIcons name="add" size={12} color={colors.onPrimary} />
             </View>
           </TouchableOpacity>
         </View>
 
         {/* Input Field: Group Name */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Group name</Text>
+          <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Group name</Text>
           <TextInput
-            style={styles.textInputFull}
+            style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }]}
             placeholder="e.g., Goa Trip"
-            placeholderTextColor={Colors.outline}
+            placeholderTextColor={colors.outline}
             value={groupName}
             onChangeText={setGroupName}
           />
@@ -643,26 +658,26 @@ export default function CreateGroupModal({ navigation }: Props) {
           <View style={styles.inputGroup}>
             <View style={styles.datesRow}>
               <View style={styles.dateCol}>
-                <Text style={styles.inputLabel}>Start date</Text>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
                 <TouchableOpacity
-                  style={styles.dateInputBox}
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
                   onPress={() => setPickerMode('start')}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.dateInputText}>{formatDateShort(startDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={Colors.onSurfaceVariant} />
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
                 </TouchableOpacity>
               </View>
 
               <View style={styles.dateCol}>
-                <Text style={styles.inputLabel}>End date</Text>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
                 <TouchableOpacity
-                  style={styles.dateInputBox}
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
                   onPress={() => setPickerMode('end')}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.dateInputText}>{formatDateShort(endDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={Colors.onSurfaceVariant} />
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -686,11 +701,11 @@ export default function CreateGroupModal({ navigation }: Props) {
 
         {groupType === 'Family' && (
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Family name (Optional)</Text>
+            <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
             <TextInput
-              style={styles.textInputFull}
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }]}
               placeholder="e.g., The Sharma Household"
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               value={familyName}
               onChangeText={setFamilyName}
             />
@@ -698,26 +713,26 @@ export default function CreateGroupModal({ navigation }: Props) {
         )}
 
         {groupType === 'Flatmate' && (
-          <View style={[styles.inputGroup, styles.switchCard]}>
+          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.switchTitle}>Setup monthly split?</Text>
-              <Text style={styles.switchSubtitle}>Automate recurring rent & utility bills</Text>
+              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
+              <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
             </View>
             <Switch
               value={setupMonthlySplit}
               onValueChange={setSetupMonthlySplit}
-              trackColor={{ false: Colors.surfaceContainerHighest, true: Colors.primaryContainer }}
-              thumbColor={setupMonthlySplit ? Colors.primary : Colors.outline}
+              trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+              thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
             />
           </View>
         )}
       </ScrollView>
 
       {/* Bottom Action Area */}
-      <View style={styles.bottomActionArea}>
-        <TouchableOpacity style={styles.bottomPrimaryBtn} onPress={handleBasicsNext}>
-          <Text style={styles.bottomPrimaryBtnText}>Next</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={Colors.onPrimary} />
+      <View style={[styles.bottomActionArea, { borderTopColor: colors.divider }]}>
+        <TouchableOpacity style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary }]} onPress={handleBasicsNext}>
+          <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>Next</Text>
+          <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -727,14 +742,12 @@ export default function CreateGroupModal({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   topAppBar: {
     height: 64,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.containerMargin,
-    backgroundColor: Colors.surface,
   },
   iconBtn: {
     padding: Spacing.sm,
@@ -744,19 +757,16 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: Spacing.md,
     ...Typography.titleMd,
-    color: Colors.onSurface,
   },
   topAppBarTitlePrimary: {
     flex: 1,
     marginLeft: Spacing.sm,
     ...Typography.titleMd,
-    color: Colors.primary,
   },
   topAppBarTitleCenter: {
     flex: 1,
     textAlign: 'center',
     ...Typography.titleMd,
-    color: Colors.primary,
   },
   basicsMainContent: {
     paddingHorizontal: Spacing.containerMargin,
@@ -772,9 +782,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Colors.surfaceContainerHighest,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.card,
@@ -791,9 +799,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.primary,
     borderWidth: 2,
-    borderColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -802,7 +808,6 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     ...Typography.labelMd,
-    color: Colors.onSurfaceVariant,
     marginBottom: Spacing.xs,
     textTransform: 'uppercase',
   },
@@ -1006,6 +1011,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
   avatarCircleText: {
     ...Typography.titleMd,

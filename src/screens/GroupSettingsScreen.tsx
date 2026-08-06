@@ -25,6 +25,7 @@ import {
   subscribeToGroupDetail,
   updateGroupInFirestore,
   deleteGroupFromFirestore,
+  cancelGroupInvitation,
   getGroupMembersInvitationStatus,
   GroupData,
   UserProfile,
@@ -152,6 +153,31 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     setGroupPhoto(null);
   };
 
+  const handleCancelInvite = (u: UserProfile) => {
+    if (!groupId) return;
+
+    Alert.alert(
+      'Cancel Invitation',
+      `Are you sure you want to cancel the invitation for ${u.name}?`,
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelGroupInvitation(groupId, u.uid);
+              loadMembersStatus(groupId);
+              Alert.alert('Success', 'Invitation cancelled successfully.');
+            } catch (e) {
+              Alert.alert('Error', 'Failed to cancel invitation.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getInitials = (name: string) => {
     return name
       .trim()
@@ -204,13 +230,13 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
       {/* App Header - Matching Create Group */}
-      <View style={[styles.topAppBar, { paddingTop: topPadding, backgroundColor: colors.surface }]}>
+      <View style={[styles.topAppBar, { backgroundColor: colors.surface }]}>
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <MaterialIcons name="arrow-back" size={24} color={colors.primary} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={[styles.topAppBarTitle, { color: colors.onSurface }]}>Group Settings</Text>
         <View style={{ width: 44 }} />
@@ -231,17 +257,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           </TouchableOpacity>
 
           <View style={styles.photoActions}>
-            <TouchableOpacity onPress={handlePickPhoto}>
-              <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
-            </TouchableOpacity>
-
             {groupPhoto ? (
-              <>
-                <View style={[styles.actionDivider, { backgroundColor: colors.divider }]} />
-                <TouchableOpacity onPress={handleRemovePhoto}>
-                  <Text style={[styles.avatarHint, { color: colors.error }]}>Remove</Text>
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity onPress={handleRemovePhoto}>
+                <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
+              </TouchableOpacity>
             ) : null}
           </View>
         </View>
@@ -458,6 +477,13 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     </Text>
                   </View>
                 </View>
+
+                <TouchableOpacity
+                  style={styles.removeIconBtn}
+                  onPress={() => handleCancelInvite(u)}
+                >
+                  <MaterialIcons name="close" size={20} color={colors.error} />
+                </TouchableOpacity>
               </View>
             ))}
           </View>

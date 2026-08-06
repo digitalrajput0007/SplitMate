@@ -66,7 +66,7 @@ export function GroupCard({
             />
           ) : (
             <View style={[styles.groupBadgeFallback, { backgroundColor: colors.primaryFixed }]}>
-              <MaterialIcons name={iconName} size={22} color={colors.primary} />
+              <MaterialIcons name={iconName} size={28} color={colors.primary} />
             </View>
           )}
         </View>
@@ -151,9 +151,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   groupBadgeCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -165,9 +165,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   groupBadgeImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
   },
   groupBadgeText: {
     ...Typography.titleLg,
