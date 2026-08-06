@@ -20,26 +20,24 @@ import {
   subscribeToGroupExpenses,
   subscribeToGroupSettlements,
   addSettlementToFirestore,
+  subscribeToGroupDetail,
+  getAllUsersFromFirestore,
   ExpenseData,
   SettlementData,
+  GroupData,
 } from '../services/firestoreService';
 import { simplifyDebts, SimplifiedDebt } from '../services/debtSimplifier';
 import {
   initializeInterstitialAd,
   showSettleUpInterstitial,
 } from '../services/adMobService';
+import { useTheme } from '../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
 
-const MEMBER_PROFILES: Record<string, { name: string; paymentHandle?: string }> = {
-  user_current: { name: 'You', paymentHandle: 'you@upi' },
-  user_priya_101: { name: 'Priya', paymentHandle: 'priya@okaxis' },
-  user_amit_102: { name: 'Amit', paymentHandle: 'amit@paytm' },
-  user_neha_103: { name: 'Neha', paymentHandle: 'neha@ybl' },
-};
-
 export default function SettleUpScreen({ navigation, route }: Props) {
   const currencyConfig = getCurrencyConfig();
+  const { colors } = useTheme();
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
 
@@ -47,19 +45,30 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
   const [settlements, setSettlements] = useState<SettlementData[]>([]);
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string }>>({});
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
 
-  const activeProfiles = {
-    ...MEMBER_PROFILES,
-    [currentUid]: {
-      name: currentUser?.displayName ? `${currentUser.displayName.split(' ')[0]} (You)` : 'You',
-      paymentHandle: `${(currentUser?.displayName || 'user').toLowerCase().replace(/[^a-z0-9]/g, '')}@upi`,
-    },
-  };
-
   useEffect(() => {
     initializeInterstitialAd();
+
+    const unsubGroup = subscribeToGroupDetail(groupId, async (groupData) => {
+      if (groupData) {
+        const allUsers = await getAllUsersFromFirestore();
+        const profiles: Record<string, { name: string; paymentHandle?: string }> = {};
+
+        groupData.memberIds.forEach((uid) => {
+          const user = allUsers.find((u) => u.uid === uid);
+          if (user) {
+            profiles[uid] = {
+              name: uid === currentUid ? 'You' : user.name,
+              paymentHandle: user.paymentHandle || '',
+            };
+          }
+        });
+        setMemberProfiles(profiles);
+      }
+    });
 
     const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
     const unsubSet = subscribeToGroupSettlements(groupId, (data) => {
@@ -68,12 +77,13 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     });
 
     return () => {
+      unsubGroup();
       unsubExp();
       unsubSet();
     };
-  }, [groupId]);
+  }, [groupId, currentUid]);
 
-  const simplifiedDebts = simplifyDebts(expenses, settlements, activeProfiles);
+  const simplifiedDebts = simplifyDebts(expenses, settlements, memberProfiles);
 
   const handlePayViaUPI = async (debt: SimplifiedDebt) => {
     const upiUrl = `upi://pay?pa=${encodeURIComponent(debt.toPaymentHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;

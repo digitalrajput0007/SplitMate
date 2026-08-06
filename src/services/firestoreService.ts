@@ -924,12 +924,12 @@ export const subscribeUserBalanceSummary = (
       }
     });
 
-    const netBalance = owedSum - oweSum;
+    const netBalance = Math.round((owedSum - oweSum) * 100) / 100;
 
     onSummaryUpdate({
       totalBalance: netBalance,
-      youAreOwed: owedSum,
-      youOwe: oweSum,
+      youAreOwed: Math.round(owedSum * 100) / 100,
+      youOwe: Math.round(oweSum * 100) / 100,
     });
   };
 

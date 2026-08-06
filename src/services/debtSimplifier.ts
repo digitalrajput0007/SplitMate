@@ -46,8 +46,9 @@ export const simplifyDebts = (
       if (!(from in netBalances)) netBalances[from] = 0;
       if (!(to in netBalances)) netBalances[to] = 0;
 
-      netBalances[from] += s.amount;
-      netBalances[to] -= s.amount;
+      // Rounding to avoid floating point drift
+      netBalances[from] = Math.round((netBalances[from] + s.amount) * 100) / 100;
+      netBalances[to] = Math.round((netBalances[to] - s.amount) * 100) / 100;
     }
   });
 
@@ -57,9 +58,9 @@ export const simplifyDebts = (
 
   Object.entries(netBalances).forEach(([uid, balance]) => {
     const rounded = Math.round(balance * 100) / 100;
-    if (rounded < -0.01) {
+    if (rounded < -0.05) { // Small threshold to ignore tiny dust balances
       debtors.push({ uid, amount: Math.abs(rounded) });
-    } else if (rounded > 0.01) {
+    } else if (rounded > 0.05) {
       creditors.push({ uid, amount: rounded });
     }
   });

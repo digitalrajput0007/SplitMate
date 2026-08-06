@@ -167,7 +167,15 @@ export default function HomeScreen() {
 
         {/* Total Balance Card */}
         <View style={[styles.balanceCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-          <Text style={[styles.balanceLabel, { color: colors.onSurfaceVariant }]}>Total Balance</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.balanceLabel, { color: colors.onSurfaceVariant }]}>Total Balance</Text>
+            {balanceSummary.youAreOwed < 0.05 && balanceSummary.youOwe < 0.05 ? (
+              <View style={[styles.settledBadge, { backgroundColor: colors.positiveContainer }]}>
+                <Text style={[styles.settledBadgeText, { color: colors.positiveText }]}>Settled</Text>
+              </View>
+            ) : null}
+          </View>
+
           <View style={styles.balanceRow}>
             <Text style={[styles.balanceCurrency, { color: colors.primary }]}>₹</Text>
             <Text style={[styles.balanceAmount, { color: colors.primary }]}>{balanceSummary.totalBalance.toFixed(2)}</Text>
@@ -389,6 +397,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   balanceLabel: { ...Typography.titleSm },
+  settledBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+  },
+  settledBadgeText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+  },
   balanceRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.xs },
   balanceCurrency: { ...Typography.titleMd },
   balanceAmount: { ...Typography.numericDisplay },
