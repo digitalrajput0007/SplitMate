@@ -113,6 +113,7 @@ export default function GroupsScreen() {
       return {
         name: profileMatch?.name || 'Member',
         uri: profileMatch?.photoUrl || undefined,
+        thumbnailUri: profileMatch?.photoThumbnailUrl || undefined,
       };
     });
 
@@ -125,6 +126,7 @@ export default function GroupsScreen() {
         key={item.groupId}
         name={item.name}
         groupPhotoUrl={item.photoUrl}
+        groupPhotoThumbnailUrl={item.photoThumbnailUrl}
         groupType={item.groupType as any}
         members={membersWithImages}
         balanceLabel={balanceLabel}

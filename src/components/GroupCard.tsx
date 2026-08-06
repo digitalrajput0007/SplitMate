@@ -1,14 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { SmartImage } from './SmartImage';
 
 export interface GroupCardProps {
   name: string;
   groupPhotoUrl?: string;
+  groupPhotoThumbnailUrl?: string;
   groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Home' | 'Other';
-  members: Array<{ name: string; uri?: string }>;
+  members: Array<{ name: string; uri?: string; thumbnailUri?: string }>;
   balanceLabel: 'owed' | 'owe' | 'settled';
   balanceAmount: string;
   onPress: () => void;
@@ -27,6 +29,7 @@ const TYPE_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
 export function GroupCard({
   name,
   groupPhotoUrl,
+  groupPhotoThumbnailUrl,
   groupType,
   members,
   balanceLabel,
@@ -36,7 +39,6 @@ export function GroupCard({
   lastActivity,
 }: GroupCardProps) {
   const { colors } = useTheme();
-  const [imgError, setImgError] = React.useState(false);
   const isPositive = balanceLabel === 'owed';
   const isNegative = balanceLabel === 'owe';
 
@@ -56,20 +58,15 @@ export function GroupCard({
     >
       <View style={styles.content}>
         {/* Group Photo or Icon */}
-        <View style={[styles.groupBadgeCircle, { backgroundColor: colors.primaryContainer }]}>
-          {groupPhotoUrl && !imgError ? (
-            <Image
-              source={{ uri: groupPhotoUrl }}
-              style={styles.groupBadgeImage}
-              resizeMode="cover"
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <View style={[styles.groupBadgeFallback, { backgroundColor: colors.primaryFixed }]}>
-              <MaterialIcons name={iconName} size={28} color={colors.primary} />
-            </View>
-          )}
-        </View>
+        <SmartImage
+          uri={groupPhotoUrl}
+          thumbnailUri={groupPhotoThumbnailUrl}
+          name={name}
+          mode="thumbnail"
+          size={52}
+          fallbackIcon={iconName}
+          style={styles.groupBadgeImage}
+        />
 
         {/* Info Section */}
         <View style={styles.info}>
@@ -111,15 +108,15 @@ export function GroupCard({
                   },
                 ]}
               >
-                {m.uri ? (
-                  <Image source={{ uri: m.uri }} style={styles.avatarImage} />
-                ) : (
-                  <View style={[styles.avatarFallback, { backgroundColor: colors.primaryFixed }]}>
-                    <Text style={[styles.avatarText, { color: colors.primary }]}>
-                      {m.name && m.name !== 'Member' ? m.name.charAt(0).toUpperCase() : '?'}
-                    </Text>
-                  </View>
-                )}
+                <SmartImage
+                  uri={m.uri}
+                  thumbnailUri={m.thumbnailUri}
+                  name={m.name}
+                  mode="thumbnail"
+                  size={22}
+                  fallbackIcon="person"
+                  style={styles.avatarImage}
+                />
               </View>
             ))}
             {members.length > 4 && (

@@ -18,10 +18,11 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   subscribeUserActivityFeed,
-  getAllUsersFromFirestore,
+  subscribeAllUserProfiles,
   ActivityItem,
   UserProfile,
 } from '../services/firestoreService';
+import { SmartImage } from '../components/SmartImage';
 
 export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
@@ -33,12 +34,13 @@ export default function ActivityScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load user profiles for avatar resolution
-    getAllUsersFromFirestore().then((users) => {
+    // Reactive listener for all user profiles
+    const unsub = subscribeAllUserProfiles((users) => {
       const mapping: Record<string, UserProfile> = {};
       users.forEach(u => mapping[u.uid] = u);
       setUserMap(mapping);
     });
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -70,10 +72,11 @@ export default function ActivityScreen() {
 
   const getActorInfo = (uid: string) => {
     const user = userMap[uid];
-    if (!user) return { name: 'Member', photo: null };
+    if (!user) return { name: 'Member', photo: null, thumb: null };
     return {
       name: uid === currentUser?.uid ? 'You' : user.name,
-      photo: user.photoUrl
+      photo: user.photoUrl,
+      thumb: user.photoThumbnailUrl
     };
   };
 
@@ -110,15 +113,15 @@ export default function ActivityScreen() {
               return (
                 <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
                   {/* Actor Avatar */}
-                  <View style={[styles.actorAvatar, { backgroundColor: colors.primaryFixed }]}>
-                    {actor.photo ? (
-                      <Image source={{ uri: actor.photo }} style={styles.avatarImg} />
-                    ) : (
-                      <Text style={[styles.avatarLetter, { color: colors.primary }]}>
-                        {actor.name.charAt(0).toUpperCase()}
-                      </Text>
-                    )}
-                  </View>
+                  <SmartImage
+                    uri={actor.photo || undefined}
+                    thumbnailUri={actor.thumb || undefined}
+                    name={actor.name}
+                    mode="thumbnail"
+                    size={44}
+                    fallbackIcon="person"
+                    style={styles.avatarImg}
+                  />
 
                   <View style={styles.feedContent}>
                     <Text style={[styles.feedTitle, { color: colors.onSurface }]}>

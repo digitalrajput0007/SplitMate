@@ -19,7 +19,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import {
   subscribeToGroupDetail,
@@ -39,7 +39,10 @@ import {
   formatCurrency,
   subscribeToAcceptedMembers,
 } from '../services/firestoreService';
-import { uploadGroupPhoto } from '../services/storageService';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
+import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
 import { GroupTypeOption } from './CreateGroupModal';
@@ -63,6 +66,26 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [groupName, setGroupName] = useState('');
   const [groupType, setGroupType] = useState<GroupTypeOption>('Other');
   const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+  const [groupPhotoThumbnail, setGroupPhotoThumbnail] = useState<string | null>(null);
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+    removeMedia,
+  } = useMediaManager({
+    purpose: 'group',
+    id: groupId || 'temp',
+    previousUrls: { original: groupPhoto || undefined, thumbnail: groupPhotoThumbnail || undefined },
+    onSuccess: (urls) => {
+      setGroupPhoto(urls.original);
+      if (urls.thumbnail !== undefined) setGroupPhotoThumbnail(urls.thumbnail);
+    },
+  });
 
   // Conditional Fields
   const [startDate, setStartDate] = useState<Date>(new Date());
@@ -87,7 +110,8 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           setGroup(data);
           setGroupName(data.name || '');
           if (data.groupType) setGroupType(data.groupType as GroupTypeOption);
-          if (data.photoUrl) setGroupPhoto(data.photoUrl);
+          if (data.photoUrl !== undefined) setGroupPhoto(data.photoUrl);
+          if (data.photoThumbnailUrl !== undefined) setGroupPhotoThumbnail(data.photoThumbnailUrl);
           if (data.startDate) setStartDate(new Date(data.startDate));
           if (data.endDate) setEndDate(new Date(data.endDate));
           if (data.familyName) setFamilyName(data.familyName);
@@ -177,6 +201,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
   const handleRemovePhoto = () => {
     setGroupPhoto(null);
+    setGroupPhotoThumbnail(null);
   };
 
   const handleUpdateGroup = async () => {
@@ -190,21 +215,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
       const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
 
-      // 1. Upload photo if it's a local URI
-      let finalPhotoUrl = groupPhoto || '';
-      if (groupPhoto && (groupPhoto.startsWith('file://') || groupPhoto.startsWith('content://') || !groupPhoto.startsWith('http'))) {
-        try {
-          finalPhotoUrl = await uploadGroupPhoto(groupId, groupPhoto);
-        } catch (uploadErr) {
-          console.error('Group photo upload failed:', uploadErr);
-          finalPhotoUrl = ''; // Clear to prevent local URI save
-        }
-      }
-
       const updateData: any = {
         name: groupName.trim(),
         groupType,
-        photoUrl: finalPhotoUrl,
+        photoUrl: groupPhoto || '',
+        photoThumbnailUrl: groupPhotoThumbnail || '',
         enableDates: groupType === 'Trip',
       };
 
@@ -411,14 +426,16 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         <View style={styles.photoUploadCenter}>
           <TouchableOpacity
             style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]}
-            onPress={isOwner ? handlePickPhoto : undefined}
+            onPress={isOwner ? () => setIsPickerVisible(true) : undefined}
             activeOpacity={isOwner ? 0.8 : 1}
           >
-            {groupPhoto ? (
-              <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
-            ) : (
-              <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{groupInitials}</Text>
-            )}
+            <SmartImage
+              uri={groupPhoto || undefined}
+              thumbnailUri={groupPhotoThumbnail || undefined}
+              name={groupName}
+              size={80}
+              fallbackIcon={groupType === 'Trip' ? 'flight' : 'groups'}
+            />
             {isOwner && (
               <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
                 <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
@@ -746,6 +763,20 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         existingMemberIds={group?.memberIds || []}
         onClose={() => setShowAddMemberModal(false)}
         onMemberAdded={() => {}}
+      />
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        onRemove={groupPhoto ? removeMedia : undefined}
+      />
+
+      <MediaUploadOverlay
+        visible={isUploading}
+        progress={progress}
       />
     </SafeAreaView>
   );

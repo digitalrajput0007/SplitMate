@@ -13,10 +13,11 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../services/currencyService';
 import { Image } from 'react-native';
+import { SmartImage } from './SmartImage';
 
 export interface ExpenseFormData {
   title: string;
@@ -33,11 +34,15 @@ export interface ExpenseFormData {
 interface Member {
   uid: string;
   name: string;
+  photoUrl?: string;
+  photoThumbnailUrl?: string;
 }
 
 interface ExpenseFormProps {
   members: Member[];
   initialData?: Partial<ExpenseFormData>;
+  onPickReceipt: () => void;
+  onRemoveReceipt: () => void;
   onSubmit: (data: ExpenseFormData) => void;
   submitting?: boolean;
   submitLabel?: string;
@@ -53,6 +58,8 @@ const SPLIT_TYPES = [
 export default function ExpenseForm({
   members,
   initialData,
+  onPickReceipt,
+  onRemoveReceipt,
   onSubmit,
   submitting = false,
   submitLabel = 'Save Expense',
@@ -118,9 +125,7 @@ export default function ExpenseForm({
   const [paidByUserId, setPaidByUserId] = useState<string>(initialData?.paidBy || members[0]?.uid || '');
   const [date, setDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
   const [notes, setNotes] = useState(initialData?.notes || '');
-  const [receiptImage, setReceiptImage] = useState<string | null>(initialData?.receiptUrl || null);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [pickingImage, setPickingImage] = useState(false);
 
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
@@ -290,7 +295,7 @@ export default function ExpenseForm({
       category: selectedCategory,
       date: date.toISOString(),
       notes: notes.trim(),
-      receiptUrl: receiptImage || '', // Use empty string instead of undefined
+      receiptUrl: initialData?.receiptUrl || '',
     };
 
     onSubmit(data);
@@ -419,9 +424,14 @@ export default function ExpenseForm({
 
             return (
               <View key={m.uid} style={[styles.memberRow, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                <View style={[styles.memberAvatar, { backgroundColor: colors.primaryFixed }]}>
-                  <Text style={[styles.memberInitial, { color: colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
-                </View>
+                <SmartImage
+                  uri={m.photoUrl}
+                  thumbnailUri={m.photoThumbnailUrl}
+                  size={40}
+                  mode="thumbnail"
+                  fallbackIcon="person"
+                  style={styles.memberAvatar}
+                />
                 <Text style={[styles.memberName, { color: colors.onSurface }]}>{m.name}</Text>
 
                 {splitType === 'exact' ? (
@@ -494,12 +504,12 @@ export default function ExpenseForm({
       {/* Receipt */}
       <View style={styles.field}>
         <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Receipt (Optional)</Text>
-        {receiptImage ? (
+        {initialData?.receiptUrl ? (
           <View style={styles.receiptContainer}>
-            <Image source={{ uri: receiptImage }} style={styles.receiptPreview} />
+            <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />
             <TouchableOpacity
               style={[styles.removeReceiptBtn, { backgroundColor: colors.error }]}
-              onPress={handleRemoveReceipt}
+              onPress={onRemoveReceipt}
             >
               <MaterialIcons name="close" size={16} color="#fff" />
             </TouchableOpacity>
@@ -507,7 +517,7 @@ export default function ExpenseForm({
         ) : (
           <TouchableOpacity
             style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderStyle: 'dashed' }]}
-            onPress={handlePickReceipt}
+            onPress={onPickReceipt}
           >
             <MaterialIcons name="photo-camera" size={24} color={colors.primary} />
             <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, ...Typography.labelMd }}>Add Receipt Image</Text>

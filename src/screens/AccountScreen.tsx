@@ -83,11 +83,11 @@ export default function AccountScreen() {
     try {
       const prof = await getUserProfileFromFirestore(activeUser.uid);
       if (prof) {
-        if (prof.name) setDisplayName(prof.name);
-        if (prof.email) setDisplayEmail(prof.email);
-        if (prof.paymentHandle) setPaymentHandle(prof.paymentHandle);
-        if (prof.photoUrl) setPhotoUrl(prof.photoUrl);
-        if (prof.mobile) setDisplayMobile(prof.mobile);
+        if (prof.name !== undefined) setDisplayName(prof.name);
+        if (prof.email !== undefined) setDisplayEmail(prof.email);
+        if (prof.paymentHandle !== undefined) setPaymentHandle(prof.paymentHandle);
+        if (prof.photoUrl !== undefined) setPhotoUrl(prof.photoUrl);
+        if (prof.mobile !== undefined) setDisplayMobile(prof.mobile);
       }
     } catch (err) {
       console.error('Firestore fetch error in AccountScreen:', err);

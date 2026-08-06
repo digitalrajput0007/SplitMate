@@ -29,6 +29,7 @@ export interface UserProfile {
   name: string;
   email: string;
   photoUrl?: string;
+  photoThumbnailUrl?: string;
   paymentHandle?: string;
   paymentMethods?: PaymentMethod[];
   dob?: string;
@@ -82,6 +83,7 @@ export interface GroupData {
   membersJoinedAt?: Record<string, number>;
   memberExistingExpensesPreference?: Record<string, boolean>;
   photoUrl?: string;
+  photoThumbnailUrl?: string;
   createdBy: string;
   createdAt: any;
   isArchived?: boolean;
@@ -150,10 +152,18 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
 
     // Safety: Never allow local URIs to be saved to Firestore users collection
     if (profile.photoUrl !== undefined) {
-      if (profile.photoUrl.startsWith('file://') || profile.photoUrl.startsWith('content://')) {
+      if (profile.photoUrl && (profile.photoUrl.startsWith('file://') || profile.photoUrl.startsWith('content://'))) {
         console.warn('Attempted to save local URI to users collection. Blocking photo update.');
       } else {
         dataToSave.photoUrl = profile.photoUrl;
+      }
+    }
+
+    if (profile.photoThumbnailUrl !== undefined) {
+      if (profile.photoThumbnailUrl && (profile.photoThumbnailUrl.startsWith('file://') || profile.photoThumbnailUrl.startsWith('content://'))) {
+        console.warn('Attempted to save local URI to users collection. Blocking thumbnail update.');
+      } else {
+        dataToSave.photoThumbnailUrl = profile.photoThumbnailUrl;
       }
     }
 
@@ -442,6 +452,11 @@ export const updateGroupInFirestore = async (groupId: string, data: Partial<Grou
     if (data.photoUrl && (data.photoUrl.startsWith('file://') || data.photoUrl.startsWith('content://'))) {
       console.warn('Attempted to save local URI to Firestore. Blocking photo update.');
       delete data.photoUrl;
+    }
+
+    if (data.photoThumbnailUrl && (data.photoThumbnailUrl.startsWith('file://') || data.photoThumbnailUrl.startsWith('content://'))) {
+      console.warn('Attempted to save local URI thumbnail to Firestore. Blocking update.');
+      delete data.photoThumbnailUrl;
     }
 
     await setDoc(groupRef, { ...data, updatedAt: serverTimestamp() }, { merge: true });

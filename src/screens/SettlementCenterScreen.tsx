@@ -14,10 +14,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import { useTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../services/currencyService';
+import { SmartImage } from '../components/SmartImage';
 import {
   subscribeToUserGroups,
   getAllUsersFromFirestore,
@@ -187,8 +188,8 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
   const renderDebtCard = (debt: GroupDebt, type: 'owe' | 'owed') => {
     const otherUser = type === 'owe'
-      ? { name: debt.toName, photo: debt.toPhotoUrl, handle: debt.toPaymentHandle }
-      : { name: debt.fromName, photo: debt.fromPhotoUrl, handle: null };
+      ? { name: debt.toName, photo: debt.toPhotoUrl, thumb: debt.toPhotoThumbnailUrl, handle: debt.toPaymentHandle }
+      : { name: debt.fromName, photo: debt.fromPhotoUrl, thumb: debt.fromPhotoThumbnailUrl, handle: null };
 
     return (
       <TouchableOpacity
@@ -198,13 +199,15 @@ export default function SettlementCenterScreen({ navigation }: Props) {
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
-          <View style={[styles.avatarBox, { backgroundColor: colors.primaryFixed }]}>
-            {otherUser.photo ? (
-              <Image source={{ uri: otherUser.photo }} style={styles.avatar} />
-            ) : (
-              <Text style={[styles.avatarTxt, { color: colors.primary }]}>{otherUser.name.charAt(0)}</Text>
-            )}
-          </View>
+          <SmartImage
+            uri={otherUser.photo || undefined}
+            thumbnailUri={otherUser.thumb || undefined}
+            name={otherUser.name}
+            mode="thumbnail"
+            size={44}
+            fallbackIcon="person"
+            style={styles.avatar}
+          />
           <View style={{ flex: 1 }}>
             <Text style={[styles.name, { color: colors.onSurface }]}>{otherUser.name}</Text>
             <Text style={[styles.groupName, { color: colors.onSurfaceVariant }]}>{debt.groupName}</Text>
@@ -222,7 +225,7 @@ export default function SettlementCenterScreen({ navigation }: Props) {
                   style={[styles.primaryAction, { backgroundColor: colors.primary }]}
                   onPress={() => navigation.navigate('SettleUp', { groupId: debt.groupId })}
                 >
-                  <MaterialIcons name="payments" size={16} color={colors.onPrimary} />
+                  <MaterialIcons name="account-balance-wallet" size={16} color={colors.onPrimary} />
                   <Text style={[styles.actionTxt, { color: colors.onPrimary }]}>Pay via UPI</Text>
                 </TouchableOpacity>
               ) : (

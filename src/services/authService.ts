@@ -112,9 +112,13 @@ export const checkEmailVerified = async (): Promise<boolean> => {
 
 export const updateUserProfile = async (displayName: string, photoURL?: string): Promise<void> => {
   if (auth.currentUser) {
+    // If photoURL is explicitly an empty string, we set it to null in Firebase Auth
+    // to remove the previous photo.
+    const newPhotoURL = (photoURL === '' || photoURL === null) ? null : (photoURL || auth.currentUser.photoURL || null);
+
     await updateProfile(auth.currentUser, {
       displayName: displayName,
-      photoURL: photoURL || auth.currentUser.photoURL || undefined
+      photoURL: newPhotoURL
     });
   }
 };

@@ -8,13 +8,12 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import { getCurrencyConfig, formatCurrency } from '../services/currencyService';
 import {
@@ -36,6 +35,7 @@ import {
   showSettleUpInterstitial,
 } from '../services/adMobService';
 import { useTheme } from '../context/ThemeContext';
+import { SmartImage } from '../components/SmartImage';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
@@ -50,7 +50,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const [group, setGroup] = useState<GroupData | null>(null);
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
   const [settlements, setSettlements] = useState<SettlementData[]>([]);
-  const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>>({});
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, { name: string; paymentHandle?: string; photoUrl?: string; photoThumbnailUrl?: string }>>({});
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
@@ -65,18 +65,19 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
     // 2. Subscribe to ALL profiles for real-time resolution
     const unsubProfiles = subscribeAllUserProfiles((allUsers) => {
-      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
+      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string; photoThumbnailUrl?: string }> = {};
 
       allUsers.forEach((user) => {
         profiles[user.uid] = {
           name: user.uid === currentUid ? 'You' : user.name,
           paymentHandle: user.paymentHandle || '',
           photoUrl: user.photoUrl || '',
+          photoThumbnailUrl: user.photoThumbnailUrl || '',
         };
       });
 
       if (!profiles[currentUid]) {
-        profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '' };
+        profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' };
       }
 
       setMemberProfiles(profiles);
@@ -184,13 +185,15 @@ export default function SettleUpScreen({ navigation, route }: Props) {
           <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <View style={[styles.headerGroupAvatar, { backgroundColor: colors.primaryFixed }]}>
-            {group?.photoUrl ? (
-              <Image source={{ uri: group.photoUrl }} style={styles.avatarImg} />
-            ) : (
-              <MaterialIcons name={group?.groupType === 'Trip' ? 'flight' : 'groups'} size={20} color={colors.primary} />
-            )}
-          </View>
+          <SmartImage
+            uri={group?.photoUrl || undefined}
+            thumbnailUri={group?.photoThumbnailUrl || undefined}
+            name={group?.name}
+            size={40}
+            mode="full"
+            fallbackIcon={group?.groupType === 'Trip' ? 'flight' : 'groups'}
+            style={styles.headerGroupAvatar}
+          />
           <View>
             <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Settle Up</Text>
             <Text style={[styles.groupSubtitle, { color: colors.onSurfaceVariant }]}>{group?.name || 'Loading...'}</Text>
@@ -254,8 +257,8 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             if ((!isIowe && !isOtherOwesMe) || debt.amount <= 0.05) return null;
 
             const otherUser = isIowe
-              ? { name: debt.toName, photo: debt.toPhotoUrl, handle: debt.toPaymentHandle }
-              : { name: debt.fromName, photo: debt.fromPhotoUrl, handle: null };
+              ? { name: debt.toName, photo: debt.toPhotoUrl, thumb: debt.toPhotoThumbnailUrl, handle: debt.toPaymentHandle }
+              : { name: debt.fromName, photo: debt.fromPhotoUrl, thumb: debt.fromPhotoThumbnailUrl, handle: null };
 
             return (
               <View
@@ -263,16 +266,18 @@ export default function SettleUpScreen({ navigation, route }: Props) {
                 style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
               >
                 <View style={styles.cardHeader}>
-                  <View style={[styles.avatarBox, { backgroundColor: colors.primaryFixed }]}>
-                    {otherUser.photo ? (
-                      <Image source={{ uri: otherUser.photo }} style={styles.avatar} />
-                    ) : (
-                      <Text style={[styles.avatarTxt, { color: colors.primary }]}>{otherUser.name.charAt(0)}</Text>
-                    )}
-                  </View>
+                  <SmartImage
+                    uri={otherUser.photo || undefined}
+                    thumbnailUri={otherUser.thumb || undefined}
+                    name={otherUser.name}
+                    mode="thumbnail"
+                    size={44}
+                    fallbackIcon="person"
+                    style={styles.avatarBox}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.name, { color: colors.onSurface }]}>{otherUser.name}</Text>
-                    {isIowe && otherUser.handle ? (
+                    {!!(isIowe && otherUser.handle) ? (
                       <Text style={[styles.groupName, { color: colors.primary, fontWeight: '600' }]}>
                         UPI: {otherUser.handle}
                       </Text>
@@ -289,36 +294,42 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
                 <View style={styles.actions}>
                   {isIowe ? (
-                    <>
-                      {otherUser.handle ? (
-                        <TouchableOpacity
-                          style={[styles.primaryAction, { backgroundColor: colors.primary }]}
-                          onPress={() => handlePayViaUPI(debt)}
-                        >
-                          <MaterialIcons name="payments" size={16} color="#fff" />
-                          <Text style={[styles.actionTxt, { color: '#fff' }]}>Pay via UPI</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={[styles.disabledAction, { backgroundColor: colors.surfaceContainerLow }]}>
-                          <Text style={[styles.actionTxt, { color: colors.outline }]}>No UPI Available</Text>
-                        </View>
-                      )}
-                    </>
-                  ) : (
+                    otherUser.handle ? (
+                      <TouchableOpacity
+                        style={[styles.primaryAction, { backgroundColor: colors.primary }]}
+                        onPress={() => handlePayViaUPI(debt)}
+                      >
+                        <MaterialIcons name="account-balance-wallet" size={16} color="#fff" />
+                        <Text style={[styles.actionTxt, { color: '#fff' }]}>Pay via UPI</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.disabledAction, { backgroundColor: colors.surfaceContainerLow }]}>
+                        <Text style={[styles.actionTxt, { color: colors.outline }]}>No UPI Available</Text>
+                      </View>
+                    )
+                  ) : isOtherOwesMe ? (
                     <TouchableOpacity
                       style={[styles.primaryAction, { backgroundColor: colors.secondaryContainer }]}
                       onPress={() => handleSendReminder(debt)}
+                      disabled={isReminding}
                     >
-                      <MaterialIcons name="notifications-active" size={16} color={colors.onSecondaryContainer} />
-                      <Text style={[styles.actionTxt, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
+                      {isReminding ? <ActivityIndicator size="small" color={colors.onSecondaryContainer} /> : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <MaterialIcons name="notifications-active" size={16} color={colors.onSecondaryContainer} />
+                          <Text style={[styles.actionTxt, { color: colors.onSecondaryContainer }]}>Send Reminder</Text>
+                        </View>
+                      )}
                     </TouchableOpacity>
-                  )}
+                  ) : null}
 
                   <TouchableOpacity
                     style={[styles.secondaryAction, { borderColor: colors.outlineVariant }]}
                     onPress={() => handleRecordSettlement(debt)}
+                    disabled={isSettling}
                   >
-                    <Text style={[styles.secondaryActionTxt, { color: colors.onSurface }]}>Mark Settled</Text>
+                    {isSettling ? <ActivityIndicator color={colors.primary} size="small" /> : (
+                      <Text style={[styles.secondaryActionTxt, { color: colors.onSurface }]}>Mark Settled</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -342,7 +353,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   headerInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerGroupAvatar: { width: 40, height: 40, borderRadius: 8, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  headerGroupAvatar: { width: 40, height: 40, borderRadius: 8, overflow: 'hidden' },
   topBarTitle: { ...Typography.titleMd, fontWeight: '700' },
   groupSubtitle: { ...Typography.bodySm, marginTop: -2 },
   scroll: { paddingHorizontal: Spacing.containerMargin, paddingBottom: Spacing.xxl, gap: Spacing.md },
@@ -375,9 +386,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  avatarBox: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatar: { width: '100%', height: '100%' },
-  avatarTxt: { ...Typography.titleMd, fontWeight: '700' },
+  avatarBox: { width: 44, height: 44, borderRadius: 22, overflow: 'hidden' },
   name: { ...Typography.titleSm, fontWeight: '700' },
   groupName: { ...Typography.bodySm, fontSize: 11 },
   amount: { ...Typography.titleMd, fontWeight: '800' },

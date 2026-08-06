@@ -18,7 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
@@ -27,7 +27,10 @@ import {
   getUserProfileFromFirestore,
   isMobileNumberRegistered,
 } from '../services/firestoreService';
-import { uploadUserProfilePhoto } from '../services/storageService';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
+import { SmartImage } from '../components/SmartImage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
@@ -40,7 +43,26 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   const [mobileNumber, setMobileNumber] = useState('');
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
+  const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+    removeMedia,
+  } = useMediaManager({
+    purpose: 'profile',
+    id: currentUser?.uid || 'temp',
+    onSuccess: (urls) => {
+      setPhotoUrl(urls.original);
+      if (urls.thumbnail !== undefined) setPhotoThumbnailUrl(urls.thumbnail);
+    },
+  });
 
   useEffect(() => {
     async function loadInitialData() {
@@ -56,6 +78,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
       let resolvedName = route.params?.displayName || activeUser.displayName || '';
       let resolvedPhoto = route.params?.photoURL || activeUser.photoURL || '';
+      let resolvedThumb = '';
       let resolvedHandle = '';
       let resolvedDob = '';
       let resolvedMobile = '';
@@ -65,6 +88,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         if (firestoreProf) {
           if (firestoreProf.name) resolvedName = firestoreProf.name;
           if (firestoreProf.photoUrl) resolvedPhoto = firestoreProf.photoUrl;
+          if (firestoreProf.photoThumbnailUrl) resolvedThumb = firestoreProf.photoThumbnailUrl;
           if (firestoreProf.paymentHandle) resolvedHandle = firestoreProf.paymentHandle;
           if (firestoreProf.dob) resolvedDob = firestoreProf.dob;
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
@@ -85,6 +109,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
       setName(resolvedName);
       setPhotoUrl(resolvedPhoto);
+      setPhotoThumbnailUrl(resolvedThumb);
       setDobDate(resolvedDob ? new Date(resolvedDob) : null);
       if (resolvedMobile) {
         const digits = resolvedMobile.replace(/[^0-9]/g, '').slice(-10);
@@ -161,19 +186,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         return;
       }
 
-      // 1. Upload photo if it's a local URI
-      let finalPhotoUrl = photoUrl;
-      if (photoUrl && (photoUrl.startsWith('file://') || photoUrl.startsWith('content://') || !photoUrl.startsWith('http'))) {
-        try {
-          finalPhotoUrl = await uploadUserProfilePhoto(activeUser.uid, photoUrl);
-        } catch (uploadErr) {
-          console.error('Photo upload failed:', uploadErr);
-          finalPhotoUrl = ''; // Clear so we don't save local URI
-        }
-      }
-
       // 2. Update Auth Profile
-      await updateUserProfile(name.trim(), finalPhotoUrl || undefined);
+      await updateUserProfile(name.trim(), photoUrl || undefined);
 
       // 3. Save to Firestore
       if (currentUser?.uid) {
@@ -181,7 +195,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           uid: currentUser.uid,
           name: name.trim(),
           email: currentUser?.email || '',
-          photoUrl: finalPhotoUrl || currentUser?.photoURL || '',
+          photoUrl: photoUrl || currentUser?.photoURL || '',
+          photoThumbnailUrl: photoThumbnailUrl,
           paymentHandle: paymentHandle.trim(),
           dob: formattedDob,
           mobile: fullMobile,
@@ -203,22 +218,15 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
         {/* Avatar Section matching initials placeholder & camera badge */}
         <View style={styles.avatarContainer}>
-          <TouchableOpacity style={styles.avatarWrapper} onPress={handlePickImage} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.avatarWrapper} onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
             <View style={styles.avatarCircle}>
-              {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
-              ) : (
-                <Text style={styles.avatarInitialsText}>
-                  {name
-                    .trim()
-                    .split(' ')
-                    .filter(Boolean)
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()
-                    .slice(0, 2) || 'U'}
-                </Text>
-              )}
+              <SmartImage
+                uri={photoUrl || undefined}
+                thumbnailUri={photoThumbnailUrl || undefined}
+                name={name}
+                size={120}
+                fallbackIcon="person"
+              />
             </View>
             <View style={styles.cameraBadge}>
               <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
@@ -226,7 +234,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           </TouchableOpacity>
 
           {photoUrl ? (
-            <TouchableOpacity onPress={() => setPhotoUrl('')} style={styles.removePhotoBtn}>
+            <TouchableOpacity onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} style={styles.removePhotoBtn}>
               <Text style={styles.removePhotoText}>Remove Photo</Text>
             </TouchableOpacity>
           ) : null}
@@ -347,6 +355,20 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        onRemove={photoUrl ? removeMedia : undefined}
+      />
+
+      <MediaUploadOverlay
+        visible={isUploading}
+        progress={progress}
+      />
     </SafeAreaView>
   );
 }

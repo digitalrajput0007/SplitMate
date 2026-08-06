@@ -13,11 +13,12 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { BannerAdSlot } from '../components/BannerAdSlot';
 import { M3Dialog } from '../components/M3Dialog';
 import { M3BottomSheet } from '../components/M3BottomSheet';
+import { SmartImage } from '../components/SmartImage';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -42,6 +43,8 @@ import {
   AppNotification,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../config/firebase';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -53,6 +56,8 @@ export default function HomeScreen() {
   const { groups, groupBalances } = useUserGroups();
 
   const [firstName, setFirstName] = useState('');
+  const [userPhoto, setUserPhoto] = useState(currentUser?.photoURL || '');
+  const [userPhotoThumb, setUserPhotoThumb] = useState('');
   const [pendingInvitations, setPendingInvitations] = useState<GroupInvitation[]>([]);
   const [frequentContacts, setFrequentContacts] = useState<UserProfile[]>([]);
   const [balanceSummary, setBalanceSummary] = useState<UserBalanceSummary>({
@@ -149,6 +154,16 @@ export default function HomeScreen() {
       setLoading(false);
     });
 
+    // 6. Real-time Profile Subscription for Header
+    const unsubProfile = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as UserProfile;
+        if (data.name) setFirstName(data.name.split(' ')[0]);
+        setUserPhoto(data.photoUrl || '');
+        setUserPhotoThumb(data.photoThumbnailUrl || '');
+      }
+    });
+
     return () => {
       unsubInvites();
       unsubBalance();
@@ -156,6 +171,7 @@ export default function HomeScreen() {
       unsubSettlements();
       unsubNotifications();
       unsubInsights();
+      unsubProfile();
     };
   }, [currentUser, groups.length]);
 
@@ -192,9 +208,10 @@ export default function HomeScreen() {
 
   const getGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good Morning,';
-    if (hour < 18) return 'Good Afternoon,';
-    return 'Good Evening,';
+    if (hour >= 5 && hour < 12) return 'Good Morning,';
+    if (hour >= 12 && hour < 17) return 'Good Afternoon,';
+    if (hour >= 17 && hour < 21) return 'Good Evening,';
+    return 'Good Night,';
   };
 
   const recentGroups = useMemo(() => {
@@ -220,13 +237,15 @@ export default function HomeScreen() {
         {/* Header Greeting */}
         <View style={styles.header}>
           <View style={styles.userInfo}>
-            {currentUser?.photoURL ? (
-              <Image source={{ uri: currentUser.photoURL }} style={styles.profilePic} />
-            ) : (
-              <View style={[styles.profilePic, { backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center' }]}>
-                <Text style={{ color: colors.primary, fontWeight: 'bold' }}>{firstName.charAt(0)}</Text>
-              </View>
-            )}
+            <SmartImage
+              uri={userPhoto || undefined}
+              thumbnailUri={userPhotoThumb || undefined}
+              name={firstName}
+              size={48}
+              mode="thumbnail"
+              fallbackIcon="person"
+              style={styles.profilePic}
+            />
             <View>
               <Text style={[styles.greetingLabel, { color: colors.onSurfaceVariant }]}>{getGreeting()}</Text>
               <Text style={[styles.userName, { color: colors.primary }]}>{firstName}</Text>
@@ -313,7 +332,7 @@ export default function HomeScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.settleUpBtn, { backgroundColor: colors.onPrimary }]}
+            style={[styles.settleUpBtn, { backgroundColor: '#FFFFFF' }]}
             onPress={() => navigation.navigate('SettlementCenter')}
             activeOpacity={0.9}
           >
@@ -583,13 +602,15 @@ export default function HomeScreen() {
                     onPress={() => navigation.navigate('GroupDetail', { groupId: group.groupId, groupName: group.name })}
                   >
                     <View style={[styles.groupIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
-                      {group.photoUrl ? (
-                        <Image source={{ uri: group.photoUrl }} style={styles.recentGroupImg} />
-                      ) : (
-                        <View style={[styles.recentGroupImg, { backgroundColor: colors.primaryFixed, alignItems: 'center', justifyContent: 'center' }]}>
-                          <MaterialIcons name={group.groupType === 'Trip' ? 'flight' : group.groupType === 'Home' ? 'home' : 'groups'} size={24} color={colors.primary} />
-                        </View>
-                      )}
+                      <SmartImage
+                        uri={group.photoUrl}
+                        thumbnailUri={group.photoThumbnailUrl}
+                        name={group.name}
+                        mode="thumbnail"
+                        size={48}
+                        fallbackIcon={group.groupType === 'Trip' ? 'flight' : group.groupType === 'Home' ? 'home' : 'groups'}
+                        style={styles.recentGroupImg}
+                      />
                       {balanceLabel !== 'settled' && (
                         <View style={[styles.groupBadge, { backgroundColor: badgeColor }]}>
                           <Text style={{ color: badgeTextColor, fontSize: 10, fontWeight: 'bold' }}>{displayAmount}</Text>
@@ -815,6 +836,7 @@ const styles = StyleSheet.create({
   netBalanceCard: {
     borderRadius: BorderRadius.xxl,
     padding: Spacing.xl,
+    backgroundColor: '#24389C',
     gap: Spacing.lg,
     ...Shadows.cardElevated,
   },

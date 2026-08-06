@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView } from 'react-native';
-import { Typography, BorderRadius, Shadows } from '../constants/theme';
+import { Colors, Typography, BorderRadius, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 
 export interface M3BottomSheetProps {

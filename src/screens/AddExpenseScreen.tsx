@@ -23,7 +23,9 @@ import {
   GroupData,
   UserProfile,
 } from '../services/firestoreService';
-import { uploadExpenseReceipt } from '../services/storageService';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 
@@ -38,6 +40,21 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [receiptUrl, setReceiptUrl] = useState('');
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+  } = useMediaManager({
+    purpose: 'receipt',
+    id: groupId || 'temp',
+    onSuccess: (urls) => setReceiptUrl(urls.original),
+  });
 
   useEffect(() => {
     if (!groupId) {
@@ -56,22 +73,10 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const handleSave = async (formData: ExpenseFormData) => {
     setSubmitting(true);
     try {
-      // 1. Upload receipt if it's a local URI
-      let finalReceiptUrl = formData.receiptUrl;
-      if (formData.receiptUrl && (formData.receiptUrl.startsWith('file://') || formData.receiptUrl.startsWith('content://'))) {
-        try {
-          const tempId = `expense_${Date.now()}`;
-          finalReceiptUrl = await uploadExpenseReceipt(tempId, formData.receiptUrl);
-        } catch (uploadErr) {
-          console.error('Receipt upload failed:', uploadErr);
-          finalReceiptUrl = ''; // Clear it so we don't save local URI
-        }
-      }
-
       await addExpenseToFirestore({
         groupId: groupId || '',
         ...formData,
-        receiptUrl: finalReceiptUrl,
+        receiptUrl: receiptUrl, // Use the uploaded URL from state
       });
       navigation.goBack();
     } catch (error: any) {
@@ -86,6 +91,8 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     const list = activeMembers.map((m) => ({
       uid: m.uid,
       name: m.uid === currentUser?.uid ? 'You' : m.name,
+      photoUrl: m.photoUrl,
+      photoThumbnailUrl: m.photoThumbnailUrl,
     }));
     // Sort so "You" is always in the first position
     return list.sort((a, b) => {
@@ -121,7 +128,9 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           <View style={styles.content}>
             <ExpenseForm
               members={membersForForm}
-              initialData={{ paidBy: currentUser?.uid || '' }}
+              initialData={{ paidBy: currentUser?.uid || '', receiptUrl: receiptUrl }}
+              onPickReceipt={() => setIsPickerVisible(true)}
+              onRemoveReceipt={() => setReceiptUrl('')}
               onSubmit={handleSave}
               submitting={submitting}
               submitLabel="Add Expense"
@@ -129,6 +138,20 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        title="Attach Receipt"
+      />
+
+      <MediaUploadOverlay
+        visible={isUploading}
+        progress={progress}
+      />
     </SafeAreaView>
   );
 }

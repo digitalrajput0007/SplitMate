@@ -15,13 +15,16 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import * as ImagePicker from 'expo-image-picker';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
 import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
-import { uploadUserProfilePhoto } from '../services/storageService';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
+import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
@@ -35,8 +38,27 @@ export default function ProfileEditScreen({ navigation }: Props) {
   const [mobile, setMobile] = useState('');
   const [dob, setDob] = useState('15-08-1995');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
   const [saving, setSaving] = useState(false);
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+    removeMedia,
+  } = useMediaManager({
+    purpose: 'profile',
+    id: currentUser?.uid || 'temp',
+    previousUrls: { original: photoUrl, thumbnail: photoThumbnailUrl },
+    onSuccess: (urls) => {
+      setPhotoUrl(urls.original);
+      if (urls.thumbnail !== undefined) setPhotoThumbnailUrl(urls.thumbnail);
+    },
+  });
 
   useEffect(() => {
     const activeUser = auth.currentUser;
@@ -44,48 +66,22 @@ export default function ProfileEditScreen({ navigation }: Props) {
 
     setName(activeUser.displayName || '');
     setEmail(activeUser.email || '');
-    setPhotoUrl(activeUser.photoURL || '');
+    // Only set from auth if we don't have a more recent URL in memory
+    if (!photoUrl) setPhotoUrl(activeUser.photoURL || '');
 
     getUserProfileFromFirestore(activeUser.uid)
       .then((data) => {
         if (data) {
-          if (data.name) setName(data.name);
-          if (data.email) setEmail(data.email);
-          if (data.photoUrl) setPhotoUrl(data.photoUrl);
-          if (data.mobile) setMobile(data.mobile);
-          if (data.dob) setDob(data.dob);
+          if (data.name !== undefined) setName(data.name);
+          if (data.email !== undefined) setEmail(data.email);
+          if (data.photoUrl !== undefined) setPhotoUrl(data.photoUrl);
+          if (data.photoThumbnailUrl !== undefined) setPhotoThumbnailUrl(data.photoThumbnailUrl);
+          if (data.mobile !== undefined) setMobile(data.mobile);
+          if (data.dob !== undefined) setDob(data.dob);
         }
       })
       .catch((e) => console.log('Error fetching user profile:', e));
   }, []);
-
-  const handlePickPhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow photo library access to change your profile picture.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.6,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const selectedUri = result.assets[0].uri;
-        setUploadingPhoto(true);
-        setPhotoUrl(selectedUri);
-        setUploadingPhoto(false);
-      }
-    } catch (error) {
-      console.log('Image pick error:', error);
-      Alert.alert('Error', 'Could not select photo');
-      setUploadingPhoto(false);
-    }
-  };
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -96,28 +92,16 @@ export default function ProfileEditScreen({ navigation }: Props) {
     setSaving(true);
     try {
       if (currentUser) {
-        // 1. Upload photo if it's a local URI
-        let finalPhotoUrl = photoUrl;
-        if (photoUrl && (photoUrl.startsWith('file://') || photoUrl.startsWith('content://') || !photoUrl.startsWith('http'))) {
-          try {
-            finalPhotoUrl = await uploadUserProfilePhoto(currentUser.uid, photoUrl);
-          } catch (uploadErr) {
-            console.error('Photo upload failed:', uploadErr);
-            // If upload fails, we don't want to save the local URI to Firestore
-            finalPhotoUrl = '';
-            Alert.alert('Upload Failed', 'We couldn\'t upload your profile photo. Saving other changes...');
-          }
-        }
-
-        // 2. Update Auth and Firestore
-        await updateUserProfile(name, finalPhotoUrl);
+        // Update Auth and Firestore
+        await updateUserProfile(name, photoUrl);
         await saveUserProfileToFirestore({
           uid: currentUser.uid,
           name,
           email,
           mobile,
           dob,
-          photoUrl: finalPhotoUrl,
+          photoUrl,
+          photoThumbnailUrl,
         });
 
         Alert.alert('Success', 'Profile updated successfully');
@@ -132,6 +116,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
 
   const handleRemovePhoto = () => {
     setPhotoUrl('');
+    setPhotoThumbnailUrl('');
   };
 
   const getInitials = (userName: string) => {
@@ -162,30 +147,21 @@ export default function ProfileEditScreen({ navigation }: Props) {
         <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={handlePickPhoto} activeOpacity={0.8}>
-              {uploadingPhoto ? (
-                <View style={[styles.uploadingOverlay, { backgroundColor: colors.surfaceContainerHigh }]}>
-                  <ActivityIndicator color={colors.primary} />
-                </View>
-              ) : photoUrl ? (
-                <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-                  <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-                  <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
-                    <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
-                  </View>
-                </View>
-              ) : (
-                <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-                  <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>{initial}</Text>
-                  <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
-                    <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
-                  </View>
-                </View>
-              )}
+            <TouchableOpacity onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
+              <SmartImage
+                uri={photoUrl}
+                thumbnailUri={photoThumbnailUrl}
+                name={name}
+                size={80}
+                fallbackIcon="person"
+              />
+              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
+                <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
+              </View>
             </TouchableOpacity>
 
             <View style={styles.photoActions}>
-              <TouchableOpacity onPress={handlePickPhoto}>
+              <TouchableOpacity onPress={() => setIsPickerVisible(true)}>
                 <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
               </TouchableOpacity>
 
@@ -234,6 +210,20 @@ export default function ProfileEditScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        onRemove={photoUrl ? removeMedia : undefined}
+      />
+
+      <MediaUploadOverlay
+        visible={isUploading}
+        progress={progress}
+      />
     </SafeAreaView>
   );
 }

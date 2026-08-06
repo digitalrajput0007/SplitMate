@@ -14,8 +14,9 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { SmartImage } from '../components/SmartImage';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -122,13 +123,15 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
         <View style={styles.topTitleContainer}>
           <View style={styles.titleWithAvatar}>
-            <View style={[styles.groupHeaderAvatar, { backgroundColor: colors.primaryFixed }]}>
-              {group?.photoUrl ? (
-                <Image source={{ uri: group.photoUrl }} style={styles.avatarImage} />
-              ) : (
-                <MaterialIcons name={group?.groupType === 'Trip' ? 'flight' : 'groups'} size={20} color={colors.primary} />
-              )}
-            </View>
+            <SmartImage
+              uri={group?.photoUrl}
+              thumbnailUri={group?.photoThumbnailUrl}
+              name={groupName}
+              mode="full"
+              size={40}
+              fallbackIcon={group?.groupType === 'Trip' ? 'flight' : 'groups'}
+              style={styles.avatarImage}
+            />
             <View>
               <Text style={[styles.topTitle, { color: colors.onBackground }]} numberOfLines={1}>
                 {groupName}
@@ -268,13 +271,15 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           <View style={styles.membersRow}>
             {sortedMembers.map((m) => (
               <View key={m.uid} style={styles.memberItem}>
-                <View style={[styles.memberAvatar, { backgroundColor: colors.primaryFixed }]}>
-                  {m.photoUrl ? (
-                    <Image source={{ uri: m.photoUrl }} style={styles.avatarImage} />
-                  ) : (
-                    <Text style={[styles.avatarText, { color: colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
-                  )}
-                </View>
+                <SmartImage
+                  uri={m.photoUrl}
+                  thumbnailUri={m.photoThumbnailUrl}
+                  name={m.name}
+                  mode="thumbnail"
+                  size={48}
+                  fallbackIcon="person"
+                  style={styles.avatarImage}
+                />
                 <Text style={[styles.memberNameText, { color: colors.onSurface }]} numberOfLines={1}>
                   {m.uid === currentUid ? 'You' : m.name.split(' ')[0]}
                 </Text>
@@ -292,13 +297,15 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             <View style={styles.membersRow}>
               {pendingMembers.map((m) => (
                 <View key={m.uid} style={[styles.memberItem, { opacity: 0.6 }]}>
-                  <View style={[styles.memberAvatar, { backgroundColor: colors.surfaceContainerHighest }]}>
-                    {m.photoUrl ? (
-                      <Image source={{ uri: m.photoUrl }} style={styles.avatarImage} />
-                    ) : (
-                      <Text style={[styles.avatarText, { color: colors.onSurfaceVariant }]}>{m.name.charAt(0).toUpperCase()}</Text>
-                    )}
-                  </View>
+                  <SmartImage
+                    uri={m.photoUrl}
+                    thumbnailUri={m.photoThumbnailUrl}
+                    name={m.name}
+                    mode="thumbnail"
+                    size={48}
+                    fallbackIcon="person"
+                    style={styles.avatarImage}
+                  />
                   <Text style={[styles.memberNameText, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
                     {m.name.split(' ')[0]}
                   </Text>
