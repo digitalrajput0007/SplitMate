@@ -21,6 +21,7 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   getAllUsersFromFirestore,
+  subscribeAllUserProfiles,
   GroupData,
   ExpenseData,
   SettlementData,
