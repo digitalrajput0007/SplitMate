@@ -11,9 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
+import { useTheme } from '../context/ThemeContext';
 import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword } from '../services/authService';
 import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
@@ -23,6 +25,7 @@ import { Alert, Modal } from 'react-native';
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen({ navigation }: Props) {
+  const { colors } = useTheme();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -159,8 +162,9 @@ export default function SignInScreen({ navigation }: Props) {
 
           {/* Error Banner */}
           {!!errorMessage && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{errorMessage}</Text>
+            <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+              <MaterialIcons name="error-outline" size={18} color={colors.error} />
+              <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
             </View>
           )}
 
@@ -216,7 +220,7 @@ export default function SignInScreen({ navigation }: Props) {
                 setResetModalVisible(true);
               }}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
+              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
             </TouchableOpacity>
           )}
 
@@ -235,15 +239,15 @@ export default function SignInScreen({ navigation }: Props) {
 
           {/* Primary Action Button */}
           <TouchableOpacity
-            style={[styles.primaryButton, loading && styles.disabledButton]}
+            style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
             onPress={handleContinueWithEmail}
             activeOpacity={0.85}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color={Colors.onPrimary} size="small" />
+              <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={styles.primaryButtonText}>
+              <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
                 {isSignUp ? 'Create Account' : 'Continue with Email'}
               </Text>
             )}
@@ -388,17 +392,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorContainer: {
-    backgroundColor: Colors.errorContainer,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.error,
+    gap: 10,
   },
   errorText: {
     ...Typography.labelMd,
-    color: Colors.onErrorContainer,
-    textAlign: 'center',
+    flex: 1,
   },
   googleButton: {
     flexDirection: 'row',

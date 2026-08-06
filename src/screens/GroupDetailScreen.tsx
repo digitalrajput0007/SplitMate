@@ -164,11 +164,22 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           </View>
 
           {loading ? (
-            <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: Spacing.md }} />
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Loading expenses...</Text>
+            </View>
           ) : expenses.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
-              <MaterialIcons name="receipt-long" size={40} color={colors.outline} />
+              <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="receipt-long" size={40} color={colors.outline} />
+              </View>
               <Text style={[styles.emptyText, { color: colors.onSurfaceVariant }]}>No expenses added yet.</Text>
+              <TouchableOpacity
+                style={[styles.emptyBtn, { backgroundColor: colors.primaryFixed }]}
+                onPress={() => navigation.navigate('AddExpense', { groupId, groupName })}
+              >
+                <Text style={[styles.emptyBtnText, { color: colors.primary }]}>Add First Expense</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={[styles.expensesContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
@@ -395,12 +406,40 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     padding: Spacing.xl,
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.xl,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
+    ...Shadows.card,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
   },
   emptyText: {
+    ...Typography.bodyMd,
+    textAlign: 'center',
+  },
+  emptyBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    marginTop: 8,
+  },
+  emptyBtnText: {
+    ...Typography.labelLg,
+    fontWeight: '700',
+  },
+  loadingBox: {
+    paddingVertical: Spacing.xl,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  loadingText: {
     ...Typography.bodyMd,
   },
 });

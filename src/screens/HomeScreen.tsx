@@ -288,17 +288,19 @@ export default function HomeScreen() {
             </View>
           ) : groups.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-              <Text style={styles.emptyEmoji}>👥</Text>
-              <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No Groups Yet</Text>
+              <View style={[styles.emptyIconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="group-add" size={40} color={colors.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No groups yet</Text>
               <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
-                Create a group for trips, flatmates, or events to start splitting expenses.
+                Create a group to start splitting expenses with friends and roommates.
               </Text>
               <TouchableOpacity
-                style={[styles.emptyBtn, { backgroundColor: colors.primaryFixed }]}
+                style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
                 onPress={() => navigation.navigate('CreateGroup')}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.emptyBtnText, { color: colors.primary }]}>Create First Group</Text>
+                <Text style={[styles.emptyBtnText, { color: colors.onPrimary }]}>Create First Group</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -474,22 +476,32 @@ const styles = StyleSheet.create({
   groupsList: { gap: Spacing.sm },
   loadingBox: { paddingVertical: Spacing.xl, alignItems: 'center' },
   emptyCard: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.xl,
     alignItems: 'center',
     gap: Spacing.sm,
     borderWidth: 1,
-  },
-  emptyEmoji: { fontSize: 32 },
-  emptyTitle: { ...Typography.titleMd, fontWeight: '600' },
-  emptySub: { ...Typography.bodyMd, textAlign: 'center' },
-  emptyBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.md,
     marginTop: Spacing.xs,
+    ...Shadows.card,
   },
-  emptyBtnText: { ...Typography.titleSm },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  emptyTitle: { ...Typography.titleLg, fontWeight: '700' },
+  emptySub: { ...Typography.bodyMd, textAlign: 'center', paddingHorizontal: 20 },
+  emptyBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: BorderRadius.lg,
+    marginTop: Spacing.md,
+    ...Shadows.button,
+  },
+  emptyBtnText: { ...Typography.titleSm, fontWeight: '700' },
   fab: {
     position: 'absolute',
     bottom: 24,

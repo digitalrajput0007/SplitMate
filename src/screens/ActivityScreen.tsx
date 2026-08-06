@@ -9,6 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
@@ -89,6 +90,7 @@ export default function ActivityScreen() {
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing timeline...</Text>
           </View>
         ) : activities.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
@@ -152,7 +154,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: { ...Typography.headlineLgMobile, fontWeight: '700' },
   headerSub: { ...Typography.bodyMd, marginTop: Spacing.xs, marginBottom: Spacing.xs },
-  loadingBox: { paddingVertical: Spacing.xxl, alignItems: 'center' },
+  loadingBox: { paddingVertical: Spacing.xxl, alignItems: 'center', gap: Spacing.sm },
+  loadingText: { ...Typography.bodyMd },
   emptyCard: {
     padding: Spacing.xl,
     borderRadius: BorderRadius.xl,
