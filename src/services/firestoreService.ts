@@ -60,6 +60,8 @@ export interface GroupInvitation {
   invitationId?: string;
   groupId: string;
   groupName: string;
+  groupPhotoUrl?: string;
+  groupPhotoThumbnailUrl?: string;
   fromUserId?: string;
   toUserId?: string;
   invitedUid?: string;
@@ -124,7 +126,7 @@ export interface SettlementData {
 
 export interface ActivityItem {
   id: string;
-  type: 'expense' | 'settlement';
+  type: 'expense' | 'settlement' | 'group' | 'reminder';
   title: string;
   subtitle: string;
   amount: number;
@@ -132,6 +134,18 @@ export interface ActivityItem {
   groupName?: string;
   date: string;
   rawTimestamp: number;
+  actorUid: string;
+  targetUid?: string;
+}
+
+export interface FriendRequest {
+  requestId: string;
+  fromUid: string;
+  fromName: string;
+  fromPhotoUrl?: string;
+  toUid: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: any;
 }
 
 // -------------------------------------------------------------
@@ -321,6 +335,7 @@ export const createGroupInFirestore = async (
   extraDetails?: {
     groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Other';
     photoUrl?: string;
+    photoThumbnailUrl?: string;
     familyName?: string;
     setupMonthlySplit?: boolean;
     enableDates?: boolean;
@@ -355,6 +370,7 @@ export const createGroupInFirestore = async (
       createdAt: serverTimestamp(),
       ...(extraDetails?.groupType && { groupType: extraDetails.groupType }),
       ...(extraDetails?.photoUrl && { photoUrl: extraDetails.photoUrl }),
+      ...(extraDetails?.photoThumbnailUrl && { photoThumbnailUrl: extraDetails.photoThumbnailUrl }),
       ...(extraDetails?.familyName && { familyName: extraDetails.familyName }),
       ...(extraDetails?.setupMonthlySplit !== undefined && { setupMonthlySplit: extraDetails.setupMonthlySplit }),
       ...(extraDetails?.enableDates !== undefined && { enableDates: extraDetails.enableDates }),
@@ -374,6 +390,8 @@ export const createGroupInFirestore = async (
           invitationId: invRef.id,
           groupId: groupRef.id,
           groupName: name.trim(),
+          groupPhotoUrl: extraDetails?.photoUrl || '',
+          groupPhotoThumbnailUrl: extraDetails?.photoThumbnailUrl || '',
           fromUserId: currentUser.uid,
           toUserId: invitedUid,
           invitedByName: currentUser.displayName || 'Group Admin',
@@ -426,6 +444,8 @@ export const inviteMemberToGroup = async (
         invitationId: invRef.id,
         groupId,
         groupName: groupData.name || 'Group',
+        groupPhotoUrl: groupData.photoUrl || '',
+        groupPhotoThumbnailUrl: groupData.photoThumbnailUrl || '',
         fromUserId: currentUser.uid,
         toUserId: newMemberUid,
         invitedByName: currentUser.displayName || 'Group Admin',
@@ -1502,4 +1522,101 @@ export const toggleGroupArchive = async (groupId: string, isArchived: boolean) =
     console.error('Error toggling group archive:', error);
     throw error;
   }
+};
+
+// -------------------------------------------------------------
+// FRIENDS & SEARCH
+// -------------------------------------------------------------
+
+/**
+ * Searches for users by email or mobile number (case-insensitive)
+ */
+export const searchUsersByContact = async (queryText: string): Promise<UserProfile[]> => {
+  const normalized = queryText.trim().toLowerCase();
+  if (!normalized) return [];
+
+  try {
+    const allUsers = await getAllUsersFromFirestore();
+    return allUsers.filter(u => {
+      const emailMatch = u.email?.toLowerCase().includes(normalized);
+      const mobileMatch = u.mobile?.includes(normalized);
+      const nameMatch = u.name?.toLowerCase().includes(normalized);
+      return (emailMatch || mobileMatch || nameMatch) && u.uid !== auth.currentUser?.uid;
+    });
+  } catch (error) {
+    console.error('Error searching users:', error);
+    return [];
+  }
+};
+
+/**
+ * Sends a friend request to another user
+ */
+export const sendFriendRequest = async (toUid: string) => {
+  const currentUser = auth.currentUser;
+  if (!currentUser) return;
+
+  try {
+    const requestId = `${currentUser.uid}_${toUid}`;
+    const requestRef = doc(db, 'friendRequests', requestId);
+
+    // Check if already friends
+    const contacts = await getSavedUserContactsFromFirestore(currentUser.uid);
+    if (contacts.find(c => c.uid === toUid)) {
+      throw new Error('Already friends');
+    }
+
+    await setDoc(requestRef, {
+      requestId,
+      fromUid: currentUser.uid,
+      fromName: currentUser.displayName || 'SplitMate User',
+      fromPhotoUrl: currentUser.photoURL || '',
+      toUid,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error sending friend request:', error);
+    throw error;
+  }
+};
+
+/**
+ * Accepts or declines a friend request
+ */
+export const respondToFriendRequest = async (requestId: string, status: 'accepted' | 'declined') => {
+  try {
+    const requestRef = doc(db, 'friendRequests', requestId);
+    const snap = await getDoc(requestRef);
+    if (!snap.exists()) return;
+
+    const data = snap.data() as FriendRequest;
+
+    if (status === 'accepted') {
+      // Add mutual contacts
+      await addContactToUserFirestore(data.toUid, data.fromUid);
+      await addContactToUserFirestore(data.fromUid, data.toUid);
+    }
+
+    await deleteDoc(requestRef);
+  } catch (error) {
+    console.error('Error responding to friend request:', error);
+    throw error;
+  }
+};
+
+/**
+ * Listens for pending friend requests for the current user
+ */
+export const subscribeToFriendRequests = (uid: string, onUpdate: (requests: FriendRequest[]) => void) => {
+  const q = query(
+    collection(db, 'friendRequests'),
+    where('toUid', '==', uid),
+    where('status', '==', 'pending')
+  );
+
+  return onSnapshot(q, (snap) => {
+    const requests = snap.docs.map(d => d.data() as FriendRequest);
+    onUpdate(requests);
+  });
 };

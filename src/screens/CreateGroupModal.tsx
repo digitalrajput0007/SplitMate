@@ -29,8 +29,11 @@ import {
   getSavedUserContactsFromFirestore,
   UserProfile,
 } from '../services/firestoreService';
-import { uploadGroupPhoto } from '../services/storageService';
 import { auth } from '../config/firebase';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
+import { SmartImage } from '../components/SmartImage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
 
@@ -72,8 +75,26 @@ export default function CreateGroupModal({ navigation }: Props) {
 
   // Screen 1: Group Basics State
   const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+  const [groupPhotoThumb, setGroupPhotoThumb] = useState<string | null>(null);
   const [groupName, setGroupName] = useState('');
   const [groupType, setGroupType] = useState<GroupTypeOption>('Trip');
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+  } = useMediaManager({
+    purpose: 'group',
+    id: `temp_${Date.now()}`,
+    onSuccess: (urls) => {
+      setGroupPhoto(urls.original);
+      if (urls.thumbnail) setGroupPhotoThumb(urls.thumbnail);
+    },
+  });
 
   // Conditional Fields
   const [startDate, setStartDate] = useState<Date>(new Date());
@@ -230,22 +251,10 @@ export default function CreateGroupModal({ navigation }: Props) {
       const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
       const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
 
-      // 1. Pre-upload photo if it exists
-      let finalPhotoUrl = groupPhoto || undefined;
-      if (groupPhoto && (groupPhoto.startsWith('file://') || groupPhoto.startsWith('content://'))) {
-        try {
-          // Use a temporary unique name for the path
-          const tempId = `new_group_${Date.now()}`;
-          finalPhotoUrl = await uploadGroupPhoto(tempId, groupPhoto);
-        } catch (uploadErr) {
-          console.error('Group photo upload failed:', uploadErr);
-          finalPhotoUrl = undefined; // Ensure we don't save local path
-        }
-      }
-
       const newId = await createGroupInFirestore(groupName.trim(), memberUids, {
         groupType,
-        photoUrl: finalPhotoUrl,
+        photoUrl: groupPhoto || undefined,
+        photoThumbnailUrl: groupPhotoThumb || undefined,
         familyName: groupType === 'Family' && familyName.trim() ? familyName.trim() : undefined,
         setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
         enableDates: groupType === 'Trip',
@@ -268,8 +277,7 @@ export default function CreateGroupModal({ navigation }: Props) {
 
   const selectedContactsList = allContacts.filter((c) => selectedIds.has(c.id));
 
-  // =============================================================
-  // SCREEN 4: GROUP CREATED SUCCESS (Stitch ID: a0880565aed540c7863bf4d46c0f9569)
+  // Screen 4: GROUP CREATED SUCCESS (Stitch ID: a0880565aed540c7863bf4d46c0f9569)
   // =============================================================
   if (currentStep === 4) {
     return (
@@ -323,6 +331,19 @@ export default function CreateGroupModal({ navigation }: Props) {
             </TouchableOpacity>
           </View>
         </View>
+
+        <MediaPickerSheet
+          visible={isPickerVisible}
+          onDismiss={() => setIsPickerVisible(false)}
+          onCamera={takePhoto}
+          onGallery={pickFromGallery}
+          onFiles={browseFiles}
+        />
+
+        <MediaUploadOverlay
+          visible={isUploading}
+          progress={progress}
+        />
       </SafeAreaView>
     );
   }
@@ -612,12 +633,18 @@ export default function CreateGroupModal({ navigation }: Props) {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.basicsMainContent}>
         {/* Photo Upload */}
         <View style={styles.photoUploadCenter}>
-          <TouchableOpacity style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]} onPress={handlePickPhoto} activeOpacity={0.8}>
-            {groupPhoto ? (
-              <Image source={{ uri: groupPhoto }} style={styles.photoCircleImage} />
-            ) : (
-              <MaterialIcons name="photo-camera" size={28} color={colors.onSurfaceVariant} />
-            )}
+          <TouchableOpacity
+            style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]}
+            onPress={() => setIsPickerVisible(true)}
+            activeOpacity={0.8}
+          >
+            <SmartImage
+              uri={groupPhoto || undefined}
+              thumbnailUri={groupPhotoThumb || undefined}
+              name={groupName}
+              size={80}
+              fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
+            />
             <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
               <MaterialIcons name="add" size={12} color={colors.onPrimary} />
             </View>
@@ -768,6 +795,20 @@ export default function CreateGroupModal({ navigation }: Props) {
           <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        onRemove={groupPhoto ? () => { setGroupPhoto(null); setGroupPhotoThumb(null); } : undefined}
+      />
+
+      <MediaUploadOverlay
+        visible={isUploading}
+        progress={progress}
+      />
     </SafeAreaView>
   );
 }

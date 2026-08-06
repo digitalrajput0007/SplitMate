@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { GroupCard } from '../components/GroupCard';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
+import { M3BottomSheet } from '../components/M3BottomSheet';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
 import { UserProfile, getAllUsersFromFirestore, subscribeAllUserProfiles } from '../services/firestoreService';
@@ -29,6 +30,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const FILTERS = ['All', 'You Owe', 'You Are Owed', 'Settled'];
+const TYPE_OPTIONS: Array<{ id: string | null; label: string; icon: keyof typeof MaterialIcons.glyphMap }> = [
+  { id: null, label: 'All Types', icon: 'filter-list' },
+  { id: 'Trip', label: 'Trip', icon: 'flight' },
+  { id: 'Family', label: 'Family', icon: 'home' },
+  { id: 'Couple', label: 'Couple', icon: 'favorite' },
+  { id: 'Flatmate', label: 'Flatmate', icon: 'apartment' },
+  { id: 'Other', label: 'Other', icon: 'more-horiz' },
+];
 
 export default function GroupsScreen() {
   const navigation = useNavigation<any>();
@@ -39,6 +48,8 @@ export default function GroupsScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [activeType, setActiveType] = useState<string | null>(null);
+  const [showTypeSheet, setShowTypeSheet] = useState(false);
   const [allUsersMap, setAllUsersMap] = useState<Map<string, UserProfile>>(new Map());
 
   const [ownedExpanded, setOwnedExpanded] = useState(true);
@@ -76,9 +87,11 @@ export default function GroupsScreen() {
       const matchesSearch = g.name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
-      if (activeFilter === 'You Owe') return balance < -0.05;
-      if (activeFilter === 'You Are Owed') return balance > 0.05;
-      if (activeFilter === 'Settled') return Math.abs(balance) <= 0.05;
+      if (activeFilter === 'You Owe') if (balance >= -0.05) return false;
+      if (activeFilter === 'You Are Owed') if (balance <= 0.05) return false;
+      if (activeFilter === 'Settled') if (Math.abs(balance) > 0.05) return false;
+
+      if (activeType && g.groupType !== activeType) return false;
 
       return true;
     };
@@ -149,12 +162,33 @@ export default function GroupsScreen() {
 
       <View style={[styles.header, { paddingTop: topPadding }]}>
         <Text style={[styles.title, { color: colors.onSurface }]}>Groups</Text>
-        <M3SearchBar
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search groups..."
-          onClear={() => setSearchQuery('')}
-        />
+
+        <View style={styles.searchRow}>
+          <View style={{ flex: 1 }}>
+            <M3SearchBar
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search groups..."
+              onClear={() => setSearchQuery('')}
+            />
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.filterIconBtn,
+              { backgroundColor: activeType ? colors.primary : colors.surfaceContainerHigh }
+            ]}
+            onPress={() => setShowTypeSheet(true)}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons
+              name="tune"
+              size={22}
+              color={activeType ? colors.onPrimary : colors.onSurfaceVariant}
+            />
+            {activeType && <View style={[styles.filterBadge, { backgroundColor: colors.error }]} />}
+          </TouchableOpacity>
+        </View>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
           {FILTERS.map((f) => (
             <M3Chip
@@ -273,6 +307,43 @@ export default function GroupsScreen() {
       >
         <MaterialIcons name="add" size={28} color={colors.onPrimary} />
       </TouchableOpacity>
+
+      <M3BottomSheet
+        visible={showTypeSheet}
+        onDismiss={() => setShowTypeSheet(false)}
+        title="Filter by Group Type"
+      >
+        <View style={styles.sheetList}>
+          {TYPE_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.label}
+              style={[
+                styles.typeOption,
+                activeType === opt.id && { backgroundColor: colors.primaryContainer }
+              ]}
+              onPress={() => {
+                setActiveType(opt.id);
+                setShowTypeSheet(false);
+              }}
+            >
+              <MaterialIcons
+                name={opt.icon}
+                size={22}
+                color={activeType === opt.id ? colors.primary : colors.onSurfaceVariant}
+              />
+              <Text style={[
+                styles.typeOptionLabel,
+                { color: activeType === opt.id ? colors.primary : colors.onSurface }
+              ]}>
+                {opt.label}
+              </Text>
+              {activeType === opt.id && (
+                <MaterialIcons name="check" size={20} color={colors.primary} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </M3BottomSheet>
     </View>
   );
 }
@@ -288,10 +359,32 @@ const styles = StyleSheet.create({
     ...Typography.headlineSm,
     fontWeight: 'bold',
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  filterIconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
   filterRow: {
     gap: Spacing.sm,
     paddingBottom: 4,
-    paddingHorizontal: Spacing.containerMargin,
   },
   scrollContent: {
     paddingHorizontal: Spacing.containerMargin,
@@ -336,5 +429,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.button,
+  },
+  sheetList: {
+    gap: 4,
+    paddingBottom: 20,
+  },
+  typeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: BorderRadius.md,
+    gap: 16,
+  },
+  typeOptionLabel: {
+    ...Typography.bodyLg,
+    flex: 1,
+    fontWeight: '500',
   },
 });
