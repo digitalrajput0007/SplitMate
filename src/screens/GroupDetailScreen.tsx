@@ -22,6 +22,7 @@ import {
   subscribeToGroupExpenses,
   subscribeToGroupDetail,
   getUserProfileFromFirestore,
+  getAllUsersFromFirestore,
   ExpenseData,
   GroupData,
   UserProfile,
@@ -38,20 +39,22 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [memberMap, setMemberMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (currentUser?.uid) {
-      getUserProfileFromFirestore(currentUser.uid).then((prof) => {
-        if (prof) setUserProfile(prof);
-      });
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
-      if (data) setGroup(data);
+    const unsubGroup = subscribeToGroupDetail(groupId, async (data) => {
+      if (data) {
+        setGroup(data);
+        // Fetch all users to resolve names from UIDs
+        const allUsers = await getAllUsersFromFirestore();
+        const mapping: Record<string, string> = {};
+        data.memberIds.forEach((uid) => {
+          const user = allUsers.find(u => u.uid === uid);
+          mapping[uid] = user ? (uid === currentUid ? 'You' : user.name) : 'Member';
+        });
+        setMemberMap(mapping);
+      }
     });
 
     const unsubExpenses = subscribeToGroupExpenses(groupId, (expList) => {
@@ -63,10 +66,10 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
       unsubGroup();
       unsubExpenses();
     };
-  }, [groupId]);
+  }, [groupId, currentUid]);
 
   const groupName = group?.name || 'Group Details';
-  const members = group?.members || [];
+  const memberCount = group?.memberIds?.length || 0;
   const totalSpent = expenses.reduce((sum, item) => sum + (item.amount || 0), 0);
 
   let netBalance = 0;
@@ -74,20 +77,13 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
     const amt = item.amount || 0;
     const paidBy = item.paidBy;
     const splits = item.splitDetails || {};
-    const memberCount = Object.keys(splits).length || members.length || 1;
-    const mySplitShare = splits[currentUid] !== undefined ? splits[currentUid] : amt / memberCount;
+    const memberCountForSplit = Object.keys(splits).length || memberCount || 1;
+    const mySplitShare = splits[currentUid] !== undefined ? splits[currentUid] : amt / memberCountForSplit;
 
     if (paidBy === currentUid) {
       netBalance += amt - mySplitShare;
     } else if (splits[currentUid] !== undefined) {
       netBalance -= mySplitShare;
-    }
-  });
-
-  const memberNamesMap: Record<string, string> = {};
-  members.forEach((m: any) => {
-    if (m.uid || m.name) {
-      memberNamesMap[m.uid || m.name] = m.name || m.displayName || 'Member';
     }
   });
 
@@ -110,7 +106,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             {groupName}
           </Text>
           <Text style={[styles.topSub, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
-            {members.length} member{members.length !== 1 ? 's' : ''}
+            {memberCount} member{memberCount !== 1 ? 's' : ''}
           </Text>
         </View>
 
@@ -177,7 +173,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           ) : (
             <View style={[styles.expensesContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
               {expenses.map((item, index) => {
-                const payerName = paidByText(item, currentUid, memberNamesMap);
+                const payerName = memberMap[item.paidBy] || 'Member';
                 const isLast = index === expenses.length - 1;
                 const dateStr = item.createdAt
                   ? new Date((item.createdAt as any).seconds * 1000).toLocaleDateString('en-IN', {

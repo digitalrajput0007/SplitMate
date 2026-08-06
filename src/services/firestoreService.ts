@@ -696,6 +696,20 @@ export const deleteExpenseFromFirestore = async (expenseId: string) => {
   }
 };
 
+export const subscribeToExpenseDetail = (
+  expenseId: string,
+  onUpdate: (expense: ExpenseData | null) => void
+) => {
+  const expenseRef = doc(db, 'expenses', expenseId);
+  return onSnapshot(expenseRef, (snap) => {
+    if (snap.exists()) {
+      onUpdate({ expenseId: snap.id, ...snap.data() } as ExpenseData);
+    } else {
+      onUpdate(null);
+    }
+  });
+};
+
 export const subscribeToGroupExpenses = (
   groupId: string,
   onExpensesUpdate: (expenses: ExpenseData[]) => void

@@ -20,6 +20,7 @@ import {
   updateExpenseInFirestore,
   deleteExpenseFromFirestore,
   subscribeToGroupDetail,
+  subscribeToExpenseDetail,
   getAllUsersFromFirestore,
   ExpenseData,
   GroupData,
@@ -30,14 +31,24 @@ import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
 export default function ExpenseDetailScreen({ navigation, route }: Props) {
-  const expense: ExpenseData = route.params?.expense;
+  const initialExpense: ExpenseData = route.params?.expense;
   const { colors } = useTheme();
   const currentUser = auth.currentUser;
 
+  const [expense, setExpense] = useState<ExpenseData | null>(initialExpense);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [group, setGroup] = useState<GroupData | null>(null);
   const [memberMap, setMemberMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (initialExpense?.expenseId) {
+      const unsub = subscribeToExpenseDetail(initialExpense.expenseId, (data) => {
+        setExpense(data);
+      });
+      return () => unsub();
+    }
+  }, [initialExpense]);
 
   useEffect(() => {
     if (expense?.groupId) {
@@ -60,7 +71,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
       });
       return () => unsub();
     }
-  }, [expense, currentUser]);
+  }, [expense?.groupId, currentUser]);
 
   if (!expense) {
     return (
@@ -77,7 +88,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   }
 
   const handleUpdate = async (formData: ExpenseFormData) => {
-    if (!expense.expenseId) return;
+    if (!expense?.expenseId) return;
 
     setSaving(true);
     try {
@@ -93,7 +104,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   };
 
   const handleDelete = async () => {
-    if (!expense.expenseId) return;
+    if (!expense?.expenseId) return;
 
     Alert.alert(
       'Delete Expense',
@@ -120,7 +131,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
 
   const members = Object.entries(memberMap).map(([uid, name]) => ({ uid, name }));
 
-  const payerName = memberMap[expense.paidBy] || 'Unknown';
+  const payerName = expense ? (memberMap[expense.paidBy] || 'Unknown') : 'Unknown';
 
   const formatDate = (timestamp: any) => {
     if (!timestamp) return 'Recent';
@@ -143,6 +154,23 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
       minute: '2-digit',
     });
   };
+
+  if (!expense) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
+          </TouchableOpacity>
+          <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Expense Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>

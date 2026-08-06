@@ -164,7 +164,7 @@ export default function ExpenseForm({
     const splitDetails = calculateSplitDetails();
     if (!splitDetails) return;
 
-    onSubmit({
+    const data: ExpenseFormData = {
       title: description.trim(),
       amount: parsedAmount,
       paidBy: paidByUserId,
@@ -173,8 +173,10 @@ export default function ExpenseForm({
       category: selectedCategory,
       date: date.toISOString(),
       notes: notes.trim(),
-      receiptUrl: receiptImage || undefined,
-    });
+      receiptUrl: receiptImage || '', // Use empty string instead of undefined
+    };
+
+    onSubmit(data);
   };
 
   const formatDateShort = (d: Date) => {
