@@ -57,14 +57,31 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     initializeInterstitialAd();
+  }, []);
+
+  useEffect(() => {
+    if (!groupId) return;
 
     // 1. Subscribe to Group Detail (for Photo and Name)
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
       setGroup(data);
     });
 
-    // 2. Subscribe to needed profiles for real-time resolution
-    if (!group) return;
+    const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
+    const unsubSet = subscribeToGroupSettlements(groupId, (data) => {
+      setSettlements(data);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubGroup();
+      unsubExp();
+      unsubSet();
+    };
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!group?.memberIds || group.memberIds.length === 0) return;
 
     const unsubs: (() => void)[] = [];
     group.memberIds.forEach(uid => {
@@ -85,26 +102,18 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     });
 
     // Ensure current user is in profiles even if not in group yet
-    if (!memberProfiles[currentUid]) {
-      setMemberProfiles(prev => ({
+    setMemberProfiles(prev => {
+      if (prev[currentUid]) return prev;
+      return {
         ...prev,
         [currentUid]: { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' }
-      }));
-    }
-
-    const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
-    const unsubSet = subscribeToGroupSettlements(groupId, (data) => {
-      setSettlements(data);
-      setLoading(false);
+      };
     });
 
     return () => {
-      unsubGroup();
       unsubs.forEach(u => u());
-      unsubExp();
-      unsubSet();
     };
-  }, [groupId, currentUid, group?.memberIds]);
+  }, [group?.memberIds.join(','), currentUid]);
 
   const simplifiedDebts = useMemo(() => {
     return simplifyDebts(expenses, settlements, memberProfiles);

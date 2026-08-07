@@ -42,6 +42,7 @@ import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
 
 import ContactsScreen from '../screens/ContactsScreen';
+import ContactSyncScreen from '../screens/ContactSyncScreen';
 import AppThemeScreen from '../screens/AppThemeScreen';
 
 // App Lock Screens
@@ -75,6 +76,7 @@ export type RootStackParamList = {
   RecurringExpenses: undefined;
   PrivacySecurity: undefined;
   ContactUs: undefined;
+  ContactSync: undefined;
   SetupPin: undefined;
 };
 
@@ -273,6 +275,7 @@ export default function AppNavigator() {
         <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
         <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
         <Stack.Screen name="ContactUs" component={ContactUsScreen} />
+        <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
         <Stack.Screen name="SetupPin" component={SetupPinScreen} />
       </Stack.Navigator>
     </NavigationContainer>

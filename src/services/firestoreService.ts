@@ -16,6 +16,26 @@ import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
 import { db, auth } from '../config/firebase';
 
+/**
+ * Real-time listener for a specific user profile
+ */
+export function subscribeToUserProfile(uid: string, onUpdate: (profile: UserProfile | null) => void) {
+  const userRef = doc(db, 'users', uid);
+  return onSnapshot(
+    userRef,
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate(snap.data() as UserProfile);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      console.error('Error listening to user profile:', error);
+    }
+  );
+}
+
 export interface PaymentMethod {
   id: string;
   handle: string;
@@ -247,26 +267,6 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<UserProf
     }
     return null;
   }
-};
-
-/**
- * Real-time listener for a specific user profile
- */
-export const subscribeToUserProfile = (uid: string, onUpdate: (profile: UserProfile | null) => void) => {
-  const userRef = doc(db, 'users', uid);
-  return onSnapshot(
-    userRef,
-    (snap) => {
-      if (snap.exists()) {
-        onUpdate(snap.data() as UserProfile);
-      } else {
-        onUpdate(null);
-      }
-    },
-    (error) => {
-      console.error('Error listening to user profile:', error);
-    }
-  );
 };
 
 /**
