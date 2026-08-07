@@ -31,6 +31,7 @@
     },
     "plugins": [
       "expo-asset",
+      "expo-media-library",
       "@react-native-google-signin/google-signin",
       "expo-localization",
       "@react-native-community/datetimepicker",

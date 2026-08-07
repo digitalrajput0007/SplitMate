@@ -14,7 +14,6 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system';
 import { Colors } from '../constants/theme';
 
 interface ImagePreviewModalProps {
@@ -33,35 +32,14 @@ export const ImagePreviewModal = ({ visible, imageUrl, onClose }: ImagePreviewMo
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      // 1. For Web or Simple Fallback
-      if (Platform.OS === 'web') {
-        Linking.openURL(imageUrl);
-        setDownloading(false);
-        return;
-      }
-
-      // 2. Download to a local file
-      const filename = imageUrl.split('/').pop()?.split('?')[0] || 'receipt.jpg';
-      const fileUri = FileSystem.documentDirectory + filename;
-
-      const downloadRes = await FileSystem.downloadAsync(imageUrl, fileUri);
-
-      if (downloadRes.status === 200) {
-        Alert.alert(
-          'Download Complete',
-          'The receipt has been saved to your documents folder.',
-          [
-            { text: 'OK' },
-            { text: 'Open', onPress: () => Linking.openURL(downloadRes.uri) }
-          ]
-        );
-      } else {
-        throw new Error('Download failed');
-      }
+      // 1. Direct Fallback: Open in Browser
+      // This is 100% reliable and doesn't require native modules that might be missing (MediaLibrary/Sharing).
+      // Users can long-press the image in the browser to "Save Image".
+      console.log('Redirecting to browser for receipt download:', imageUrl);
+      await Linking.openURL(imageUrl);
     } catch (error) {
-      console.error('Download error:', error);
-      Alert.alert('Download Failed', 'Could not download the receipt. Opening in browser instead.');
-      Linking.openURL(imageUrl);
+      console.error('Browser redirect failed:', error);
+      Alert.alert('Download Error', 'Could not open the receipt link.');
     } finally {
       setDownloading(false);
     }
