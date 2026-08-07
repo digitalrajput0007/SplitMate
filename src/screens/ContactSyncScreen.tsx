@@ -19,6 +19,7 @@ import {
   Contact,
   findUserByPhone,
   getAllUsersFromFirestore,
+  getSavedUserContactsFromFirestore,
 } from '../services/firestoreService';
 import { ContactService, normalizePhoneNumber } from '../services/ContactService';
 import { SmartImage } from '../components/SmartImage';
@@ -54,17 +55,27 @@ export default function ContactSyncScreen() {
       // 1. Fetch device contacts
       const rawContacts = await ContactService.getDeviceContacts();
 
-      // 2. Deduplicate by phone number to prevent "same key" warnings
+      // 2. Fetch all platform users & user's existing contacts
+      const [allUsers, existingContacts] = await Promise.all([
+        getAllUsersFromFirestore(),
+        currentUser?.uid ? getSavedUserContactsFromFirestore(currentUser.uid) : Promise.resolve([]),
+      ]);
+
+      const existingPhoneSet = new Set(existingContacts.map(c => c.phone));
+
+      // 3. Deduplicate by phone number and mark if already added
       const uniqueMap = new Map<string, SyncContact>();
       rawContacts.forEach(c => {
         if (!uniqueMap.has(c.phone)) {
-          uniqueMap.set(c.phone, c);
+          uniqueMap.set(c.phone, {
+            ...c,
+            isAdded: existingPhoneSet.has(c.phone)
+          });
         }
       });
       const contacts = Array.from(uniqueMap.values());
 
-      // 3. Fetch all platform users for instant matching
-      const allUsers = await getAllUsersFromFirestore();
+      // 4. Create platform map for instant matching
       const platformMap: Record<string, UserProfile> = {};
       allUsers.forEach(u => {
         if (u.mobile) {
@@ -112,13 +123,23 @@ export default function ContactSyncScreen() {
         )
       : [...deviceContacts];
 
-    // Sort: Platform users (SplitMate) first, then alphabetical
+    // Sort:
+    // 1. Already Added (Green Check)
+    // 2. On Platform but not added (+Add)
+    // 3. Not on platform (Invite)
+    // 4. Alphabetical within tiers
     return list.sort((a, b) => {
-      const aOn = matchedProfiles[a.phone] ? 1 : 0;
-      const bOn = matchedProfiles[b.phone] ? 1 : 0;
+      const getPriority = (contact: SyncContact) => {
+        if (contact.isAdded) return 2;
+        if (matchedProfiles[contact.phone]) return 1;
+        return 0;
+      };
 
-      if (aOn !== bOn) return bOn - aOn; // 1 (on platform) comes before 0
-      return a.name.localeCompare(b.name);
+      const pA = getPriority(a);
+      const pB = getPriority(b);
+
+      if (pA !== pB) return pB - pA; // Higher priority first
+      return (a.name || '').localeCompare(b.name || '');
     });
   }, [deviceContacts, searchQuery, matchedProfiles]);
 

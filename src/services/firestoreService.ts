@@ -527,6 +527,32 @@ export const updateGroupInFirestore = async (groupId: string, data: Partial<Grou
     }
 
     await setDoc(groupRef, sanitized, { merge: true });
+
+    // 2. Cascade changes to pending invitations (Name and Photo)
+    // This ensures invited users see the latest info in their dashboard
+    // We check !== undefined to capture cases where a photo is being removed (set to '')
+    if (data.name !== undefined || data.photoUrl !== undefined || data.photoThumbnailUrl !== undefined) {
+      const invQuery = query(
+        collection(db, 'groupInvitations'),
+        where('groupId', '==', groupId),
+        where('status', '==', 'pending')
+      );
+
+      const invSnap = await getDocs(invQuery);
+      const updates = invSnap.docs.map(invDoc => {
+        const invUpdate: any = {};
+        if (data.name !== undefined) invUpdate.groupName = data.name.trim();
+        if (data.photoUrl !== undefined) invUpdate.groupPhotoUrl = data.photoUrl;
+        if (data.photoThumbnailUrl !== undefined) invUpdate.groupPhotoThumbnailUrl = data.photoThumbnailUrl;
+
+        return updateDoc(invDoc.ref, {
+          ...invUpdate,
+          updatedAt: serverTimestamp()
+        });
+      });
+
+      await Promise.all(updates);
+    }
   } catch (error) {
     console.error('Error updating group:', error);
     throw error;
@@ -535,8 +561,81 @@ export const updateGroupInFirestore = async (groupId: string, data: Partial<Grou
 
 export const deleteGroupFromFirestore = async (groupId: string) => {
   try {
+    console.log(`[Firestore] Starting cascading delete/cancel for group: ${groupId}`);
+
+    // 0. Fetch group to get member IDs (important for finding invitations reliably)
     const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    const memberIds = groupSnap.exists() ? (groupSnap.data() as GroupData).memberIds || [] : [];
+
+    // 1. Find all invitations associated with this group
+    const invIdsToProcess = new Set<string>();
+
+    // Path A: Query by groupId (might be restricted by rules for "list" operations)
+    const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
+    const invSnap = await getDocs(invQuery);
+    invSnap.docs.forEach(d => invIdsToProcess.add(d.id));
+
+    // Path B: Check per member (more reliable under granular rules)
+    if (memberIds.length > 0) {
+      for (const uid of memberIds) {
+        const mInvQuery = query(
+          collection(db, 'groupInvitations'),
+          where('groupId', '==', groupId),
+          where('toUserId', '==', uid)
+        );
+        const mInvSnap = await getDocs(mInvQuery);
+        mInvSnap.docs.forEach(d => invIdsToProcess.add(d.id));
+      }
+    }
+
+    console.log(`[Firestore] Found ${invIdsToProcess.size} unique invitations to handle`);
+
+    // Instead of just deleting, we also MARK them as 'cancelled'.
+    // This is a safety measure because the Owner might not have permission to 'delete'
+    // a document from the recipient's inbox, but they usually have 'update' permission
+    // on documents they created (fromUserId).
+    const invOps = Array.from(invIdsToProcess).map(async (id) => {
+      const ref = doc(db, 'groupInvitations', id);
+      try {
+        // Try to update status first (to hide it immediately for the recipient)
+        await updateDoc(ref, {
+          status: 'cancelled',
+          updatedAt: serverTimestamp()
+        });
+        // Then try to delete it
+        await deleteDoc(ref);
+      } catch (err) {
+        console.warn(`[Firestore] Non-critical: Could not fully delete invitation ${id}. It is now marked as cancelled.`);
+      }
+    });
+    await Promise.all(invOps);
+
+    // 2. Delete all expenses associated with this group
+    const expQuery = query(collection(db, 'expenses'), where('groupId', '==', groupId));
+    const expSnap = await getDocs(expQuery);
+    console.log(`[Firestore] Found ${expSnap.docs.length} expenses to delete`);
+    const expDeleteOps = expSnap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(expDeleteOps);
+
+    // 3. Delete all settlements associated with this group
+    const setQuery = query(collection(db, 'settlements'), where('groupId', '==', groupId));
+    const setSnap = await getDocs(setQuery);
+    console.log(`[Firestore] Found ${setSnap.docs.length} settlements to delete`);
+    const setDeleteOps = setSnap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(setDeleteOps);
+
+    // 4. Delete all notifications associated with this group
+    const notifQuery = query(collection(db, 'notifications'), where('groupId', '==', groupId));
+    const notifSnap = await getDocs(notifQuery);
+    console.log(`[Firestore] Found ${notifSnap.docs.length} notifications to delete`);
+    const notifDeleteOps = notifSnap.docs.map(d => deleteDoc(d.ref));
+    await Promise.all(notifDeleteOps);
+
+    // 5. Finally, delete the group document itself
     await deleteDoc(groupRef);
+
+    console.log(`[Firestore] Group ${groupId} and all related data cleaned up successfully.`);
   } catch (error) {
     console.error('Error deleting group:', error);
     throw error;
@@ -630,7 +729,17 @@ export const cancelGroupInvitation = async (groupId: string, toUserId: string) =
     );
     const invSnap = await getDocs(invQuery);
     for (const docSnap of invSnap.docs) {
-      await deleteDoc(docSnap.ref);
+      try {
+        // Try to update status first (to hide it immediately)
+        await updateDoc(docSnap.ref, {
+          status: 'cancelled',
+          updatedAt: serverTimestamp()
+        });
+        // Then try to delete
+        await deleteDoc(docSnap.ref);
+      } catch (err) {
+        console.warn(`[Firestore] Non-critical: Could not fully delete invitation ${docSnap.id}. It is now marked as cancelled.`);
+      }
     }
 
     // 2. Remove user from group memberIds
