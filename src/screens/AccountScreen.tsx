@@ -20,7 +20,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
 import { signOutUser } from '../services/authService';
-import { getUserProfileFromFirestore, getAllUsersFromFirestore } from '../services/firestoreService';
+import {
+  getUserProfileFromFirestore,
+  getAllUsersFromFirestore,
+  subscribeToUserProfile
+} from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/AppNavigator';
@@ -65,7 +69,7 @@ export default function AccountScreen() {
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
 
-  const fetchUserData = useCallback(async () => {
+  useEffect(() => {
     const activeUser = auth.currentUser;
     if (!activeUser?.uid) {
       setDisplayName('User');
@@ -76,12 +80,14 @@ export default function AccountScreen() {
       setProfileLoading(false);
       return;
     }
+
+    // Initial sync from Auth
     setDisplayName(activeUser.displayName || activeUser.email?.split('@')[0] || 'User');
     setDisplayEmail(activeUser.email || '');
     setPhotoUrl(activeUser.photoURL || '');
 
-    try {
-      const prof = await getUserProfileFromFirestore(activeUser.uid);
+    // Listen for real-time Firestore updates
+    const unsubscribe = subscribeToUserProfile(activeUser.uid, (prof) => {
       if (prof) {
         if (prof.name !== undefined) setDisplayName(prof.name);
         if (prof.email !== undefined) setDisplayEmail(prof.email);
@@ -89,19 +95,11 @@ export default function AccountScreen() {
         if (prof.photoUrl !== undefined) setPhotoUrl(prof.photoUrl);
         if (prof.mobile !== undefined) setDisplayMobile(prof.mobile);
       }
-    } catch (err) {
-      console.error('Firestore fetch error in AccountScreen:', err);
-      Alert.alert('Error', 'Network error, check your connection');
-    } finally {
       setProfileLoading(false);
-    }
-  }, []);
+    });
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchUserData();
-    }, [fetchUserData])
-  );
+    return () => unsubscribe();
+  }, []);
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scannedLock || scannedUser || scannedNotFound) return;

@@ -22,7 +22,7 @@ import { SmartImage } from '../components/SmartImage';
 import {
   subscribeToUserGroups,
   getAllUsersFromFirestore,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   GroupData,
   ExpenseData,
   SettlementData,
@@ -53,15 +53,30 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
+  // Listen to needed profiles for global settlements
   useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      setAllUsers(users);
-      const uMap: Record<string, UserProfile> = {};
-      users.forEach(u => uMap[u.uid] = u);
-      setMemberProfiles(uMap);
+    const unsubGroups = subscribeToUserGroups(currentUid, (groups) => {
+      const uidsToFetch = new Set<string>();
+      groups.forEach(g => {
+        if (g.memberIds) g.memberIds.forEach((uid: string) => uidsToFetch.add(uid));
+      });
+
+      uidsToFetch.forEach(uid => {
+        if (!memberProfiles[uid]) {
+          subscribeToUserProfile(uid, (profile) => {
+            if (profile) {
+              setMemberProfiles(prev => ({
+                ...prev,
+                [uid]: profile
+              }));
+            }
+          });
+        }
+      });
     });
-    return () => unsub();
-  }, []);
+
+    return () => unsubGroups();
+  }, [currentUid]);
 
   const loadData = async () => {
     if (!currentUid) return;

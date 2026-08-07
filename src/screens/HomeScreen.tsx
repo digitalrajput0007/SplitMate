@@ -27,7 +27,7 @@ import {
   subscribeUserActivityFeed,
   subscribeUserMonthlyInsights,
   subscribeToNotifications,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   UserProfile,
   ActivityItem,
   SettlementData,
@@ -67,15 +67,40 @@ export default function HomeScreen() {
   const [showNoGroupsDialog, setShowNoGroupsDialog] = useState(false);
   const [showSelectGroupSheet, setShowSelectGroupSheet] = useState(false);
 
-  // Listen to all users for real-time profile pictures
+  // Listen to needed user profiles for activity feed
   useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      const uMap = new Map<string, UserProfile>();
-      users.forEach((u) => uMap.set(u.uid, u));
-      setAllUsersMap(uMap);
+    if (recentActivities.length === 0 && unreadNotifications.length === 0 && pendingConfirmations.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    recentActivities.forEach(a => {
+      if (a.actorUid) uidsToFetch.add(a.actorUid);
+      if (a.targetUid) uidsToFetch.add(a.targetUid);
     });
-    return () => unsub();
-  }, []);
+    unreadNotifications.forEach(n => {
+      if (n.senderUid) uidsToFetch.add(n.senderUid);
+    });
+    pendingConfirmations.forEach(s => {
+      if (s.fromUserId) uidsToFetch.add(s.fromUserId);
+    });
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!allUsersMap.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setAllUsersMap(prev => {
+              const next = new Map(prev);
+              next.set(uid, profile);
+              return next;
+            });
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [recentActivities, unreadNotifications, pendingConfirmations]);
 
   // Dashboard Subscriptions
   useEffect(() => {
@@ -91,9 +116,8 @@ export default function HomeScreen() {
 
     const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);
 
-    const unsubProfile = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as UserProfile;
+    const unsubProfile = subscribeToUserProfile(currentUser.uid, (data) => {
+      if (data) {
         if (data.name) setFirstName(data.name.split(' ')[0]);
         setUserPhoto(data.photoUrl || '');
         setUserPhotoThumb(data.photoThumbnailUrl || '');
@@ -276,11 +300,11 @@ export default function HomeScreen() {
             <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Create{"\n"}Group</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('InviteContacts')}>
+          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('MainTabs', { screen: 'ContactsTab' })}>
             <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="person-add" size={24} color={colors.primary} />
+              <MaterialIcons name="contacts" size={24} color={colors.primary} />
             </View>
-            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Invite{"\n"}Friends</Text>
+            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>My{"\n"}Contacts</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('PaymentMethods')}>

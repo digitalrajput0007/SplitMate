@@ -88,6 +88,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     },
   });
 
+  const handleRemovePhoto = async () => {
+    await removeMedia();
+  };
+
   // Conditional Fields
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [endDate, setEndDate] = useState<Date>(new Date());

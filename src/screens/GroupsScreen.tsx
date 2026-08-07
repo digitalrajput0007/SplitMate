@@ -23,7 +23,11 @@ import { M3Chip } from '../components/M3Chip';
 import { M3BottomSheet } from '../components/M3BottomSheet';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
-import { UserProfile, getAllUsersFromFirestore, subscribeAllUserProfiles } from '../services/firestoreService';
+import {
+  UserProfile,
+  getAllUsersFromFirestore,
+  subscribeToUserProfile
+} from '../services/firestoreService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -56,15 +60,35 @@ export default function GroupsScreen() {
   const [joinedExpanded, setJoinedExpanded] = useState(true);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
 
-  // Listen to all users for real-time GroupCard avatars
+  // Listen to needed user profiles for GroupCard avatars
   React.useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      const uMap = new Map<string, UserProfile>();
-      users.forEach((u) => uMap.set(u.uid, u));
-      setAllUsersMap(uMap);
+    if (groups.length === 0 && archivedGroups.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    [...groups, ...archivedGroups].forEach(g => {
+      if (g.memberIds) {
+        g.memberIds.forEach((uid: string) => uidsToFetch.add(uid));
+      }
     });
-    return () => unsub();
-  }, []);
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!allUsersMap.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setAllUsersMap(prev => {
+              const next = new Map(prev);
+              next.set(uid, profile);
+              return next;
+            });
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [groups, archivedGroups]);
 
   const toggleOwned = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

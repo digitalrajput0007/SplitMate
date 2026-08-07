@@ -18,7 +18,7 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   subscribeUserActivityFeed,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   ActivityItem,
   UserProfile,
 } from '../services/firestoreService';

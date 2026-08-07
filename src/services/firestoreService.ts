@@ -159,14 +159,12 @@ export interface ActivityItem {
   targetUid?: string;
 }
 
-export interface FriendRequest {
-  requestId: string;
-  fromUid: string;
-  fromName: string;
-  fromPhotoUrl?: string;
-  toUid: string;
-  status: 'pending' | 'accepted' | 'declined';
-  createdAt: any;
+export interface Contact {
+  name: string;
+  phone: string;
+  email?: string;
+  uid?: string; // Linked user ID if they exist on the platform
+  photoUrl?: string;
 }
 
 /**
@@ -271,27 +269,36 @@ export const subscribeToUserProfile = (uid: string, onUpdate: (profile: UserProf
   );
 };
 
-export const isMobileNumberRegistered = async (mobileNumber: string, currentUid?: string): Promise<boolean> => {
+/**
+ * Searches for a user by their exact phone number
+ */
+export const findUserByPhone = async (phoneNumber: string): Promise<UserProfile | null> => {
   try {
-    const rawDigits = mobileNumber.replace(/[^0-9]/g, '').slice(-10);
-    if (!rawDigits || rawDigits.length < 10) return false;
+    const rawDigits = phoneNumber.replace(/[^0-9]/g, '').slice(-10);
+    if (!rawDigits || rawDigits.length < 10) return null;
 
+    // Standard practice: Search by indexed mobile field
+    const q = query(collection(db, 'users'), where('mobile', '==', phoneNumber));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as UserProfile;
+    }
+
+    // Fallback: If formatting differs, scan manually (expensive but small scale)
     const querySnap = await getDocs(collection(db, 'users'));
     for (const docSnap of querySnap.docs) {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as UserProfile;
-        if (data.uid !== currentUid && data.mobile) {
-          const userRawDigits = data.mobile.replace(/[^0-9]/g, '').slice(-10);
-          if (userRawDigits === rawDigits) {
-            return true;
-          }
+      const data = docSnap.data() as UserProfile;
+      if (data.mobile) {
+        const userRawDigits = data.mobile.replace(/[^0-9]/g, '').slice(-10);
+        if (userRawDigits === rawDigits) {
+          return data;
         }
       }
     }
-    return false;
+    return null;
   } catch (error) {
-    console.error('Error checking duplicate mobile number:', error);
-    return false;
+    console.error('Error finding user by phone:', error);
+    return null;
   }
 };
 
@@ -311,48 +318,48 @@ export const getAllUsersFromFirestore = async (): Promise<UserProfile[]> => {
   }
 };
 
-export const subscribeAllUserProfiles = (onUpdate: (users: UserProfile[]) => void) => {
-  return onSnapshot(collection(db, 'users'), (snap) => {
-    const users = snap.docs.map(d => d.data() as UserProfile);
-    onUpdate(users);
-  });
-};
-
-export const addContactToUserFirestore = async (currentUid: string, contactUid: string): Promise<void> => {
+export const addContactToUserFirestore = async (currentUid: string, contact: Contact): Promise<void> => {
   try {
-    const userContactRef = doc(db, 'users', currentUid, 'user_contacts', contactUid);
-    await setDoc(userContactRef, {
-      contactUid,
+    // Generate a stable ID based on phone number to avoid duplicates
+    const contactId = contact.phone.replace(/[^0-9]/g, '');
+    const contactRef = doc(db, 'users', currentUid, 'contacts', contactId);
+
+    await setDoc(contactRef, {
+      ...contact,
       addedAt: serverTimestamp(),
-    });
+    }, { merge: true });
   } catch (error) {
-    console.error('Error adding user contact:', error);
+    console.error('Error adding contact:', error);
   }
 };
 
-export const removeContactFromUserFirestore = async (currentUid: string, contactUid: string): Promise<void> => {
+export const removeContactFromUserFirestore = async (currentUid: string, contactPhone: string): Promise<void> => {
   try {
-    const userContactRef = doc(db, 'users', currentUid, 'user_contacts', contactUid);
-    await deleteDoc(userContactRef);
+    const contactId = contactPhone.replace(/[^0-9]/g, '');
+    const contactRef = doc(db, 'users', currentUid, 'contacts', contactId);
+    await deleteDoc(contactRef);
   } catch (error) {
-    console.error('Error removing user contact:', error);
+    console.error('Error removing contact:', error);
     throw error;
   }
 };
 
-export const getSavedUserContactsFromFirestore = async (currentUid: string): Promise<UserProfile[]> => {
+export const getSavedUserContactsFromFirestore = async (currentUid: string): Promise<Contact[]> => {
   try {
-    const contactsSnap = await getDocs(collection(db, 'users', currentUid, 'user_contacts'));
-    const contactIds = contactsSnap.docs.map((d) => d.id);
-
-    if (contactIds.length === 0) return [];
-
-    const allUsers = await getAllUsersFromFirestore();
-    return allUsers.filter((u) => contactIds.includes(u.uid));
+    const contactsSnap = await getDocs(collection(db, 'users', currentUid, 'contacts'));
+    return contactsSnap.docs.map((d) => d.data() as Contact);
   } catch (error) {
     console.error('Error fetching saved contacts:', error);
     return [];
   }
+};
+
+export const subscribeToUserContacts = (uid: string, onUpdate: (contacts: Contact[]) => void) => {
+  const contactsRef = collection(db, 'users', uid, 'contacts');
+  return onSnapshot(contactsRef, (snap) => {
+    const contacts = snap.docs.map(d => d.data() as Contact);
+    onUpdate(contacts);
+  });
 };
 
 export const updateUserPreferencesInFirestore = async (
@@ -738,20 +745,18 @@ export const subscribeToAcceptedMembers = (
   onUpdate: (members: UserProfile[], pending: UserProfile[]) => void
 ) => {
   const groupRef = doc(db, 'groups', groupId);
-  const usersQuery = query(collection(db, 'users'));
   const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
 
   let currentGroup: GroupData | null = null;
-  let allUsers: UserProfile[] = [];
   let allInvitations: any[] = [];
+  let userMap = new Map<string, UserProfile>();
+  let userUnsubs = new Map<string, () => void>();
 
-  const mergeAndNotify = () => {
+  const notify = () => {
     if (!currentGroup) return;
 
     const memberIds = currentGroup.memberIds || [];
     const createdBy = currentGroup.createdBy;
-    const userMap = new Map<string, UserProfile>();
-    allUsers.forEach((u) => userMap.set(u.uid, u));
 
     const invMap = new Map<string, string>(); // toUserId -> status
     allInvitations.forEach((d) => {
@@ -780,27 +785,36 @@ export const subscribeToAcceptedMembers = (
     onUpdate(accepted, pending);
   };
 
-  const unsub1 = onSnapshot(groupRef, (snap) => {
+  const unsubGroup = onSnapshot(groupRef, (snap) => {
     if (snap.exists()) {
       currentGroup = snap.data() as GroupData;
-      mergeAndNotify();
+      const ids = currentGroup.memberIds || [];
+
+      // Setup listeners for each user
+      ids.forEach(uid => {
+        if (!userUnsubs.has(uid)) {
+          const unsub = subscribeToUserProfile(uid, (profile) => {
+            if (profile) {
+              userMap.set(uid, profile);
+              notify();
+            }
+          });
+          userUnsubs.set(uid, unsub);
+        }
+      });
+      notify();
     }
   });
 
-  const unsub2 = onSnapshot(usersQuery, (snap) => {
-    allUsers = snap.docs.map(d => d.data() as UserProfile);
-    mergeAndNotify();
-  });
-
-  const unsub3 = onSnapshot(invQuery, (snap) => {
+  const unsubInvs = onSnapshot(invQuery, (snap) => {
     allInvitations = snap.docs.map(d => d.data());
-    mergeAndNotify();
+    notify();
   });
 
   return () => {
-    unsub1();
-    unsub2();
-    unsub3();
+    unsubGroup();
+    unsubInvs();
+    userUnsubs.forEach(u => u());
   };
 };
 
@@ -1564,10 +1578,6 @@ export const toggleGroupArchive = async (groupId: string, isArchived: boolean) =
   }
 };
 
-// -------------------------------------------------------------
-// FRIENDS & SEARCH
-// -------------------------------------------------------------
-
 /**
  * Searches for users by email or mobile number (case-insensitive)
  */
@@ -1587,76 +1597,4 @@ export const searchUsersByContact = async (queryText: string): Promise<UserProfi
     console.error('Error searching users:', error);
     return [];
   }
-};
-
-/**
- * Sends a friend request to another user
- */
-export const sendFriendRequest = async (toUid: string) => {
-  const currentUser = auth.currentUser;
-  if (!currentUser) return;
-
-  try {
-    const requestId = `${currentUser.uid}_${toUid}`;
-    const requestRef = doc(db, 'friendRequests', requestId);
-
-    // Check if already friends
-    const contacts = await getSavedUserContactsFromFirestore(currentUser.uid);
-    if (contacts.find(c => c.uid === toUid)) {
-      throw new Error('Already friends');
-    }
-
-    await setDoc(requestRef, {
-      requestId,
-      fromUid: currentUser.uid,
-      fromName: currentUser.displayName || 'SplitMate User',
-      fromPhotoUrl: currentUser.photoURL || '',
-      toUid,
-      status: 'pending',
-      createdAt: serverTimestamp(),
-    });
-  } catch (error) {
-    console.error('Error sending friend request:', error);
-    throw error;
-  }
-};
-
-/**
- * Accepts or declines a friend request
- */
-export const respondToFriendRequest = async (requestId: string, status: 'accepted' | 'declined') => {
-  try {
-    const requestRef = doc(db, 'friendRequests', requestId);
-    const snap = await getDoc(requestRef);
-    if (!snap.exists()) return;
-
-    const data = snap.data() as FriendRequest;
-
-    if (status === 'accepted') {
-      // Add mutual contacts
-      await addContactToUserFirestore(data.toUid, data.fromUid);
-      await addContactToUserFirestore(data.fromUid, data.toUid);
-    }
-
-    await deleteDoc(requestRef);
-  } catch (error) {
-    console.error('Error responding to friend request:', error);
-    throw error;
-  }
-};
-
-/**
- * Listens for pending friend requests for the current user
- */
-export const subscribeToFriendRequests = (uid: string, onUpdate: (requests: FriendRequest[]) => void) => {
-  const q = query(
-    collection(db, 'friendRequests'),
-    where('toUid', '==', uid),
-    where('status', '==', 'pending')
-  );
-
-  return onSnapshot(q, (snap) => {
-    const requests = snap.docs.map(d => d.data() as FriendRequest);
-    onUpdate(requests);
-  });
 };

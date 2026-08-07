@@ -24,8 +24,8 @@ import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import {
   createGroupInFirestore,
-  getAllUsersFromFirestore,
   getSavedUserContactsFromFirestore,
+  Contact,
   UserProfile,
 } from '../services/firestoreService';
 import { auth } from '../config/firebase';
@@ -123,16 +123,15 @@ export default function CreateGroupModal({ navigation }: Props) {
     try {
       const list: ContactItem[] = [];
 
-      // 1. Fetch only saved user contacts from Firestore (added contacts on platform)
       if (currentUser?.uid) {
-        const savedUsers = await getSavedUserContactsFromFirestore(currentUser.uid);
-        savedUsers.forEach((u, idx) => {
+        const savedContacts = await getSavedUserContactsFromFirestore(currentUser.uid);
+        savedContacts.forEach((u, idx) => {
           const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
           list.push({
-            id: u.uid,
+            id: u.phone,
             name: u.name,
-            subText: u.mobile ? `+91 ${u.mobile}` : u.email,
-            phoneNumber: u.mobile,
+            subText: u.phone,
+            phoneNumber: u.phone,
             photoUrl: u.photoUrl,
             uid: u.uid,
             initial: u.name.charAt(0).toUpperCase(),
@@ -291,11 +290,11 @@ export default function CreateGroupModal({ navigation }: Props) {
               style={[styles.stitchSecondaryBtn, { borderColor: colors.primary }]}
               activeOpacity={0.85}
               onPress={() => {
-                navigation.replace('InviteContacts');
+                navigation.replace('MainTabs', { screen: 'ContactsTab' });
               }}
             >
-              <MaterialIcons name="person-add" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.stitchSecondaryBtnText, { color: colors.primary }]}>Invite more people</Text>
+              <MaterialIcons name="contacts" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.stitchSecondaryBtnText, { color: colors.primary }]}>View Contacts</Text>
             </TouchableOpacity>
 
             {/* Tertiary Action */}
@@ -532,13 +531,13 @@ export default function CreateGroupModal({ navigation }: Props) {
                   {/* Integrated Invite row */}
                   <TouchableOpacity
                     style={styles.integratedInviteRow}
-                    onPress={() => navigation.navigate('InviteContacts')}
+                    onPress={() => navigation.navigate('MainTabs', { screen: 'ContactsTab' })}
                     activeOpacity={0.8}
                   >
                     <View style={[styles.dottedPhoneCircle, { borderColor: colors.primary }]}>
                       <MaterialIcons name="person-add" size={20} color={colors.primary} />
                     </View>
-                    <Text style={[styles.integratedInviteText, { color: colors.onSurface }]}>Invite new members</Text>
+                    <Text style={[styles.integratedInviteText, { color: colors.onSurface }]}>Add or Sync Contacts</Text>
                   </TouchableOpacity>
 
                   {showPhoneInvite && (

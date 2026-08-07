@@ -21,7 +21,7 @@ import {
   subscribeToGroupSettlements,
   addSettlementToFirestore,
   subscribeToGroupDetail,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   sendPaymentReminder,
   canSendReminder,
   ExpenseData,
@@ -63,25 +63,34 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       setGroup(data);
     });
 
-    // 2. Subscribe to ALL profiles for real-time resolution
-    const unsubProfiles = subscribeAllUserProfiles((allUsers) => {
-      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string; photoThumbnailUrl?: string }> = {};
+    // 2. Subscribe to needed profiles for real-time resolution
+    if (!group) return;
 
-      allUsers.forEach((user) => {
-        profiles[user.uid] = {
-          name: user.uid === currentUid ? 'You' : user.name,
-          paymentHandle: user.paymentHandle || '',
-          photoUrl: user.photoUrl || '',
-          photoThumbnailUrl: user.photoThumbnailUrl || '',
-        };
+    const unsubs: (() => void)[] = [];
+    group.memberIds.forEach(uid => {
+      const unsub = subscribeToUserProfile(uid, (user) => {
+        if (user) {
+          setMemberProfiles(prev => ({
+            ...prev,
+            [uid]: {
+              name: uid === currentUid ? 'You' : user.name,
+              paymentHandle: user.paymentHandle || '',
+              photoUrl: user.photoUrl || '',
+              photoThumbnailUrl: user.photoThumbnailUrl || '',
+            }
+          }));
+        }
       });
-
-      if (!profiles[currentUid]) {
-        profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' };
-      }
-
-      setMemberProfiles(profiles);
+      unsubs.push(unsub);
     });
+
+    // Ensure current user is in profiles even if not in group yet
+    if (!memberProfiles[currentUid]) {
+      setMemberProfiles(prev => ({
+        ...prev,
+        [currentUid]: { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' }
+      }));
+    }
 
     const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
     const unsubSet = subscribeToGroupSettlements(groupId, (data) => {
@@ -91,11 +100,11 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
     return () => {
       unsubGroup();
-      unsubProfiles();
+      unsubs.forEach(u => u());
       unsubExp();
       unsubSet();
     };
-  }, [groupId, currentUid]);
+  }, [groupId, currentUid, group?.memberIds]);
 
   const simplifiedDebts = useMemo(() => {
     return simplifyDebts(expenses, settlements, memberProfiles);
