@@ -34,14 +34,31 @@ export default function ActivityScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Reactive listener for all user profiles
-    const unsub = subscribeAllUserProfiles((users) => {
-      const mapping: Record<string, UserProfile> = {};
-      users.forEach(u => mapping[u.uid] = u);
-      setUserMap(mapping);
+    if (activities.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    activities.forEach(a => {
+      if (a.actorUid) uidsToFetch.add(a.actorUid);
+      if (a.targetUid) uidsToFetch.add(a.targetUid);
     });
-    return () => unsub();
-  }, []);
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!userMap[uid]) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setUserMap(prev => ({
+              ...prev,
+              [uid]: profile
+            }));
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [activities]);
 
   useEffect(() => {
     if (!currentUser?.uid) {

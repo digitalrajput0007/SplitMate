@@ -64,7 +64,6 @@ export default function HomeScreen() {
     largestExpense: { title: 'None', amount: 0 },
     activeGroupsCount: 0,
   });
-
   const [showNoGroupsDialog, setShowNoGroupsDialog] = useState(false);
   const [showSelectGroupSheet, setShowSelectGroupSheet] = useState(false);
 

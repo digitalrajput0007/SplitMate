@@ -169,61 +169,60 @@ export interface FriendRequest {
   createdAt: any;
 }
 
+/**
+ * Reusable utility to remove undefined fields from an object recursively.
+ * Firestore rejects 'undefined' but accepts 'null' or missing fields.
+ */
+export const sanitizeData = (data: any): any => {
+  if (Array.isArray(data)) {
+    return data.map(sanitizeData);
+  }
+  if (data !== null && typeof data === 'object') {
+    return Object.fromEntries(
+      Object.entries(data)
+        .filter(([_, value]) => value !== undefined)
+        .map(([key, value]) => [key, sanitizeData(value)])
+    );
+  }
+  return data;
+};
+
 // -------------------------------------------------------------
 // USERS COLLECTION
 // -------------------------------------------------------------
 export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> & { uid: string }) => {
   try {
     const userRef = doc(db, 'users', profile.uid);
-    const existingSnap = await getDoc(userRef);
 
-    const dataToSave: Record<string, any> = {
+    // Create the base data object
+    const rawData: Record<string, any> = {
       uid: profile.uid,
+      name: profile.name,
+      email: profile.email,
+      photoUrl: profile.photoUrl,
+      photoThumbnailUrl: profile.photoThumbnailUrl,
+      photoMetadata: profile.photoMetadata,
+      paymentHandle: profile.paymentHandle,
+      paymentMethods: profile.paymentMethods,
+      dob: profile.dob,
+      mobile: profile.mobile,
+      emailVerified: profile.emailVerified,
       updatedAt: serverTimestamp(),
     };
 
-    if (profile.name !== undefined) dataToSave.name = profile.name;
-    if (profile.email !== undefined) dataToSave.email = profile.email;
+    // Clean undefined fields to prevent Firestore crash
+    const sanitized = sanitizeData(rawData);
 
-    // Safety: Never allow local URIs to be saved to Firestore users collection
-    if (profile.photoUrl !== undefined) {
-      if (profile.photoUrl && (profile.photoUrl.startsWith('file://') || profile.photoUrl.startsWith('content://'))) {
-        console.warn('Attempted to save local URI to users collection. Blocking photo update.');
-      } else {
-        dataToSave.photoUrl = profile.photoUrl;
-      }
+    // Safety: Never allow local URIs to be saved
+    if (sanitized.photoUrl && (sanitized.photoUrl.startsWith('file://') || sanitized.photoUrl.startsWith('content://'))) {
+      delete sanitized.photoUrl;
     }
 
-    if (profile.photoThumbnailUrl !== undefined) {
-      if (profile.photoThumbnailUrl && (profile.photoThumbnailUrl.startsWith('file://') || profile.photoThumbnailUrl.startsWith('content://'))) {
-        console.warn('Attempted to save local URI to users collection. Blocking thumbnail update.');
-      } else {
-        dataToSave.photoThumbnailUrl = profile.photoThumbnailUrl;
-      }
-    }
-
-    if (profile.photoMetadata !== undefined) dataToSave.photoMetadata = profile.photoMetadata;
-
-    if (profile.paymentHandle !== undefined) dataToSave.paymentHandle = profile.paymentHandle;
-    if (profile.paymentMethods !== undefined) dataToSave.paymentMethods = profile.paymentMethods;
-    if (profile.dob !== undefined) dataToSave.dob = profile.dob;
-    if (profile.mobile !== undefined) dataToSave.mobile = profile.mobile;
-    if (profile.emailVerified !== undefined) dataToSave.emailVerified = profile.emailVerified;
-
-    if (!existingSnap.exists()) {
-      dataToSave.createdAt = serverTimestamp();
-      // Only set defaults for new profiles
-      if (dataToSave.name === undefined) dataToSave.name = profile.email?.split('@')[0] || 'User';
-      if (dataToSave.paymentHandle === undefined) dataToSave.paymentHandle = '';
-    }
-
-    await setDoc(userRef, dataToSave, { merge: true });
-    return dataToSave;
+    await setDoc(userRef, sanitized, { merge: true });
+    return sanitized;
   } catch (error: any) {
-    if (error?.code !== 'unavailable' && !error?.message?.includes('offline')) {
-      console.log('Firestore Profile Sync Notice:', error?.message || error);
-    }
-    return null;
+    console.error('Firestore Error in saveUserProfileToFirestore:', error);
+    throw error;
   }
 };
 
@@ -250,6 +249,26 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<UserProf
     }
     return null;
   }
+};
+
+/**
+ * Real-time listener for a specific user profile
+ */
+export const subscribeToUserProfile = (uid: string, onUpdate: (profile: UserProfile | null) => void) => {
+  const userRef = doc(db, 'users', uid);
+  return onSnapshot(
+    userRef,
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate(snap.data() as UserProfile);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error) => {
+      console.error('Error listening to user profile:', error);
+    }
+  );
 };
 
 export const isMobileNumberRegistered = async (mobileNumber: string, currentUid?: string): Promise<boolean> => {
@@ -490,19 +509,17 @@ export const inviteMemberToGroup = async (
 export const updateGroupInFirestore = async (groupId: string, data: Partial<GroupData>) => {
   try {
     const groupRef = doc(db, 'groups', groupId);
+    const sanitized = sanitizeData({
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
 
-    // Safety: Never allow local URIs to be saved to Firestore
-    if (data.photoUrl && (data.photoUrl.startsWith('file://') || data.photoUrl.startsWith('content://'))) {
-      console.warn('Attempted to save local URI to Firestore. Blocking photo update.');
-      delete data.photoUrl;
+    // Safety check
+    if (sanitized.photoUrl && (sanitized.photoUrl.startsWith('file://') || sanitized.photoUrl.startsWith('content://'))) {
+      delete sanitized.photoUrl;
     }
 
-    if (data.photoThumbnailUrl && (data.photoThumbnailUrl.startsWith('file://') || data.photoThumbnailUrl.startsWith('content://'))) {
-      console.warn('Attempted to save local URI thumbnail to Firestore. Blocking update.');
-      delete data.photoThumbnailUrl;
-    }
-
-    await setDoc(groupRef, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(groupRef, sanitized, { merge: true });
   } catch (error) {
     console.error('Error updating group:', error);
     throw error;

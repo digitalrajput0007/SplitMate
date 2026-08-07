@@ -76,7 +76,11 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
         onSuccess({
           original: originalUrl,
           thumbnail: thumbUrl,
-          metadata: { ...original, thumbnailSize: thumbnail.fileSize, createdAt: Date.now() }
+          metadata: {
+            ...original,
+            thumbnailSize: thumbnail.fileSize || 0, // Ensure no undefined
+            createdAt: Date.now()
+          }
         });
       }
 

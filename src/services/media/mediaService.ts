@@ -52,9 +52,25 @@ class MediaService {
     onProgress?: (p: UploadProgress) => void
   ): Promise<string> {
     try {
-      // 1. Resolve URI and get blob
-      const response = await fetch(localUri);
-      const blob = await response.blob();
+      // 1. Resolve URI and get blob using XMLHttpRequest (more robust for Android file:// and content://)
+      const blob: Blob = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = function () {
+          resolve(xhr.response);
+        };
+        xhr.onerror = function (e) {
+          console.error('MediaService: Blob conversion failed', e);
+          reject(new TypeError("Network request failed"));
+        };
+        xhr.responseType = "blob";
+        xhr.open("GET", localUri, true);
+        xhr.send(null);
+      });
+
+      console.log(`MediaService: Prepared blob for upload. Size: ${blob.size} bytes`);
+      if (blob.size === 0) {
+        throw new Error('Blob size is 0. Upload aborted.');
+      }
 
       // 2. Create reference
       const storageRef = ref(storage, storagePath);
@@ -83,9 +99,11 @@ class MediaService {
           async () => {
             try {
               const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              console.log('MediaService: Upload successful. URL:', downloadURL);
               if (blob.close) (blob as any).close();
               resolve(downloadURL);
             } catch (urlErr) {
+              console.error('MediaService: Failed to get download URL', urlErr);
               reject(urlErr);
             }
           }
