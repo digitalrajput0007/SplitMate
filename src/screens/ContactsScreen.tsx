@@ -148,7 +148,7 @@ export default function ContactsScreen() {
     const platformUser = item.uid ? platformProfiles[item.uid] : null;
 
     // Priority: 1. Platform Profile Pic, 2. Device Profile Pic, 3. Initials
-    const priorityPhoto = platformUser?.photoUrl || item.photoUrl;
+    const priorityPhoto = platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoUrl;
 
     return (
       <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>

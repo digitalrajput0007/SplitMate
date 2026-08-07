@@ -140,20 +140,21 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       return;
     }
 
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(debt.toPaymentHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;
+    const cleanHandle = debt.toPaymentHandle.trim();
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(cleanHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;
+
+    console.log('Attempting to open UPI URL:', upiUrl);
 
     try {
-      const canOpen = await Linking.canOpenURL(upiUrl);
-      if (canOpen) {
-        await Linking.openURL(upiUrl);
-      } else {
-        Alert.alert(
-          'Pay via UPI',
-          `Payee: ${debt.toName}\nUPI VPA: ${debt.toPaymentHandle}\nAmount: ${formatCurrency(debt.amount)}\n\n(No UPI app detected)`
-        );
-      }
+      // Bypassing canOpenURL check as it can be unreliable on modern Android/iOS
+      // without explicit manifest/plist queries.
+      await Linking.openURL(upiUrl);
     } catch (e) {
-      Alert.alert('Error', 'Could not open UPI app.');
+      console.log('UPI Error:', e);
+      Alert.alert(
+        'Pay via UPI',
+        `Payee: ${debt.toName}\nUPI ID: ${cleanHandle}\nAmount: ${formatCurrency(debt.amount)}\n\n(No UPI app detected or could not open automatically)`
+      );
     }
   };
 

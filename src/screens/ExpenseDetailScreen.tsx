@@ -32,6 +32,7 @@ import {
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
+import { ImagePreviewModal } from '../components/ImagePreviewModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
@@ -49,6 +50,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const [newComment, setNewComment] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [sendingComment, setSendingComment] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   useEffect(() => {
     if (initialExpense?.expenseId) {
@@ -272,7 +274,13 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Receipt</Text>
             {expense.receiptUrl ? (
-              <Image source={{ uri: expense.receiptUrl }} style={styles.receiptImage} />
+              <TouchableOpacity onPress={() => setShowImagePreview(true)} activeOpacity={0.9}>
+                <Image source={{ uri: expense.receiptUrl }} style={styles.receiptImage} />
+                <View style={[styles.previewBadge, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                  <MaterialIcons name="fullscreen" size={20} color="#FFF" />
+                  <Text style={styles.previewText}>Click to preview</Text>
+                </View>
+              </TouchableOpacity>
             ) : (
               <View style={[styles.placeholderBox, { backgroundColor: colors.surfaceContainerLow, borderStyle: 'dashed', borderColor: colors.outlineVariant }]}>
                 <MaterialIcons name="receipt" size={32} color={colors.outline} />
@@ -374,6 +382,14 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           )}
         </ScrollView>
       )}
+
+      {expense.receiptUrl && (
+        <ImagePreviewModal
+          visible={showImagePreview}
+          imageUrl={expense.receiptUrl}
+          onClose={() => setShowImagePreview(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -468,6 +484,21 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     resizeMode: 'cover',
     marginTop: 4,
+  },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    gap: 4,
+  },
+  previewText: {
+    ...Typography.labelMd,
+    color: '#FFF',
   },
   placeholderBox: {
     width: '100%',

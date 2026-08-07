@@ -18,6 +18,7 @@ import { useTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../services/currencyService';
 import { Image } from 'react-native';
 import { SmartImage } from './SmartImage';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 export interface ExpenseFormData {
   title: string;
@@ -126,6 +127,7 @@ export default function ExpenseForm({
   const [date, setDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
@@ -506,7 +508,13 @@ export default function ExpenseForm({
         <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Receipt (Optional)</Text>
         {initialData?.receiptUrl ? (
           <View style={styles.receiptContainer}>
-            <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />
+            <TouchableOpacity onPress={() => setShowImagePreview(true)} activeOpacity={0.9} style={{ flex: 1 }}>
+              <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />
+              <View style={[styles.previewBadge, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                <MaterialIcons name="fullscreen" size={16} color="#FFF" />
+                <Text style={styles.previewText}>Preview</Text>
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.removeReceiptBtn, { backgroundColor: colors.error }]}
               onPress={onRemoveReceipt}
@@ -538,6 +546,14 @@ export default function ExpenseForm({
           <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>{submitLabel}</Text>
         )}
       </TouchableOpacity>
+
+      {initialData?.receiptUrl && (
+        <ImagePreviewModal
+          visible={showImagePreview}
+          imageUrl={initialData.receiptUrl}
+          onClose={() => setShowImagePreview(false)}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -654,6 +670,22 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    gap: 4,
+  },
+  previewText: {
+    ...Typography.labelMd,
+    fontSize: 10,
+    color: '#FFF',
   },
   removeReceiptBtn: {
     position: 'absolute',
