@@ -46,7 +46,7 @@ export function useHomeActions(groupCount: number) {
     });
     const unsubNotifs = subscribeToNotifications(currentUser.uid, (notifs) => {
       // Filter for unread reminders sent to me
-      setReminders(notifs.filter(n => n.type === 'payment_reminder' && !n.read));
+      setReminders(notifs.filter(n => (n.type === 'payment_reminder' || n.type === 'REMINDER') && !n.isRead && !n.read));
     });
 
     return () => {

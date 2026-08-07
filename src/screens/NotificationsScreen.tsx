@@ -42,12 +42,28 @@ export default function NotificationsScreen({ navigation }: Props) {
   }, [currentUser]);
 
   const handlePressNotif = async (item: AppNotification) => {
-    if (!item.read) {
-      await markNotificationAsRead(item.notificationId);
+    const id = item.id || item.notificationId;
+    if (id && !item.isRead && !item.read) {
+      await markNotificationAsRead(id);
     }
-    // Optionally navigate to group or expense
-    if (item.groupId) {
-      navigation.navigate('GroupDetail', { groupId: item.groupId, groupName: item.groupName });
+
+    // Navigate based on type
+    if (item.type === 'EXPENSE' && item.data?.expenseId) {
+      // We need the full expense data to navigate to Detail, or we might need to fetch it
+      // For now, let's navigate to group if available
+      if (item.data.groupId) {
+        navigation.navigate('GroupDetail', {
+          groupId: item.data.groupId,
+          groupName: item.data.groupName || 'Group'
+        });
+      }
+    } else if (item.type === 'GROUP_INVITE' || item.type === 'group_invitation') {
+      navigation.navigate('MainTabs'); // Home shows invitations
+    } else if (item.data?.groupId) {
+      navigation.navigate('GroupDetail', {
+        groupId: item.data.groupId,
+        groupName: item.data.groupName || 'Group'
+      });
     }
   };
 
@@ -72,30 +88,35 @@ export default function NotificationsScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={styles.list}>
-            {notifications.map((item) => (
-              <TouchableOpacity
-                key={item.notificationId}
-                style={[styles.card, !item.read && { backgroundColor: Colors.primary + '08', borderColor: Colors.primary }]}
-                onPress={() => handlePressNotif(item)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.iconBox, { backgroundColor: item.type === 'payment_reminder' ? Colors.error + '10' : Colors.surfaceContainerLow }]}>
-                  <MaterialIcons
-                    name={item.type === 'payment_reminder' ? "priority-high" : "notifications"}
-                    size={20}
-                    color={item.type === 'payment_reminder' ? Colors.error : Colors.primary}
-                  />
-                </View>
-                <View style={styles.info}>
-                  <Text style={[styles.title, !item.read && { fontWeight: '700' }]}>{item.title}</Text>
-                  <Text style={styles.subtitle}>{item.message}</Text>
-                  <Text style={styles.date}>
-                    {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
-                  </Text>
-                </View>
-                {!item.read && <View style={styles.unreadDot} />}
-              </TouchableOpacity>
-            ))}
+            {notifications.map((item) => {
+              const isUnread = !item.isRead && !item.read;
+              const isReminder = item.type === 'REMINDER' || item.type === 'payment_reminder';
+
+              return (
+                <TouchableOpacity
+                  key={item.id || item.notificationId}
+                  style={[styles.card, isUnread && { backgroundColor: Colors.primary + '08', borderColor: Colors.primary }]}
+                  onPress={() => handlePressNotif(item)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: isReminder ? Colors.error + '10' : Colors.surfaceContainerLow }]}>
+                    <MaterialIcons
+                      name={isReminder ? "priority-high" : "notifications"}
+                      size={20}
+                      color={isReminder ? Colors.error : Colors.primary}
+                    />
+                  </View>
+                  <View style={styles.info}>
+                    <Text style={[styles.title, isUnread && { fontWeight: '700' }]}>{item.title}</Text>
+                    <Text style={styles.subtitle}>{item.message}</Text>
+                    <Text style={styles.date}>
+                      {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
+                    </Text>
+                  </View>
+                  {isUnread && <View style={styles.unreadDot} />}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>

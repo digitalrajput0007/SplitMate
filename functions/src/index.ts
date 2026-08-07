@@ -1,105 +1,200 @@
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
-import * as sgMail from '@sendgrid/mail';
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { defineSecret } from "firebase-functions/params";
 
-admin.initializeApp();
+import { initializeApp } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { getMessaging } from "firebase-admin/messaging";
 
-const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || functions.config().sendgrid?.key;
-if (SENDGRID_API_KEY) {
-  sgMail.setApiKey(SENDGRID_API_KEY);
-}
+import * as SibApiV3Sdk from "sib-api-v3-sdk";
 
-/**
- * Cloud Function: sendOTPEmail
- * Generates 6-digit OTP, stores in Firestore otpCodes/{email}, and sends via SendGrid.
- */
-export const sendOTPEmail = functions.https.onCall(async (data, context) => {
-  const email = data?.email?.toString().trim().toLowerCase();
-  if (!email || !email.includes('@')) {
-    throw new functions.https.HttpsError('invalid-argument', 'A valid email address is required.');
+// ✅ INIT
+initializeApp();
+
+const db = getFirestore();
+const auth = getAuth();
+const messaging = getMessaging();
+
+// ================= SECRETS =================
+const BREVO_API_KEY = defineSecret("BREVO_API_KEY");
+
+// ================= SEND OTP =================
+export const sendOTPEmail = onCall({ secrets: [BREVO_API_KEY] }, async (request) => {
+  const email = request.data?.email?.toString().trim().toLowerCase();
+
+  if (!email || !email.includes("@")) {
+    throw new HttpsError("invalid-argument", "Valid email required");
   }
 
-  // 1. Generate 6-digit OTP code
-  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   const now = Date.now();
-  const expiresAt = now + 10 * 60 * 1000; // 10 minutes
+  const otpRef = db.collection("otpCodes").doc(email);
+  const otpSnap = await otpRef.get();
+  const otpData = otpSnap.data();
 
-  // 2. Store in Firestore otpCodes/{email}
-  const otpRef = admin.firestore().collection('otpCodes').doc(email);
+  let otpCode = "";
+  let expiresAt = 0;
+
+  // --- RESEND & REUSE LOGIC ---
+  if (otpSnap.exists && otpData) {
+    const lastSentAt = otpData.lastSentAt || 0;
+
+    // 1. 30-second cooldown
+    if (now - lastSentAt < 30000) {
+      throw new HttpsError("failed-precondition", "Please wait 30 seconds before resending");
+    }
+
+    // 2. Reuse same OTP if still valid
+    if (now < otpData.expiresAt) {
+      otpCode = otpData.otpCode;
+      expiresAt = otpData.expiresAt;
+      console.log(`Reusing existing OTP for ${email}`);
+    }
+  }
+
+  // 3. Generate new OTP if needed
+  if (!otpCode) {
+    otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    expiresAt = now + 10 * 60 * 1000; // 10 mins validity
+    console.log(`Generated new OTP for ${email}`);
+  }
+
+  // --- RATE LIMITING LOGIC (3 per 10 mins) ---
+  const limitRef = db.collection("otpRateLimits").doc(email);
+  const WINDOW_MS = 10 * 60 * 1000;
+
+  await db.runTransaction(async (transaction) => {
+    const limitDoc = await transaction.get(limitRef);
+    const limitData = limitDoc.data();
+
+    if (!limitDoc.exists || (now - (limitData?.windowStart || 0) > WINDOW_MS)) {
+      transaction.set(limitRef, { count: 1, windowStart: now });
+    } else {
+      if (limitData?.count >= 3) {
+        throw new HttpsError("resource-exhausted", "Too many requests, try later");
+      }
+      transaction.update(limitRef, { count: (limitData?.count || 0) + 1 });
+    }
+  });
+
+  // Save/Update the OTP and record lastSentAt
   await otpRef.set({
     email,
     otpCode,
     expiresAt,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastSentAt: now,
+    createdAt: otpData?.createdAt || FieldValue.serverTimestamp(),
   });
 
-  // 3. Send email via SendGrid if configured
-  if (SENDGRID_API_KEY) {
+  const apiKeyVal = BREVO_API_KEY.value();
+
+  if (apiKeyVal) {
+    const defaultClient = SibApiV3Sdk.ApiClient.instance;
+    const apiKey = defaultClient.authentications["api-key"];
+    apiKey.apiKey = apiKeyVal;
+    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    sendSmtpEmail.subject = "Your OTP Code";
+    sendSmtpEmail.textContent = `Your OTP is ${otpCode}`;
+    sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
+    sendSmtpEmail.to = [{ email: email }];
+
     try {
-      const msg = {
-        to: email,
-        from: 'noreply@splitmate.app', // Update with verified SendGrid sender email
-        subject: 'Your SplitMate OTP Code',
-        text: `Your SplitMate verification code is: ${otpCode}. It expires in 10 minutes.`,
-        html: `<div style="font-family: Arial, sans-serif; padding: 20px; color: #1F2937;">
-          <h2>SplitMate Verification</h2>
-          <p>Your 6-digit verification code is:</p>
-          <h1 style="color: #4F46E5; letter-spacing: 4px;">${otpCode}</h1>
-          <p>This code will expire in 10 minutes.</p>
-        </div>`,
-      };
-      await sgMail.send(msg);
-    } catch (err: any) {
-      console.error('SendGrid Email Dispatch Error:', err?.response?.body || err);
+      await apiInstance.sendTransacEmail(sendSmtpEmail);
+    } catch (error) {
+      console.error("Brevo error:", error);
     }
   } else {
-    console.log(`[SendGrid Missing API Key] OTP for ${email}: ${otpCode}`);
+    console.log(`[TEST MODE] OTP for ${email}: ${otpCode}`);
   }
 
-  return { success: true, message: 'OTP code sent successfully.' };
+  return { success: true };
 });
 
-/**
- * Cloud Function: verifyOTP
- * Verifies code against Firestore and returns custom auth token on success.
- */
-export const verifyOTP = functions.https.onCall(async (data, context) => {
-  const email = data?.email?.toString().trim().toLowerCase();
-  const enteredCode = data?.code?.toString().trim();
+// ================= VERIFY OTP =================
+export const verifyOTP = onCall(async (request) => {
+  const email = request.data?.email;
+  const code = request.data?.code;
 
-  if (!email || !enteredCode) {
-    throw new functions.https.HttpsError('invalid-argument', 'Email and 6-digit code are required.');
+  if (!email || !code) {
+    throw new HttpsError("invalid-argument", "Email and code required");
   }
 
-  const otpRef = admin.firestore().collection('otpCodes').doc(email);
-  const snap = await otpRef.get();
+  const snap = await db.collection("otpCodes").doc(email.toLowerCase()).get();
 
   if (!snap.exists) {
-    throw new functions.https.HttpsError('not-found', 'No OTP requested for this email or code has expired.');
+    throw new HttpsError("not-found", "No OTP found");
   }
 
   const otpData = snap.data();
+
   if (Date.now() > otpData?.expiresAt) {
-    await otpRef.delete();
-    throw new functions.https.HttpsError('deadline-exceeded', 'OTP code has expired. Please request a new code.');
+    await snap.ref.delete();
+    throw new HttpsError("deadline-exceeded", "Expired");
   }
 
-  if (otpData?.otpCode !== enteredCode) {
-    throw new functions.https.HttpsError('invalid-argument', 'Invalid OTP code. Please check your code and try again.');
+  if (otpData?.otpCode !== code) {
+    throw new HttpsError("invalid-argument", "Invalid OTP");
   }
 
-  // Clear OTP on successful match
-  await otpRef.delete();
+  await snap.ref.delete();
 
-  // Retrieve or create user in Firebase Auth
-  let userRecord;
+  let user;
   try {
-    userRecord = await admin.auth().getUserByEmail(email);
-  } catch (e) {
-    userRecord = await admin.auth().createUser({ email, emailVerified: true });
+    user = await auth.getUserByEmail(email);
+  } catch {
+    user = await auth.createUser({ email, emailVerified: true });
   }
 
-  // Generate custom token for client sign-in
-  const customToken = await admin.auth().createCustomToken(userRecord.uid);
-  return { success: true, customToken, uid: userRecord.uid };
+  const token = await auth.createCustomToken(user.uid);
+
+  return { success: true, token, uid: user.uid };
 });
+
+// ================= PUSH NOTIFICATION =================
+export const onExpenseCreated = onDocumentCreated(
+  "expenses/{expenseId}",
+  async (event) => {
+    const expense = event.data?.data();
+    if (!expense) return;
+
+    const { groupId, title, amount, paidBy, paidByName } = expense;
+
+    const groupSnap = await db.collection("groups").doc(groupId).get();
+    if (!groupSnap.exists) return;
+
+    const groupData = groupSnap.data();
+    const members: string[] = groupData?.memberIds || [];
+    const groupName = groupData?.name || "Group";
+
+    const targets = members.filter((uid) => uid !== paidBy);
+
+    const tokens: string[] = [];
+
+    const users = await Promise.all(
+      targets.map((uid) => db.collection("users").doc(uid).get())
+    );
+
+    users.forEach((u: any) => {
+      const token = u.data()?.fcmToken;
+      if (token) tokens.push(token);
+    });
+
+    if (!tokens.length) return;
+
+    await messaging.sendEachForMulticast({
+      tokens,
+      notification: {
+        title: "New Expense Added",
+        body: `${paidByName || "Someone"} added ₹${amount} for "${title}" in ${groupName}`,
+      },
+      data: {
+        type: "EXPENSE",
+        groupId,
+        expenseId: event.params.expenseId,
+      },
+      android: { priority: "high" },
+    });
+  }
+);

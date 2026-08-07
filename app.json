@@ -20,9 +20,14 @@
         "backgroundColor": "#24389C"
       },
       "package": "com.splitmate.app",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "READ_CONTACTS",
-        "WRITE_CONTACTS"
+        "WRITE_CONTACTS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "web": {
@@ -30,6 +35,8 @@
       "bundler": "metro"
     },
     "plugins": [
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging",
       "expo-asset",
       "expo-media-library",
       "@react-native-google-signin/google-signin",
@@ -41,6 +48,12 @@
           "contactsPermission": "Allow SplitMate to access your contacts to easily add friends and split expenses."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "583abcc3-c499-4f06-98e3-53a052843ccd"
+      }
+    },
+    "owner": "hunter0007"
   }
 }

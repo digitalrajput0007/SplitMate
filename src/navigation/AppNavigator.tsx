@@ -145,6 +145,8 @@ function AccountSvgIcon({ color, size = 22 }: { color: string; size?: number }) 
 }
 
 import { useTheme } from '../context/ThemeContext';
+import { NotificationService } from '../services/NotificationService';
+import * as Notifications from 'expo-notifications';
 
 function MainTabNavigator() {
   const { colors } = useTheme();

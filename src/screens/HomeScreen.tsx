@@ -111,7 +111,7 @@ export default function HomeScreen() {
     });
 
     const unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
-      setUnreadNotifications(notifList.filter(n => !n.read));
+      setUnreadNotifications(notifList.filter(n => !n.isRead && !n.read));
     });
 
     const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);

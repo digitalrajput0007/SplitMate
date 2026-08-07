@@ -15,9 +15,28 @@ import { Platform, StyleSheet } from 'react-native';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { useTheme } from './src/context/ThemeContext';
 import { SecurityProvider } from './src/context/SecurityContext';
+import messaging from '@react-native-firebase/messaging';
+import { NotificationService } from './src/services/NotificationService';
+
+// 4. Handle background & killed state messages (Must be top-level)
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('📬 Background FCM Message:', JSON.stringify(remoteMessage));
+});
 
 function MainAppContent() {
   const { colors, isDark } = useTheme();
+
+  React.useEffect(() => {
+    // 3. Request permissions and sync FCM token on startup
+    NotificationService.requestUserPermission();
+
+    // Listen for token refreshes
+    const unsubRefresh = NotificationService.onTokenRefresh();
+
+    return () => {
+      unsubRefresh();
+    };
+  }, []);
 
   if (Platform.OS === 'web') {
     return (
