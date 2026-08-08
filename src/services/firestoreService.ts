@@ -1217,13 +1217,21 @@ export interface AppNotification {
     groupId?: string;
     expenseId?: string;
     groupName?: string;
+    amount?: number;
+    senderName?: string;
     [key: string]: any;
   };
   isRead: boolean;
   createdAt: any;
-  // Legacy fields for compatibility during migration if needed
+
+  // Top-level fields for convenience/legacy
   notificationId?: string;
   recipientUid?: string;
+  senderUid?: string;
+  senderName?: string;
+  groupId?: string;
+  groupName?: string;
+  amount?: number;
   read?: boolean;
 }
 
@@ -1666,30 +1674,47 @@ export const sendPaymentReminder = async (
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('User not authenticated');
 
+    // Fetch sender's real-time profile for name and photo
+    const profile = await getUserProfileFromFirestore(currentUser.uid);
+    const senderName = profile?.name || currentUser.displayName || 'A friend';
+    const senderPhoto = profile?.photoUrl || currentUser.photoURL || '';
+
     const notificationRef = doc(collection(db, 'notifications'));
-    const notificationData: AppNotification = {
-      notificationId: notificationRef.id,
-      recipientUid,
+    const notificationId = notificationRef.id;
+
+    const notificationData: any = {
+      id: notificationId,
+      notificationId: notificationId,
+      userId: recipientUid,
+      recipientUid: recipientUid,
       senderUid: currentUser.uid,
+      senderName: senderName,
+      senderPhotoUrl: senderPhoto,
       groupId,
-      groupName,
+      groupName: groupName || 'Group',
+      amount: amount || 0,
       type: 'payment_reminder',
       title: 'Payment Reminder',
-      message: `${currentUser.displayName || 'A friend'} is reminding you to settle ₹${amount.toLocaleString('en-IN')} for ${groupName}.`,
+      message: `${senderName} sent you a reminder to settle ${formatCurrency(amount)} in ${groupName || 'Group'}`,
+      isRead: false,
       read: false,
-      amount,
       createdAt: serverTimestamp(),
+      data: {
+        groupId,
+        amount,
+        groupName: groupName || 'Group',
+        senderName: senderName,
+        senderUid: currentUser.uid,
+        senderPhotoUrl: senderPhoto
+      }
     };
 
+    console.log('[Firestore] Sending reminder:', notificationData);
     await setDoc(notificationRef, notificationData);
 
-    // Send Push Notification
-    await NotificationService.notifyUser(recipientUid, {
-      type: 'REMINDER',
-      title: 'Payment Reminder',
-      message: `${currentUser.displayName || 'Friend'} reminded you to settle ₹${amount.toLocaleString('en-IN')} in ${groupName}`,
-      data: { groupId }
-    });
+    // ✅ FIXED: REMOVED DUPLICATE NOTIFICATION
+    // NotificationService.notifyUser was also creating a document in the same 'notifications' collection,
+    // causing two reminders to appear.
 
     return true;
   } catch (error) {
@@ -1734,7 +1759,11 @@ export const subscribeToNotifications = (
   });
 };
 
-export const markNotificationAsRead = async (notificationId: string) => {
+export const markNotificationAsRead = async (notificationId: string | undefined) => {
+  if (!notificationId) {
+    console.warn('markNotificationAsRead: No notificationId provided');
+    return;
+  }
   try {
     const ref = doc(db, 'notifications', notificationId);
     await updateDoc(ref, {

@@ -71,7 +71,8 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
     }
     setResending(true);
     try {
-      await sendOTPEmailHTTP(email);
+      // Use 'reset' mode to ensure user exists
+      await sendOTPEmailHTTP(email, 'reset');
       setTimer(30);
       Alert.alert('Sent', 'A new code has been sent to your email.');
     } catch (error: any) {

@@ -56,23 +56,35 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
     var _a, _b, _c;
     try {
         const email = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
-        const checkExists = ((_c = req.body) === null || _c === void 0 ? void 0 : _c.checkExists) === true;
+        const mode = ((_c = req.body) === null || _c === void 0 ? void 0 : _c.mode) || 'none'; // 'signup' | 'reset' | 'none'
+        console.log(`[OTP] Request for: ${email}, Mode: ${mode}`);
         if (!email || !email.includes("@")) {
             res.status(400).json({ error: "Valid email required" });
             return;
         }
-        console.log(`[OTP] Request for: ${email}, CheckExists: ${checkExists}`);
-        // Check user existence if requested
-        if (checkExists) {
+        // ✅ ACCOUNT EXISTENCE CHECKS
+        if (mode === 'signup') {
+            try {
+                await auth.getUserByEmail(email);
+                res.status(400).json({ error: "An account with this email already exists. Please sign in instead." });
+                return;
+            }
+            catch (e) {
+                if (e.code !== 'auth/user-not-found')
+                    throw e;
+                // User not found = Good for signup
+            }
+        }
+        else if (mode === 'reset') {
             try {
                 await auth.getUserByEmail(email);
             }
-            catch (authErr) {
-                if (authErr.code === 'auth/user-not-found') {
+            catch (e) {
+                if (e.code === 'auth/user-not-found') {
                     res.status(404).json({ error: "No account found with this email. Please sign up first." });
                     return;
                 }
-                throw authErr;
+                throw e;
             }
         }
         const now = Date.now();
@@ -150,9 +162,14 @@ exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
             return;
         }
         const otpData = snap.data();
-        if (Date.now() > (otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt)) {
+        const expiryMs = otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt.toMillis();
+        const nowMs = Date.now();
+        console.log(`[OTP] Checking Expiry - Now: ${nowMs}, Expiry: ${expiryMs}, Diff: ${expiryMs - nowMs}ms`);
+        // Check expiration using Timestamp.toMillis() with a 10s grace period for clock drift
+        if (nowMs > (expiryMs + 10000)) {
+            console.log(`[OTP] EXPIRED: ${email}. Now: ${nowMs}, Expiry: ${expiryMs}`);
             await otpRef.delete();
-            res.status(400).json({ error: "OTP expired" });
+            res.status(400).json({ error: "OTP expired. Please request a new one." });
             return;
         }
         if ((otpData === null || otpData === void 0 ? void 0 : otpData.otp) !== code) {
@@ -191,11 +208,14 @@ exports.resetPasswordWithOTP = (0, https_1.onCall)(async (request) => {
         throw new https_1.HttpsError("failed-precondition", "OTP verification required. Please verify your OTP again.");
     }
     const otpData = snap.data();
+    const expiryMs = otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt.toMillis();
+    const nowMs = Date.now();
     if (!(otpData === null || otpData === void 0 ? void 0 : otpData.verified)) {
         throw new https_1.HttpsError("failed-precondition", "OTP verification required.");
     }
-    // Check if still not expired (safety)
-    if (Date.now() > (otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt)) {
+    // Check if still not expired with a 10s grace period
+    if (nowMs > (expiryMs + 10000)) {
+        console.log(`[OTP] EXPIRED during reset: ${email}. Now: ${nowMs}, Expiry: ${expiryMs}`);
         await otpRef.delete();
         throw new https_1.HttpsError("deadline-exceeded", "OTP expired. Please request a new one.");
     }

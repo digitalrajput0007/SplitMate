@@ -177,7 +177,12 @@ export default function HomeScreen() {
   };
 
   const handleDismissReminder = async (n: AppNotification) => {
-    await markNotificationAsRead(n.notificationId);
+    const id = n.id || n.notificationId;
+    if (!id) {
+      console.warn('[Home] Cannot dismiss reminder: missing ID', n);
+      return;
+    }
+    await markNotificationAsRead(id);
   };
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
@@ -366,30 +371,38 @@ export default function HomeScreen() {
             <View style={{ gap: Spacing.sm }}>
               {reminders.map((rem) => {
                 const sender = allUsersMap.get(rem.senderUid);
+                const senderName = sender?.name || rem.senderName || rem.data?.senderName || 'A friend';
+                const senderPhoto = sender?.photoUrl || rem.senderPhotoUrl || rem.data?.senderPhotoUrl;
+                const displayAmount = rem.amount || rem.data?.amount || 0;
+                const displayGroupName = rem.groupName || rem.data?.groupName || 'a group';
+
                 return (
-                  <View key={rem.notificationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                  <View key={rem.id || rem.notificationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
                     <SmartImage
-                      uri={sender?.photoUrl}
-                      thumbnailUri={sender?.photoThumbnailUrl}
-                      name={sender?.name}
+                      uri={senderPhoto}
+                      name={senderName}
                       size={40}
                       mode="thumbnail"
                       style={{ borderRadius: 20 }}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>{formatCurrency(rem.amount || 0)} for {rem.groupName}</Text>
-                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>From {sender?.name || 'Friend'}</Text>
+                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>
+                        <Text style={{ fontWeight: 'bold' }}>{senderName}</Text> sent you reminder
+                      </Text>
+                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>
+                        to settle {formatCurrency(displayAmount)} in {displayGroupName}
+                      </Text>
                     </View>
                     <View style={styles.invitationActions}>
                       <TouchableOpacity
                         style={[styles.actionIconBtn, { backgroundColor: colors.surfaceContainerLow }]}
                         onPress={() => handleDismissReminder(rem)}
                       >
-                        <MaterialIcons name="close" size={20} color={colors.onSurface} />
+                        <Ionicons name="close" size={20} color={colors.onSurface} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.actionIconBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => navigation.navigate('SettleUp', { groupId: rem.groupId })}
+                        onPress={() => navigation.navigate('SettleUp', { groupId: rem.groupId || rem.data?.groupId })}
                       >
                         <MaterialIcons name="payments" size={20} color="#FFFFFF" />
                       </TouchableOpacity>

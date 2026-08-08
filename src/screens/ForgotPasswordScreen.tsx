@@ -40,7 +40,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
     setSuccessMessage('');
     try {
       if (ENABLE_OTP) {
-        await sendOTPEmailHTTP(trimmedEmail, true); // true = check if user exists
+        // mode 'reset' checks if user exists
+        await sendOTPEmailHTTP(trimmedEmail, 'reset');
         setLoading(false);
         navigation.navigate('ResetPasswordOTP', { email: trimmedEmail });
       } else {

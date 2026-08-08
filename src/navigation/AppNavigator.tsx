@@ -150,6 +150,7 @@ export default function AppNavigator() {
   const { colors, isDark } = useTheme();
   const security = useSecurity();
   const [initializing, setInitializing] = React.useState(true);
+  const [loadingProfile, setLoadingProfile] = React.useState(false);
   const [user, setUser] = React.useState<User | null>(null);
   const [userStatus, setUserStatus] = React.useState<{ isVerified: boolean; hasProfile: boolean } | null>(null);
 
@@ -161,6 +162,7 @@ export default function AppNavigator() {
       setUser(authUser);
 
       if (authUser) {
+        setLoadingProfile(true);
         // Use real-time listener for profile to detect verification/setup changes instantly
         unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
           console.log("[Auth] Profile update received:", profile ? "found" : "not found");
@@ -168,11 +170,13 @@ export default function AppNavigator() {
             isVerified: profile?.emailVerified || profile?.isVerified || false,
             hasProfile: !!(profile?.name && profile?.paymentHandle)
           });
+          setLoadingProfile(false);
           if (initializing) setInitializing(false);
         });
       } else {
         if (unsubProfile) unsubProfile();
         setUserStatus(null);
+        setLoadingProfile(false);
         if (initializing) setInitializing(false);
       }
     });
@@ -183,7 +187,7 @@ export default function AppNavigator() {
     };
   }, []);
 
-  if (initializing || security.isLoading) {
+  if (initializing || security.isLoading || loadingProfile) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.primary }]}>
         <ActivityIndicator size="large" color="#FFFFFF" />

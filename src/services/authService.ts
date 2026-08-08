@@ -18,9 +18,9 @@ const functions = getFunctions(app, 'us-central1');
 /* =========================================================
    📧 SEND OTP (HTTP)
 ========================================================= */
-export const sendOTPEmailHTTP = async (email: string, checkExists: boolean = false) => {
+export const sendOTPEmailHTTP = async (email: string, mode: 'signup' | 'reset' | 'none' = 'none') => {
   const trimmedEmail = email.trim().toLowerCase();
-  console.log(`[HTTP] Calling sendOTPEmailTest for: ${trimmedEmail}, checkExists: ${checkExists}`);
+  console.log(`[HTTP] Calling sendOTPEmailTest for: ${trimmedEmail}, mode: ${mode}`);
   const url = 'https://us-central1-splitmate-d2d66.cloudfunctions.net/sendOTPEmailTest';
 
   try {
@@ -29,7 +29,7 @@ export const sendOTPEmailHTTP = async (email: string, checkExists: boolean = fal
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email: trimmedEmail, checkExists }),
+      body: JSON.stringify({ email: trimmedEmail, mode }),
     });
 
     const result = await response.json();
@@ -112,7 +112,7 @@ export const signUpWithEmail = async (email: string, pass: string): Promise<User
     doc(db, "users", user.uid),
     {
       email: email.toLowerCase(),
-      isVerified: false,
+      isVerified: true, // Set to true immediately in new flow
       createdAt: serverTimestamp(),
     },
     { merge: true }

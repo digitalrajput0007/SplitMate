@@ -16,7 +16,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
-import { verifyOTP, sendOTPEmailHTTP, signOutUser } from '../services/authService';
+import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail } from '../services/authService';
 import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -53,11 +53,19 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     setLoading(true);
     try {
       if (!email) throw new Error('Missing email parameter');
+      const password = (route.params as any)?.password;
+
       await verifyOTP(email, otp);
 
-      // Update Firestore user status
-      if (auth.currentUser) {
-        await setUserEmailVerifiedInFirestore(auth.currentUser.uid);
+      // ✅ SIGNUP FLOW: Create account only AFTER OTP verified
+      if (password) {
+        console.log("[Auth] OTP verified, creating user account...");
+        await signUpWithEmail(email, password);
+      } else {
+        // Verification flow for existing user
+        if (auth.currentUser) {
+          await setUserEmailVerifiedInFirestore(auth.currentUser.uid);
+        }
       }
 
       setLoading(false);
@@ -65,9 +73,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
         {
           text: 'Continue',
           onPress: () => {
-            // This will trigger AppNavigator to re-evaluate userStatus
-            // and show ProfileSetup
-            navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
+            // AppNavigator will handle redirection
           }
         }
       ]);
@@ -85,7 +91,8 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     }
     setResending(true);
     try {
-      await sendOTPEmailHTTP(email);
+      const isSignup = !!(route.params as any)?.password;
+      await sendOTPEmailHTTP(email, isSignup ? 'signup' : 'none');
       setTimer(30);
       Alert.alert('Sent', 'A new code has been sent to your email.');
     } catch (error: any) {

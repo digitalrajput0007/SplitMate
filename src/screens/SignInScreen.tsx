@@ -55,47 +55,16 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       if (isSignUp) {
-        const user = await signUpWithEmail(trimmedEmail, password);
+        // Send OTP first - mode 'signup' checks if email is already taken
+        await sendOTPEmailHTTP(trimmedEmail, 'signup');
         setLoading(false);
-
-        if (ENABLE_OTP) {
-          try {
-            await sendOTPEmailHTTP(trimmedEmail);
-          } catch (otpErr) {
-            console.log('Initial OTP send failed:', otpErr);
-          }
-          navigation.navigate('EmailVerificationOTP', { email: user.email || trimmedEmail });
-        } else {
-          navigation.navigate('EmailVerification', { email: user.email || trimmedEmail });
-        }
-      } else {
-        const user = await signInWithEmail(trimmedEmail, password);
-        setLoading(false);
-
-        // Fetch profile with fast race, fallback immediately if delayed
-        getUserProfileFromFirestore(user.uid).then((prof) => {
-          if (prof && prof.name && prof.paymentHandle) {
-            navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-          } else {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'ProfileSetup',
-                  params: {
-                    displayName: user.displayName || undefined,
-                    photoURL: user.photoURL || undefined,
-                  },
-                },
-              ],
-            });
-          }
-        }).catch(() => {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'ProfileSetup' }],
-          });
+        navigation.navigate('EmailVerificationOTP', {
+          email: trimmedEmail,
+          password: password
         });
+      } else {
+        await signInWithEmail(trimmedEmail, password);
+        setLoading(false);
       }
     } catch (err: any) {
       setLoading(false);
