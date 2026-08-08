@@ -27,7 +27,7 @@ import {
 } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
 import QRCode from 'react-native-qrcode-svg';

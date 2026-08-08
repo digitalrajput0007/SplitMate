@@ -24,10 +24,8 @@
       "permissions": [
         "READ_CONTACTS",
         "WRITE_CONTACTS",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS"
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -35,8 +33,6 @@
       "bundler": "metro"
     },
     "plugins": [
-      "@react-native-firebase/app",
-      "@react-native-firebase/messaging",
       "expo-asset",
       "expo-media-library",
       "@react-native-google-signin/google-signin",

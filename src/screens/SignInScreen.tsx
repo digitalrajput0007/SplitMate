@@ -12,15 +12,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
-import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword } from '../services/authService';
+import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword, sendOTPEmailHTTP } from '../services/authService';
 import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
+import { ENABLE_OTP } from '../config/appConfig';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
@@ -56,7 +57,17 @@ export default function SignInScreen({ navigation }: Props) {
       if (isSignUp) {
         const user = await signUpWithEmail(trimmedEmail, password);
         setLoading(false);
-        navigation.navigate('EmailVerification', { email: user.email || trimmedEmail });
+
+        if (ENABLE_OTP) {
+          try {
+            await sendOTPEmailHTTP(trimmedEmail);
+          } catch (otpErr) {
+            console.log('Initial OTP send failed:', otpErr);
+          }
+          navigation.navigate('EmailVerificationOTP', { email: user.email || trimmedEmail });
+        } else {
+          navigation.navigate('EmailVerification', { email: user.email || trimmedEmail });
+        }
       } else {
         const user = await signInWithEmail(trimmedEmail, password);
         setLoading(false);
@@ -215,9 +226,13 @@ export default function SignInScreen({ navigation }: Props) {
             <TouchableOpacity
               style={styles.forgotBtn}
               onPress={() => {
-                setResetEmail(email);
-                setResetSuccessMessage('');
-                setResetModalVisible(true);
+                if (ENABLE_OTP) {
+                  navigation.navigate('ForgotPassword', { email });
+                } else {
+                  setResetEmail(email);
+                  setResetSuccessMessage('');
+                  setResetModalVisible(true);
+                }
               }}
             >
               <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>

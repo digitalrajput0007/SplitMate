@@ -1,65 +1,71 @@
 import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text, Platform, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import {
-  useFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-} from '@expo-google-fonts/inter';
+import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import AppNavigator from './src/navigation/AppNavigator';
-import { Colors } from './src/theme';
-import { Platform, StyleSheet } from 'react-native';
-import { ThemeProvider } from './src/context/ThemeContext';
-import { useTheme } from './src/context/ThemeContext';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { SecurityProvider } from './src/context/SecurityContext';
-import messaging from '@react-native-firebase/messaging';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { NotificationService } from './src/services/NotificationService';
 
-// 4. Handle background & killed state messages (Must be top-level)
-messaging().setBackgroundMessageHandler(async remoteMessage => {
-  console.log('📬 Background FCM Message:', JSON.stringify(remoteMessage));
-});
+// 5. Config expo-notifications at the root
+try {
+  const Notifications = require('expo-notifications');
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+} catch (e) {
+  console.log('Notifications setup skipped: module not found');
+}
+
+// 🔥 CRITICAL WEB FIX: Force browser to 100% height
+if (Platform.OS === 'web') {
+  const style = document.createElement('style');
+  style.textContent = `
+    #root, body, html { height: 100%; margin: 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+    div[data-testid="safe-area-provider"] { flex: 1; display: flex; flex-direction: column; }
+  `;
+  document.head.append(style);
+}
 
 function MainAppContent() {
   const { colors, isDark } = useTheme();
 
   React.useEffect(() => {
-    // 3. Request permissions and sync FCM token on startup
-    NotificationService.requestUserPermission();
-
-    // Listen for token refreshes
-    const unsubRefresh = NotificationService.onTokenRefresh();
-
-    return () => {
-      unsubRefresh();
-    };
+    // 3. Request permissions and sync Push Token on startup (Native only)
+    if (Platform.OS !== 'web') {
+      try {
+        NotificationService.requestUserPermission();
+      } catch (e) {
+        console.warn('Push notification permission failed:', e);
+      }
+    }
   }, []);
 
-  if (Platform.OS === 'web') {
-    return (
+  return (
+    <ErrorBoundary>
       <SecurityProvider>
-        <SafeAreaProvider>
+        <SafeAreaProvider style={{ flex: 1 }}>
           <StatusBar style={isDark ? "light" : "dark"} />
-          <View style={webStyles.outerContainer}>
-            <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
+          <View style={{ flex: 1, backgroundColor: colors.background }}>
+            {Platform.OS === 'web' ? (
+              <View style={webStyles.outerContainer}>
+                <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
+                  <AppNavigator />
+                </View>
+              </View>
+            ) : (
               <AppNavigator />
-            </View>
+            )}
           </View>
         </SafeAreaProvider>
       </SecurityProvider>
-    );
-  }
-
-  return (
-    <SecurityProvider>
-      <SafeAreaProvider>
-        <StatusBar style={isDark ? "light" : "dark"} />
-        <AppNavigator />
-      </SafeAreaProvider>
-    </SecurityProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -73,8 +79,9 @@ export default function App() {
 
   if (!fontsLoaded) {
     return (
-      <View style={{ flex: 1, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#24389C', justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={{ color: '#fff', marginTop: 16 }}>Loading SplitMate Fonts...</Text>
       </View>
     );
   }
@@ -98,8 +105,8 @@ const webStyles = StyleSheet.create({
     maxWidth: 480,
     height: '100%',
     maxHeight: 900,
-    backgroundColor: Colors.background,
-    borderRadius: Platform.OS === 'web' ? 24 : 0,
+    backgroundColor: '#fff',
+    borderRadius: 24,
     overflow: 'hidden',
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
   },

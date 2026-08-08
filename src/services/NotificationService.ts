@@ -1,4 +1,6 @@
-import messaging from '@react-native-firebase/messaging';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Alert, Platform } from 'react-native';
 import { db, auth } from '../config/firebase';
 import {
@@ -7,14 +9,13 @@ import {
   serverTimestamp,
   collection,
   addDoc,
-  getDoc,
   query,
   where,
   orderBy,
   onSnapshot
 } from 'firebase/firestore';
 
-export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT';
+export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT' | 'payment_reminder' | 'group_invitation' | 'general';
 
 export interface AppNotification {
   id?: string;
@@ -29,184 +30,95 @@ export interface AppNotification {
   };
   isRead: boolean;
   createdAt: any;
+  // Legacy fields
+  notificationId?: string;
+  recipientUid?: string;
+  read?: boolean;
 }
 
 /**
- * Native Firebase Cloud Messaging (FCM) Service
- * Strictly avoiding Expo Push APIs.
+ * Expo Push Notification Service
+ * Compatible with Expo Go, Android, and iOS without native modules.
  */
 export const NotificationService = {
 
   /**
-   * Request permission and get FCM Token
+   * Request permission and get Expo Push Token
    */
   async requestUserPermission() {
-    const authStatus = await messaging().requestPermission();
-    const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
-    if (enabled) {
-      console.log('FCM Authorization status:', authStatus);
-      return await this.getFcmToken();
+    if (!Device.isDevice) {
+      console.log('Push notifications require a physical device.');
+      return null;
     }
-    return null;
-  },
 
-  /**
-   * Get Native FCM Token and save to Firestore
-   */
-  async getFcmToken() {
     try {
-      // 1. Get Token
-      const fcmToken = await messaging().getToken();
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
 
-      if (fcmToken) {
-        console.log('✅ Native FCM Token:', fcmToken);
-
-        // 2. Save to Firestore for the current user
-        const user = auth.currentUser;
-        if (user) {
-          await updateDoc(doc(db, 'users', user.uid), {
-            fcmToken: fcmToken,
-            updatedAt: serverTimestamp()
-          });
-          console.log('💾 FCM Token synced to Firestore');
-        }
-        return fcmToken;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
       }
-    } catch (error) {
-      console.log('Error getting FCM token:', error);
-    }
-    return null;
-  },
 
-  /**
-   * Listen for token refreshes
-   */
-  onTokenRefresh() {
-    return messaging().onTokenRefresh(async (token) => {
-      console.log('🔄 FCM Token Refreshed:', token);
+      if (finalStatus !== 'granted') {
+        console.log('Permission for notifications not granted.');
+        return null;
+      }
+
+      // Get Expo push token
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+      const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+
+      console.log('✅ Expo Push Token:', token);
+
+      // Sync token to Firestore
       const user = auth.currentUser;
-      if (user) {
+      if (user && token) {
         await updateDoc(doc(db, 'users', user.uid), {
-          fcmToken: token,
+          pushToken: token, // Changed from fcmToken to pushToken for Expo compatibility
           updatedAt: serverTimestamp()
         });
       }
-    });
+      return token;
+    } catch (e) {
+      console.error('Error getting push token:', e);
+      return null;
+    }
   },
 
   /**
-   * Initialize Listeners for Foreground/Background/Quit states
+   * Initialize Listeners for Foreground/Background
    */
   setupListeners(navigation: any) {
-    // 1. Foreground Message Listener
-    const unsubscribeOnMessage = messaging().onMessage(async remoteMessage => {
-      console.log('📩 Foreground FCM Message:', JSON.stringify(remoteMessage));
-
-      // Optionally show an alert or custom toast
-      Alert.alert(
-        remoteMessage.notification?.title || 'New Notification',
-        remoteMessage.notification?.body || ''
-      );
+    // Listener for foreground notifications
+    const foregroundSubscription = Notifications.addNotificationReceivedListener(notification => {
+      console.log('📩 Foreground Notification:', notification);
+      // Optionally show custom alert or badge
     });
 
-    // 2. Notification Opened Listener (App was in background)
-    const unsubscribeOnOpened = messaging().onNotificationOpenedApp(remoteMessage => {
-      console.log('👆 Notification caused app to open from background:', remoteMessage.data);
-      this.handleNotificationNavigation(remoteMessage, navigation);
+    // Listener for notification taps (App was in background/quit)
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      console.log('👆 Notification Tapped:', data);
+      this.handleNotificationNavigation(data, navigation);
     });
-
-    // 3. Initial Notification (App was in quit/killed state)
-    messaging()
-      .getInitialNotification()
-      .then(remoteMessage => {
-        if (remoteMessage) {
-          console.log('🚀 Notification caused app to open from quit state:', remoteMessage.data);
-          this.handleNotificationNavigation(remoteMessage, navigation);
-        }
-      });
 
     return () => {
-      unsubscribeOnMessage();
-      unsubscribeOnOpened();
+      foregroundSubscription.remove();
+      responseSubscription.remove();
     };
   },
 
-  /**
-   * Generic Navigation Handler based on notification data
-   */
-  handleNotificationNavigation(remoteMessage: any, navigation: any) {
-    const data = remoteMessage.data;
+  handleNotificationNavigation(data: any, navigation: any) {
     if (!data) return;
-
-    if (data.type === 'EXPENSE' && data.groupId) {
-      navigation.navigate('GroupDetail', { groupId: data.groupId, groupName: data.groupName || 'Group' });
-    } else if (data.groupId) {
+    if (data.groupId) {
       navigation.navigate('GroupDetail', { groupId: data.groupId, groupName: data.groupName || 'Group' });
     }
   },
 
   /**
-   * Send push notification via Firebase FCM v1 API
-   * IMPORTANT: You need an Access Token (OAuth2) for this.
-   */
-  async sendPushNotification(targetFcmToken: string, title: string, body: string, data: any = {}) {
-    if (!targetFcmToken) return;
-
-    // Use your Firebase Project ID from firebaseConfig
-    const PROJECT_ID = 'splitmate-d2d66';
-
-    // NOTE: In a real production app, you should NEVER store your OAuth token on the client.
-    // This call should happen from a Backend or Cloud Function.
-    // For now, I will provide the structure as requested.
-
-    const url = `https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`;
-
-    const message = {
-      message: {
-        token: targetFcmToken,
-        notification: {
-          title: title,
-          body: body,
-        },
-        data: {
-          ...data,
-          click_action: 'FLUTTER_NOTIFICATION_CLICK', // standard key for opening app
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            sound: 'default',
-            channel_id: 'default',
-          }
-        }
-      }
-    };
-
-    try {
-      // You must obtain this ACCESS_TOKEN via a secure method (explained in instructions)
-      const ACCESS_TOKEN = 'YOUR_OAUTH2_ACCESS_TOKEN';
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ACCESS_TOKEN}`,
-        },
-        body: JSON.stringify(message),
-      });
-
-      const resText = await response.text();
-      console.log('FCM Send Response:', resText);
-    } catch (error) {
-      console.error('FCM Send Error:', error);
-    }
-  },
-
-  /**
-   * Notify User (Combined Firestore record + FCM Push)
+   * Notify User (In-App record + Expo Push)
+   * The actual push delivery should ideally happen via Cloud Functions
    */
   async notifyUser(targetUserId: string, payload: { type: NotificationType; title: string; message: string; data: any }) {
     const currentUser = auth.currentUser;
@@ -221,41 +133,10 @@ export const NotificationService = {
         createdAt: serverTimestamp(),
       });
 
-      // 2. Fetch target user's FCM Token
-      const userSnap = await getDoc(doc(db, 'users', targetUserId));
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        if (userData.fcmToken) {
-          // 3. Send Native Push
-          await this.sendPushNotification(
-            userData.fcmToken,
-            payload.title,
-            payload.message,
-            payload.data
-          );
-        }
-      }
+      // Note: Triggering the push from the client is possible using Expo's API
+      // but it's best handled by a Firestore-triggered Cloud Function.
     } catch (e) {
       console.error('NotifyUser Error:', e);
     }
-  },
-
-  /**
-   * Firestore-based real-time notification sync for UI
-   */
-  subscribeToInAppNotifications(userId: string, onUpdate: (notifs: AppNotification[]) => void) {
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-
-    return onSnapshot(q, (snapshot) => {
-      const notifs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as AppNotification[];
-      onUpdate(notifs);
-    });
   }
 };

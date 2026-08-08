@@ -1,96 +1,60 @@
 import React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
-import { Colors } from '../constants/theme';
-import { ExpenseData } from '../services/firestoreService';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '../config/firebase';
+import { getUserProfileFromFirestore } from '../services/firestoreService';
+import { useTheme } from '../context/ThemeContext';
+import { useSecurity } from '../context/SecurityContext';
 
-// Existing Screens
+// Screens
 import SplashScreen from '../screens/SplashScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import SignInScreen from '../screens/SignInScreen';
+import HomeScreen from '../screens/HomeScreen';
 import EmailVerificationScreen from '../screens/EmailVerificationScreen';
 import ProfileSetupScreen from '../screens/ProfileSetupScreen';
-import ContactsPermissionScreen from '../screens/ContactsPermissionScreen';
-import HomeScreen from '../screens/HomeScreen';
-import GroupsScreen from '../screens/GroupsScreen';
-import AddExpenseScreen from '../screens/AddExpenseScreen';
+import OTPScreen from '../screens/OTPScreen';
+import EmailScreen from '../screens/EmailScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
+import EmailVerificationOTPScreen from '../screens/EmailVerificationOTPScreen';
+import ResetPasswordOTPScreen from '../screens/ResetPasswordOTPScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import SettleUpScreen from '../screens/SettleUpScreen';
 import CreateGroupModal from '../screens/CreateGroupModal';
 import SettlementCenterScreen from '../screens/SettlementCenterScreen';
-
-// Account Tab Suite
 import AccountScreen from '../screens/AccountScreen';
 import ProfileEditScreen from '../screens/ProfileEditScreen';
 import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import AppSettingsScreen from '../screens/AppSettingsScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
-
-// Activity & Notifications
 import ActivityScreen from '../screens/ActivityScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
-
-// Group & Expense Management
 import GroupSettingsScreen from '../screens/GroupSettingsScreen';
 import ExpenseDetailScreen from '../screens/ExpenseDetailScreen';
 import RecurringExpensesScreen from '../screens/RecurringExpensesScreen';
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
-
 import ContactsScreen from '../screens/ContactsScreen';
 import ContactSyncScreen from '../screens/ContactSyncScreen';
 import AppThemeScreen from '../screens/AppThemeScreen';
-
-// App Lock Screens
 import UnlockScreen from '../screens/UnlockScreen';
 import SetupPinScreen from '../screens/SetupPinScreen';
+import ContactsPermissionScreen from '../screens/ContactsPermissionScreen';
+import AddExpenseScreen from '../screens/AddExpenseScreen';
+import GroupsScreen from '../screens/GroupsScreen';
 
-import { useSecurity } from '../context/SecurityContext';
-
-export type RootStackParamList = {
-  Splash: undefined;
-  Onboarding: undefined;
-  SignIn: undefined;
-  EmailVerification: { email: string };
-  ProfileSetup: { displayName?: string; photoURL?: string; fromGoogle?: boolean } | undefined;
-  ContactsPermission: undefined;
-  MainTabs: undefined;
-  AddExpense: { groupId?: string; groupName?: string } | undefined;
-  CreateGroup: undefined;
-  GroupDetail: { groupId: string; groupName: string };
-  SettleUp: { groupId: string };
-  SettlementCenter: undefined;
-  ProfileEdit: undefined;
-  PaymentMethods: undefined;
-  NotificationSettings: undefined;
-  AppSettings: undefined;
-  AppTheme: undefined;
-  HelpSupport: undefined;
-  Notifications: undefined;
-  GroupSettings: { groupId: string };
-  ExpenseDetail: { expense: ExpenseData };
-  RecurringExpenses: undefined;
-  PrivacySecurity: undefined;
-  ContactUs: undefined;
-  ContactSync: undefined;
-  SetupPin: undefined;
-};
-
-export type MainTabParamList = {
-  HomeTab: undefined;
-  GroupsTab: undefined;
-  ContactsTab: undefined;
-  ActivityTab: undefined;
-  AccountTab: undefined;
-};
+import { RootStackParamList, MainTabParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+// --- Tab Icons ---
 function HomeSvgIcon({ color, size = 22 }: { color: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -144,17 +108,13 @@ function AccountSvgIcon({ color, size = 22 }: { color: string; size?: number }) 
   );
 }
 
-import { useTheme } from '../context/ThemeContext';
-import { NotificationService } from '../services/NotificationService';
-import * as Notifications from 'expo-notifications';
-
 function MainTabNavigator() {
   const { colors } = useTheme();
 
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false,
+        headerShown: false, // Ensure tabs don't show headers
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.outline,
         sceneContainerStyle: { backgroundColor: colors.background },
@@ -184,51 +144,27 @@ function MainTabNavigator() {
   );
 }
 
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../config/firebase';
-import { getUserProfileFromFirestore } from '../services/firestoreService';
-
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
-  const { isUnlocked, isLoading: isSecurityLoading } = useSecurity();
+  const security = useSecurity();
   const [initializing, setInitializing] = React.useState(true);
   const [user, setUser] = React.useState<User | null>(null);
-  const [initialRoute, setInitialRoute] = React.useState<keyof RootStackParamList>('Splash');
 
   React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
       setUser(authUser);
-      if (authUser) {
-        try {
-          const prof = await getUserProfileFromFirestore(authUser.uid);
-          if (prof && prof.name && prof.paymentHandle) {
-            setInitialRoute('MainTabs');
-          } else {
-            setInitialRoute('ProfileSetup');
-          }
-        } catch (e) {
-          setInitialRoute('MainTabs');
-        }
-      } else {
-        setInitialRoute('Splash');
-      }
       if (initializing) setInitializing(false);
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [initializing]);
 
-  if (initializing || isSecurityLoading) {
+  if (initializing || security.isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={[styles.loadingContainer, { backgroundColor: '#24389C' }]}>
         <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={{ marginTop: 20, color: '#FFFFFF', fontWeight: '600' }}>Preparing SplitMate...</Text>
       </View>
     );
-  }
-
-  // Gatekeeper: If app is locked, force UnlockScreen
-  if (!isUnlocked) {
-    return <UnlockScreen />;
   }
 
   const navTheme = {
@@ -236,50 +172,77 @@ export default function AppNavigator() {
     colors: {
       ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
       background: colors.background,
-      card: colors.surfaceContainerLowest,
-      text: colors.onSurface,
-      border: colors.divider,
-      primary: colors.primary,
+      primary: colors.primary
     },
   };
 
   return (
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator
-        initialRouteName={initialRoute}
+        initialRouteName={user ? "MainTabs" : "Splash"}
         screenOptions={{
-          headerShown: false,
+          headerShown: false, // CRITICAL: Disable all native headers by default
           animation: 'slide_from_right',
-          contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-        <Stack.Screen name="SignIn" component={SignInScreen} />
-        <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} />
-        <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-        <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
-        <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-        <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
-        <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
-        <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
-        <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
-        <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
-        <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
-        <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
-        <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
-        <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
-        <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
-        <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
-        <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
-        <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
-        <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
-        <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
-        <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-        <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
-        <Stack.Screen name="SetupPin" component={SetupPinScreen} />
+        {!user ? (
+          <>
+            <Stack.Screen name="Splash" component={SplashScreen} />
+            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+            <Stack.Screen name="SignIn" component={SignInScreen} />
+            <Stack.Screen name="EmailScreen" component={EmailScreen} />
+            <Stack.Screen name="OTPScreen" component={OTPScreen} />
+            <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen name="OTPVerification" component={OTPScreen} />
+            <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
+            <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
+          </>
+        ) : (
+          <>
+            {/* The main app with bottom tabs */}
+            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+
+            {/* All other screens - header is disabled via screenOptions above */}
+            <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
+            <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
+            <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+            <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+            <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
+            <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
+            <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
+            <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+            <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
+            <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+            <Stack.Screen name="ContactUs" component={ContactUsScreen} />
+            <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
+            <Stack.Screen name="SetupPin" component={SetupPinScreen} />
+            <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
+            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+            <Stack.Screen name="EmailScreen" component={EmailScreen} />
+            <Stack.Screen name="OTPScreen" component={OTPScreen} />
+            <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
+            <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} />
+            <Stack.Screen name="OTPVerification" component={OTPScreen} />
+            <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
+            <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
+});
