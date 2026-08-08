@@ -88,27 +88,20 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-      setLoading(false);
-      
+
       // Google users are automatically verified
       await setUserEmailVerifiedInFirestore(result.user.uid);
 
       const prof = await getUserProfileFromFirestore(result.user.uid);
-      if (prof && prof.name && prof.paymentHandle) {
-        navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-      } else {
-        navigation.navigate('ProfileSetup', {
-          displayName: result.googleName || result.user.displayName || undefined,
-          photoURL: result.googlePhoto || result.user.photoURL || undefined,
-          fromGoogle: true
-        });
-      }
+      setLoading(false);
+
+      // AppNavigator will handle redirection automatically based on prof.name (hasProfile)
+      // If prof.name is missing, it will stay on/go to ProfileSetup
+      // If prof.name exists, it will go to MainTabs
     } catch (err: any) {
       setLoading(false);
       console.log('Google Auth Error:', err);
-      if (err.code !== 'SIGN_IN_CANCELLED' && err.message !== 'Sign in action cancelled') {
-        navigation.navigate('ProfileSetup', { fromGoogle: true });
-      }
+      // AppNavigator will handle redirection automatically if user is authenticated but profile is missing
     }
   };
 

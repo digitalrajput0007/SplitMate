@@ -20,6 +20,7 @@ import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail } from '../se
 import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
 import { MaterialIcons } from '@expo/vector-icons';
+import { OTPInputBlocks } from '../components';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerificationOTP'>;
 
@@ -156,18 +157,13 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
               </View>
             )}
 
-            <TextInput
-              style={[styles.otpInput, { borderColor: colors.outlineVariant, color: colors.onSurface }]}
+            <OTPInputBlocks
               value={otp}
-              onChangeText={(text) => {
-                setOtp(text.replace(/[^0-9]/g, ''));
+              onChange={(text) => {
+                setOtp(text);
                 if (errorMessage) setErrorMessage('');
               }}
-              keyboardType="number-pad"
-              maxLength={6}
-              placeholder="000000"
-              placeholderTextColor={colors.outline}
-              autoFocus
+              disabled={loading}
             />
 
             <TouchableOpacity
@@ -217,17 +213,6 @@ const styles = StyleSheet.create({
   },
   title: { ...Typography.headlineSm, fontWeight: '700', marginBottom: Spacing.xs },
   subtitle: { ...Typography.bodyMd, textAlign: 'center', marginBottom: Spacing.xl, lineHeight: 22 },
-  otpInput: {
-    width: '100%',
-    height: 60,
-    borderWidth: 1.5,
-    borderRadius: BorderRadius.lg,
-    textAlign: 'center',
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: 8,
-    marginBottom: Spacing.xl
-  },
   verifyBtn: {
     width: '100%',
     height: 56,

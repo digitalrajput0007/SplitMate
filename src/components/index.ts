@@ -14,3 +14,4 @@ export * from './M3Skeleton';
 export * from './OutlinedInput';
 export * from './GroupCard';
 export * from './AppLogo';
+export * from './OTPInputBlocks';

@@ -4,16 +4,92 @@ import {
   signOut,
   updateProfile,
   User,
+  GoogleAuthProvider,
+  signInWithCredential,
 } from "firebase/auth";
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { auth, db, app } from "../config/firebase";
+import { auth, db, app, WEB_CLIENT_ID } from "../config/firebase";
 import {
   doc,
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { Platform } from "react-native";
+
+// Initialize Google Signin exactly once
+if (Platform.OS !== 'web') {
+  console.log("[Auth] Configuring Google Sign-in with ID:", WEB_CLIENT_ID);
+  GoogleSignin.configure({
+    webClientId: WEB_CLIENT_ID,
+    offlineAccess: true,
+    forceCodeForRefreshToken: true,
+  });
+}
 
 const functions = getFunctions(app, 'us-central1');
+
+/* =========================================================
+   🌐 GOOGLE SIGN IN
+========================================================= */
+export const signInWithGoogle = async () => {
+  try {
+    if (Platform.OS === 'web') {
+      throw new Error("Google Sign-in not implemented for web yet");
+    }
+
+    console.log("[Auth] Starting Google Sign-in flow...");
+
+    // 1. Check Play Services
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+    // 2. Clear any existing session to force account picker
+    try {
+        await GoogleSignin.signOut();
+    } catch (e) {}
+
+    // 3. Start Google Sign-in flow
+    const userInfo = await GoogleSignin.signIn();
+    console.log("[Auth] Google Sign-in response received");
+
+    // 4. Get credential for Firebase
+    const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
+
+    let finalIdToken = idToken;
+    if (!finalIdToken) {
+        console.warn("[Auth] No ID Token found in response, trying getTokens()...");
+        const tokens = await GoogleSignin.getTokens();
+        finalIdToken = tokens.idToken;
+    }
+
+    if (!finalIdToken) throw new Error("Could not retrieve ID Token from Google");
+
+    console.log("[Auth] Firebase Sign-in with credential...");
+    const credential = GoogleAuthProvider.credential(finalIdToken);
+
+    // 5. Sign in to Firebase
+    const userCredential = await signInWithCredential(auth, credential);
+    const user = userCredential.user;
+
+    const data = (userInfo as any).data || userInfo;
+    return {
+      user,
+      googleName: data.user?.name,
+      googlePhoto: data.user?.photo,
+    };
+  } catch (error: any) {
+    if (error.code === '7') {
+        console.error("[Auth] Google Sign-in Network Error. Check internet connection.");
+    } else if (error.code === '10') {
+        console.error("[Auth] DEVELOPER_ERROR: This usually means SHA-1 mismatch or wrong Web Client ID.");
+    }
+    console.error("[Auth] Google Sign-in Error Details:", JSON.stringify(error, null, 2));
+    throw error;
+  }
+};
+
+
+
 
 /* =========================================================
    📧 SEND OTP (HTTP)

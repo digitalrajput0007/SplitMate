@@ -298,10 +298,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           onPress: async () => {
             try {
               await leaveGroupInFirestore(groupId, currentUser.uid);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
+              navigation.navigate('MainTabs');
             } catch (e) {
               Alert.alert('Error', 'Failed to leave group.');
             }
@@ -350,10 +347,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           onPress: async () => {
             try {
               await deleteGroupFromFirestore(groupId);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
+              navigation.navigate('MainTabs');
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete group.');
             }

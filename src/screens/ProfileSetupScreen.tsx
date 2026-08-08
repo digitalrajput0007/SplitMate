@@ -94,8 +94,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           if (firestoreProf.dob) resolvedDob = firestoreProf.dob;
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
 
-          if (firestoreProf.name && firestoreProf.paymentHandle && !route.params?.fromGoogle) {
-            navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+          if (firestoreProf.name) {
+            // Already has a profile, AppNavigator will redirect
             return;
           }
         }
@@ -177,11 +177,11 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         });
       }
       setSaving(false);
-      navigation.navigate('ContactsPermission');
+      // AppNavigator will handle redirection to MainTabs automatically via its real-time listener
     } catch (err) {
       setSaving(false);
       console.log('Profile saved locally (offline / non-blocking mode):', err);
-      navigation.navigate('ContactsPermission');
+      // AppNavigator will handle redirection if state changes
     }
   };
 

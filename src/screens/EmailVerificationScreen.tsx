@@ -48,15 +48,14 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       if (isVerified && currentUser?.uid) {
         await setUserEmailVerifiedInFirestore(currentUser.uid);
         setLoading(false);
-        navigation.navigate('ProfileSetup');
+        // AppNavigator will handle redirection to ProfileSetup or MainTabs automatically
       } else {
         setLoading(false);
         setStatusMessage('Email link has not been verified yet. Please check your inbox and click the verification link.');
       }
     } catch (e: any) {
       setLoading(false);
-      // Fallback navigation for demo / testing
-      navigation.navigate('ProfileSetup');
+      // AppNavigator will handle redirection if state changes
     }
   };
 

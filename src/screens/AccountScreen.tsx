@@ -149,7 +149,7 @@ export default function AccountScreen() {
       setDisplayMobile('');
       setPaymentHandle('');
       setPhotoUrl('');
-      navigation.reset({ index: 0, routes: [{ name: 'SignIn' }] });
+      // AppNavigator will handle redirection to SignIn automatically via onAuthStateChanged
     } catch (e: any) {
       Alert.alert('Logout Error', 'Couldn\'t sign out, please try again');
     }

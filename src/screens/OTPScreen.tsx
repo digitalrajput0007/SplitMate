@@ -18,6 +18,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { verifyOTP, sendOTPEmailHTTP } from '../services/authService';
+import { OTPInputBlocks } from '../components';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OTPScreen'>;
 
@@ -100,16 +101,10 @@ export default function OTPScreen({ navigation, route }: Props) {
               <Text style={{ fontWeight: '700', color: colors.onSurface }}>{email}</Text>
             </Text>
 
-            <TextInput
-              style={[styles.otpInput, { borderColor: colors.outlineVariant, color: colors.onSurface }]}
+            <OTPInputBlocks
               value={otp}
-              onChangeText={(text) => setOtp(text.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
-              maxLength={6}
-              placeholder="000000"
-              placeholderTextColor={colors.outline}
-              autoFocus
-              editable={!loading}
+              onChange={setOtp}
+              disabled={loading}
             />
 
             <TouchableOpacity
@@ -159,17 +154,6 @@ const styles = StyleSheet.create({
   },
   title: { ...Typography.headlineSm, fontWeight: '700', marginBottom: Spacing.xs },
   subtitle: { ...Typography.bodyMd, textAlign: 'center', marginBottom: Spacing.xl, lineHeight: 22 },
-  otpInput: {
-    width: '100%',
-    height: 60,
-    borderWidth: 1.5,
-    borderRadius: BorderRadius.lg,
-    textAlign: 'center',
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: 8,
-    marginBottom: Spacing.xl
-  },
   verifyBtn: {
     width: '100%',
     height: 56,

@@ -21,7 +21,7 @@ export default function ContactsPermissionScreen({ navigation }: Props) {
       console.log('Contacts permission error:', err);
     } finally {
       setRequesting(false);
-      navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+      navigation.navigate('MainTabs');
     }
   };
 
@@ -59,7 +59,7 @@ export default function ContactsPermissionScreen({ navigation }: Props) {
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] })}
+          onPress={() => navigation.navigate('MainTabs')}
           activeOpacity={0.7}
         >
           <Text style={styles.secondaryButtonText}>Skip for Now</Text>
