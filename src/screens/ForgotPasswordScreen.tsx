@@ -17,7 +17,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { OutlinedInput } from '../components/OutlinedInput';
-import { sendOTPEmail, resetPassword } from '../services/authService';
+import { sendOTPEmailHTTP, resetPassword } from '../services/authService';
 import { ENABLE_OTP } from '../config/appConfig';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
