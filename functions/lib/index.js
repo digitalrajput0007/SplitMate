@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onExpenseCreated = exports.resetPasswordWithOTP = exports.verifyOTP = exports.sendOTPEmailTest = exports.sendOTPEmail = void 0;
+exports.onExpenseCreated = exports.resetPasswordWithOTP = exports.verifyOTP = exports.sendOTPEmailTest = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const params_1 = require("firebase-functions/params");
@@ -41,6 +41,7 @@ const app_1 = require("firebase-admin/app");
 const firestore_2 = require("firebase-admin/firestore");
 const auth_1 = require("firebase-admin/auth");
 const messaging_1 = require("firebase-admin/messaging");
+const firestore_3 = require("firebase-admin/firestore");
 const SibApiV3Sdk = __importStar(require("sib-api-v3-sdk"));
 // ✅ INIT
 (0, app_1.initializeApp)();
@@ -49,83 +50,70 @@ const auth = (0, auth_1.getAuth)();
 const messaging = (0, messaging_1.getMessaging)();
 // ================= SECRETS =================
 const BREVO_API_KEY = (0, params_1.defineSecret)("BREVO_API_KEY");
-// ================= SEND OTP =================
-// Note: onCall functions are public by default regarding request.auth.
-// If you get 'unauthenticated', ensure the IAM policy for this function
-// allows 'allUsers' to have the 'Cloud Functions Invoker' role.
-exports.sendOTPEmail = (0, https_1.onCall)({ secrets: [BREVO_API_KEY] }, async (request) => {
-    const { email } = request.data;
-    console.log("OTP request for:", email);
-    if (!email || !email.includes("@")) {
-        throw new https_1.HttpsError("invalid-argument", "Valid email required");
-    }
-    try {
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log("Callable OTP:", otp);
-        const now = Date.now();
-        const expiresAt = now + 5 * 60 * 1000; // 5 mins
-        // Save to Firestore (Required for verification)
-        const otpRef = db.collection("otp_verifications").doc(email.toLowerCase());
-        await otpRef.set({
-            email: email.toLowerCase(),
-            otp,
-            expiresAt,
-            verified: false,
-            createdAt: firestore_2.FieldValue.serverTimestamp(),
-        });
-        const apiKeyVal = BREVO_API_KEY.value();
-        if (apiKeyVal) {
-            const defaultClient = SibApiV3Sdk.ApiClient.instance;
-            const apiKey = defaultClient.authentications["api-key"];
-            apiKey.apiKey = apiKeyVal;
-            const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-            const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-            sendSmtpEmail.subject = "Your OTP Code";
-            sendSmtpEmail.textContent = `Your OTP is ${otp}`;
-            sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
-            sendSmtpEmail.to = [{ email: email }];
-            await apiInstance.sendTransacEmail(sendSmtpEmail);
-        }
-        else {
-            console.log(`[TEST MODE] OTP for ${email}: ${otp}`);
-        }
-        return { success: true };
-    }
-    catch (error) {
-        console.error("Callable OTP error:", error);
-        if (error instanceof https_1.HttpsError)
-            throw error;
-        throw new https_1.HttpsError("internal", error.message || "Unknown error occurred");
-    }
-});
-// ================= SEND OTP TEST (HTTP onRequest) =================
+// ================= SEND OTP (HTTP onRequest) =================
+// Merged logic from sendOTPEmail and sendOTPEmailTest
 exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, async (req, res) => {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const email = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
-        console.log("Email:", email);
+        const checkExists = ((_c = req.body) === null || _c === void 0 ? void 0 : _c.checkExists) === true;
         if (!email || !email.includes("@")) {
             res.status(400).json({ error: "Valid email required" });
             return;
         }
+        console.log(`[OTP] Request for: ${email}, CheckExists: ${checkExists}`);
+        // Check user existence if requested
+        if (checkExists) {
+            try {
+                await auth.getUserByEmail(email);
+            }
+            catch (authErr) {
+                if (authErr.code === 'auth/user-not-found') {
+                    res.status(404).json({ error: "No account found with this email. Please sign up first." });
+                    return;
+                }
+                throw authErr;
+            }
+        }
+        const now = Date.now();
+        // --- RATE LIMITING (3 per 30 mins) ---
+        const limitRef = db.collection("otpRateLimits").doc(email);
+        const WINDOW_MS = 30 * 60 * 1000;
+        const rateLimitExceeded = await db.runTransaction(async (transaction) => {
+            const limitDoc = await transaction.get(limitRef);
+            const limitData = limitDoc.data();
+            if (!limitDoc.exists || (now - ((limitData === null || limitData === void 0 ? void 0 : limitData.windowStart) || 0) > WINDOW_MS)) {
+                transaction.set(limitRef, { count: 1, windowStart: now });
+                return false;
+            }
+            else {
+                if ((limitData === null || limitData === void 0 ? void 0 : limitData.count) >= 3) {
+                    return true;
+                }
+                transaction.update(limitRef, { count: ((limitData === null || limitData === void 0 ? void 0 : limitData.count) || 0) + 1 });
+                return false;
+            }
+        });
+        if (rateLimitExceeded) {
+            res.status(429).json({ error: "Too many requests. Please wait 30 minutes." });
+            return;
+        }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log("OTP:", otp);
-        // ✅ SAVE OTP IN FIRESTORE
+        console.log(`[OTP] Generated: ${otp} for ${email}`);
+        // Save to Firestore
         await db.collection("otp_verifications").doc(email).set({
             email,
             otp,
-            expiresAt: Date.now() + 5 * 60 * 1000,
+            expiresAt: firestore_3.Timestamp.fromMillis(Date.now() + 5 * 60 * 1000), // ✅ FIXED
             verified: false,
             createdAt: firestore_2.FieldValue.serverTimestamp(),
         });
-        console.log("✅ OTP saved in Firestore");
-        // ✅ GET SECRET (IMPORTANT: inside function only)
+        // Send Email
         const apiKeyVal = BREVO_API_KEY.value();
-        console.log("🔥 KEY EXISTS:", !!apiKeyVal);
         if (!apiKeyVal) {
-            throw new Error("BREVO API KEY MISSING");
+            console.error("[OTP] BREVO_API_KEY is not set!");
+            throw new Error("Email service configuration error");
         }
-        // ✅ BREVO EMAIL SEND
         const defaultClient = SibApiV3Sdk.ApiClient.instance;
         const apiKey = defaultClient.authentications["api-key"];
         apiKey.apiKey = apiKeyVal;
@@ -133,34 +121,32 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
         const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
         sendSmtpEmail.subject = "Your OTP Code";
         sendSmtpEmail.textContent = `Your OTP is ${otp}`;
-        sendSmtpEmail.sender = {
-            name: "SplitMate",
-            email: "splitmate@fyndralabs.com", // must be verified in Brevo
-        };
+        sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
         sendSmtpEmail.to = [{ email }];
-        const response = await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log("📧 EMAIL RESPONSE:", response);
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
+        console.log(`[OTP] Email sent successfully to ${email}`);
         res.json({ success: true });
     }
     catch (error) {
-        console.error("❌ OTP ERROR:", error);
+        console.error("[OTP] sendOTPEmailTest error:", error);
         res.status(500).json({ error: error.message });
     }
 });
-// ================= VERIFY OTP =================
+// ================= VERIFY OTP (HTTP onRequest) =================
 exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     try {
         const email = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
-        const code = (_c = req.body) === null || _c === void 0 ? void 0 : _c.otp;
+        const code = (_d = (_c = req.body) === null || _c === void 0 ? void 0 : _c.otp) === null || _d === void 0 ? void 0 : _d.toString().trim();
         if (!email || !code) {
             res.status(400).json({ error: "Email and OTP required" });
             return;
         }
+        console.log(`[OTP] Verifying: ${email}, Code Provided: ${code}`);
         const otpRef = db.collection("otp_verifications").doc(email);
         const snap = await otpRef.get();
         if (!snap.exists) {
-            res.status(404).json({ error: "No OTP found" });
+            res.status(404).json({ error: "No active OTP found. Please request a new one." });
             return;
         }
         const otpData = snap.data();
@@ -170,18 +156,24 @@ exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
             return;
         }
         if ((otpData === null || otpData === void 0 ? void 0 : otpData.otp) !== code) {
+            console.log(`[OTP] Mismatch: Expected ${otpData === null || otpData === void 0 ? void 0 : otpData.otp}, Got ${code}`);
             res.status(400).json({ error: "Invalid OTP" });
             return;
         }
-        await otpRef.update({ verified: true });
+        // Success - Mark as verified but keep doc for resetPasswordWithOTP
+        await otpRef.update({
+            verified: true,
+            verifiedAt: firestore_2.FieldValue.serverTimestamp()
+        });
+        console.log(`[OTP] SUCCESS: ${email} verified`);
         res.json({ success: true });
     }
     catch (error) {
-        console.error("VERIFY ERROR:", error);
+        console.error("[OTP] verifyOTP error:", error);
         res.status(500).json({ error: error.message });
     }
 });
-// ================= RESET PASSWORD WITH OTP =================
+// ================= RESET PASSWORD WITH OTP (Callable) =================
 exports.resetPasswordWithOTP = (0, https_1.onCall)(async (request) => {
     var _a, _b, _c;
     const email = (_b = (_a = request.data) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
@@ -192,37 +184,35 @@ exports.resetPasswordWithOTP = (0, https_1.onCall)(async (request) => {
     if (newPassword.length < 6) {
         throw new https_1.HttpsError("invalid-argument", "Password must be at least 6 characters.");
     }
+    console.log(`[OTP] Resetting password for: ${email}`);
     const otpRef = db.collection("otp_verifications").doc(email);
     const snap = await otpRef.get();
     if (!snap.exists) {
-        throw new https_1.HttpsError("failed-precondition", "OTP verification required");
+        throw new https_1.HttpsError("failed-precondition", "OTP verification required. Please verify your OTP again.");
     }
     const otpData = snap.data();
     if (!(otpData === null || otpData === void 0 ? void 0 : otpData.verified)) {
-        throw new https_1.HttpsError("failed-precondition", "OTP not verified");
+        throw new https_1.HttpsError("failed-precondition", "OTP verification required.");
     }
-    // Check if still not expired
+    // Check if still not expired (safety)
     if (Date.now() > (otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt)) {
         await otpRef.delete();
-        throw new https_1.HttpsError("deadline-exceeded", "OTP expired");
+        throw new https_1.HttpsError("deadline-exceeded", "OTP expired. Please request a new one.");
     }
     try {
         const userRecord = await auth.getUserByEmail(email);
-        // Update the user's password directly in Firebase Auth
-        await auth.updateUser(userRecord.uid, {
-            password: newPassword
-        });
-        // Delete OTP after success
+        await auth.updateUser(userRecord.uid, { password: newPassword });
+        // ✅ DELETE OTP doc only after successful password update
         await otpRef.delete();
-        console.log(`✅ Password successfully reset for user: ${email}`);
+        console.log(`[OTP] Password successfully reset for: ${email}`);
         return { success: true };
     }
     catch (error) {
-        console.error("❌ Password reset failed:", error);
+        console.error("[OTP] resetPasswordWithOTP error:", error);
         if (error.code === "auth/user-not-found") {
             throw new https_1.HttpsError("not-found", "No user found with this email.");
         }
-        throw new https_1.HttpsError("internal", "Failed to update password.");
+        throw new https_1.HttpsError("internal", error.message || "Failed to update password.");
     }
 });
 // ================= PUSH NOTIFICATION =================

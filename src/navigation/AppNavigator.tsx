@@ -144,23 +144,48 @@ function MainTabNavigator() {
   );
 }
 
+import { subscribeToUserProfile } from '../services/firestoreService';
+
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
   const security = useSecurity();
   const [initializing, setInitializing] = React.useState(true);
   const [user, setUser] = React.useState<User | null>(null);
+  const [userStatus, setUserStatus] = React.useState<{ isVerified: boolean; hasProfile: boolean } | null>(null);
 
   React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
+    let unsubProfile: (() => void) | undefined;
+
+    const unsubAuth = onAuthStateChanged(auth, (authUser) => {
+      console.log("[Auth] State changed:", authUser?.email || "null");
       setUser(authUser);
-      if (initializing) setInitializing(false);
+
+      if (authUser) {
+        // Use real-time listener for profile to detect verification/setup changes instantly
+        unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
+          console.log("[Auth] Profile update received:", profile ? "found" : "not found");
+          setUserStatus({
+            isVerified: profile?.emailVerified || profile?.isVerified || false,
+            hasProfile: !!(profile?.name && profile?.paymentHandle)
+          });
+          if (initializing) setInitializing(false);
+        });
+      } else {
+        if (unsubProfile) unsubProfile();
+        setUserStatus(null);
+        if (initializing) setInitializing(false);
+      }
     });
-    return () => unsubscribe();
-  }, [initializing]);
+
+    return () => {
+      unsubAuth();
+      if (unsubProfile) unsubProfile();
+    };
+  }, []);
 
   if (initializing || security.isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: '#24389C' }]}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.primary }]}>
         <ActivityIndicator size="large" color="#FFFFFF" />
         <Text style={{ marginTop: 20, color: '#FFFFFF', fontWeight: '600' }}>Preparing SplitMate...</Text>
       </View>
@@ -177,61 +202,66 @@ export default function AppNavigator() {
   };
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} key={user ? 'auth' : 'unauth'}>
       <Stack.Navigator
-        initialRouteName={user ? "MainTabs" : "Splash"}
         screenOptions={{
-          headerShown: false, // CRITICAL: Disable all native headers by default
+          headerShown: false,
           animation: 'slide_from_right',
         }}
       >
         {!user ? (
           <>
+            <Stack.Screen name="SignIn" component={SignInScreen} />
             <Stack.Screen name="Splash" component={SplashScreen} />
             <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-            <Stack.Screen name="SignIn" component={SignInScreen} />
-            <Stack.Screen name="EmailScreen" component={EmailScreen} />
-            <Stack.Screen name="OTPScreen" component={OTPScreen} />
-            <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="OTPVerification" component={OTPScreen} />
             <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
             <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
+            <Stack.Screen name="EmailScreen" component={EmailScreen} />
           </>
         ) : (
           <>
-            {/* The main app with bottom tabs */}
-            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-
-            {/* All other screens - header is disabled via screenOptions above */}
-            <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
-            <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
-            <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
-            <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
-            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
-            <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
-            <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
-            <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
-            <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
-            <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
-            <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
-            <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
-            <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-            <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
-            <Stack.Screen name="SetupPin" component={SetupPinScreen} />
-            <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
-            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-            <Stack.Screen name="EmailScreen" component={EmailScreen} />
-            <Stack.Screen name="OTPScreen" component={OTPScreen} />
-            <Stack.Screen name="ResetPasswordScreen" component={ResetPasswordScreen} />
-            <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} />
-            <Stack.Screen name="OTPVerification" component={OTPScreen} />
-            <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
-            <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
+            {!userStatus?.isVerified ? (
+              <Stack.Screen
+                name="EmailVerificationOTP"
+                component={EmailVerificationOTPScreen}
+                initialParams={{ email: user.email || '' }}
+              />
+            ) : (
+              <>
+                {!userStatus?.hasProfile ? (
+                  <>
+                    <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+                    <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
+                  </>
+                ) : (
+                  <>
+                    <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+                    <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
+                    <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
+                    <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
+                    <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+                    <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+                    <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+                    <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
+                    <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
+                    <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+                    <Stack.Screen name="Notifications" component={NotificationsScreen} />
+                    <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
+                    <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+                    <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
+                    <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+                    <Stack.Screen name="ContactUs" component={ContactUsScreen} />
+                    <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
+                    <Stack.Screen name="SetupPin" component={SetupPinScreen} />
+                    <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
+                  </>
+                )}
+              </>
+            )}
           </>
         )}
       </Stack.Navigator>

@@ -150,21 +150,21 @@ export default function SignInScreen({ navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Brand Section */}
           <View style={styles.brandSection}>
-            <View style={styles.logoBox}>
+            <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
               <AppLogo size={44} />
             </View>
-            <Text style={styles.heading}>
+            <Text style={[styles.heading, { color: colors.onSurface }]}>
               {isSignUp ? 'Create account' : 'Welcome back'}
             </Text>
-            <Text style={styles.subheading}>
+            <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
               {isSignUp
                 ? 'Start splitting smarter today.'
                 : 'Sign in to manage your group expenses.'}
@@ -181,7 +181,7 @@ export default function SignInScreen({ navigation }: Props) {
 
           {/* Google Sign-In Button */}
           <TouchableOpacity
-            style={styles.googleButton}
+            style={[styles.googleButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
             onPress={handleGoogleSignIn}
             activeOpacity={0.85}
             disabled={loading}
@@ -189,14 +189,14 @@ export default function SignInScreen({ navigation }: Props) {
             <View style={styles.googleIconBox}>
               <Text style={styles.googleIconText}>G</Text>
             </View>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+            <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
           </TouchableOpacity>
 
           {/* Divider */}
           <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
+            <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+            <Text style={[styles.dividerText, { color: colors.outline }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
           </View>
 
           {/* Inputs */}
@@ -278,20 +278,20 @@ export default function SignInScreen({ navigation }: Props) {
               setErrorMessage('');
             }}
           >
-            <Text style={styles.toggleText}>
+            <Text style={[styles.toggleText, { color: colors.onSurfaceVariant }]}>
               {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <Text style={styles.toggleLink}>
+              <Text style={[styles.toggleLink, { color: colors.primary }]}>
                 {isSignUp ? 'Sign In' : 'Sign Up'}
               </Text>
             </Text>
           </TouchableOpacity>
 
           {/* Legal Footnote */}
-          <Text style={styles.legal}>
+          <Text style={[styles.legal, { color: colors.outline }]}>
             By continuing, you agree to our{' '}
-            <Text style={styles.legalLink}>Terms</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>Terms</Text>
             {' & '}
-            <Text style={styles.legalLink}>Privacy Policy</Text>
+            <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
           </Text>
         </View>
       </ScrollView>
@@ -299,13 +299,13 @@ export default function SignInScreen({ navigation }: Props) {
       {/* Forgot Password Modal */}
       <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.resetCard}>
-            <Text style={styles.resetTitle}>Reset Password</Text>
-            <Text style={styles.resetSub}>Enter your registered email address to receive a password reset link.</Text>
+          <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+            <Text style={[styles.resetTitle, { color: colors.onSurface }]}>Reset Password</Text>
+            <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>Enter your registered email address to receive a password reset link.</Text>
 
             {!!resetSuccessMessage && (
-              <View style={styles.resetSuccessBox}>
-                <Text style={styles.resetSuccessText}>{resetSuccessMessage}</Text>
+              <View style={[styles.resetSuccessBox, { backgroundColor: colors.positiveContainer, borderColor: colors.positive }]}>
+                <Text style={[styles.resetSuccessText, { color: colors.positiveText }]}>{resetSuccessMessage}</Text>
               </View>
             )}
 
@@ -320,10 +320,10 @@ export default function SignInScreen({ navigation }: Props) {
 
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.sendBtn, resetLoading && styles.disabledButton]}
+                style={[styles.sendBtn, { backgroundColor: colors.primary }, resetLoading && styles.disabledButton]}
                 disabled={resetLoading}
                 onPress={async () => {
                   if (!resetEmail.trim()) {
@@ -342,9 +342,9 @@ export default function SignInScreen({ navigation }: Props) {
                 }}
               >
                 {resetLoading ? (
-                  <ActivityIndicator color={Colors.onPrimary} size="small" />
+                  <ActivityIndicator color={colors.onPrimary} size="small" />
                 ) : (
-                  <Text style={styles.sendText}>Send Link</Text>
+                  <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -371,11 +371,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   brandSection: {
@@ -387,22 +385,18 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
   },
   logoIcon: {
     fontSize: 32,
-    color: Colors.onPrimaryContainer,
   },
   heading: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
   },
   subheading: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginTop: Spacing.xs,
     textAlign: 'center',
   },
@@ -429,8 +423,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
     marginBottom: Spacing.lg,
     ...Shadows.card,
   },
@@ -449,7 +441,6 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
   },
   divider: {
     flexDirection: 'row',
@@ -460,15 +451,12 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.outlineVariant,
   },
   dividerText: {
     ...Typography.bodyMd,
-    color: Colors.outline,
   },
   primaryButton: {
     width: '100%',
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     minHeight: 48,
@@ -482,7 +470,6 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
   },
   toggleRow: {
     alignItems: 'center',
@@ -490,18 +477,15 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
   },
   toggleLink: {
-    color: Colors.primary,
     fontWeight: '600',
   },
   legalLink: {
-    color: Colors.primary,
+    textDecorationLine: 'underline',
   },
   legal: {
     ...Typography.labelMd,
-    color: Colors.outline,
     textAlign: 'center',
     marginTop: Spacing.xl,
   },
@@ -512,7 +496,6 @@ const styles = StyleSheet.create({
   },
   forgotText: {
     ...Typography.titleSm,
-    color: Colors.primary,
     fontWeight: '600',
   },
   modalBackdrop: {
@@ -525,7 +508,6 @@ const styles = StyleSheet.create({
   resetCard: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     gap: Spacing.sm,
@@ -533,24 +515,19 @@ const styles = StyleSheet.create({
   },
   resetTitle: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     fontWeight: '700',
   },
   resetSub: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginBottom: Spacing.xs,
   },
   resetSuccessBox: {
-    backgroundColor: '#E8F5E9',
     borderRadius: BorderRadius.md,
     padding: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#C8E6C9',
   },
   resetSuccessText: {
     ...Typography.bodyMd,
-    color: '#2E7D32',
     fontWeight: '500',
   },
   modalActions: {
@@ -566,11 +543,9 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     ...Typography.titleSm,
-    color: Colors.onSurfaceVariant,
     fontWeight: '600',
   },
   sendBtn: {
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -580,7 +555,6 @@ const styles = StyleSheet.create({
   },
   sendText: {
     ...Typography.titleSm,
-    color: Colors.onPrimary,
     fontWeight: '600',
   },
 });

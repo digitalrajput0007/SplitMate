@@ -74,16 +74,24 @@ export default function OTPScreen({ navigation, route }: Props) {
     }
   };
 
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('SignIn');
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="security" size={48} color={colors.primary} />
             </View>
             <Text style={[styles.title, { color: colors.onSurface }]}>Verify Code</Text>
@@ -109,7 +117,7 @@ export default function OTPScreen({ navigation, route }: Props) {
               onPress={handleVerify}
               disabled={loading || otp.length !== 6}
             >
-              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.verifyBtnText}>Verify & Continue</Text>}
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.verifyBtnText, { color: colors.onPrimary }]}>Verify & Continue</Text>}
             </TouchableOpacity>
 
             <View style={styles.resendContainer}>

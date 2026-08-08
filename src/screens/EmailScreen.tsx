@@ -57,8 +57,8 @@ export default function EmailScreen({ navigation }: Props) {
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="email" size={48} color={colors.primary} />
             </View>
 
@@ -83,9 +83,9 @@ export default function EmailScreen({ navigation }: Props) {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#FFF" size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
-                <Text style={styles.btnText}>Continue</Text>
+                <Text style={[styles.btnText, { color: colors.onPrimary }]}>Continue</Text>
               )}
             </TouchableOpacity>
           </View>

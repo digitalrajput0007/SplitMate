@@ -63,8 +63,8 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="lock" size={48} color={colors.primary} />
             </View>
             <Text style={[styles.title, { color: colors.onSurface }]}>New Password</Text>
@@ -103,7 +103,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
               onPress={handleReset}
               disabled={loading}
             >
-              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Reset Password</Text>}
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.btnText, { color: colors.onPrimary }]}>Reset Password</Text>}
             </TouchableOpacity>
           </View>
         </ScrollView>

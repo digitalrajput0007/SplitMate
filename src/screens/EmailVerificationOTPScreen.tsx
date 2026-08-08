@@ -16,7 +16,9 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
-import { verifyOTP, sendOTPEmailHTTP } from '../services/authService';
+import { verifyOTP, sendOTPEmailHTTP, signOutUser } from '../services/authService';
+import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
+import { auth } from '../config/firebase';
 import { MaterialIcons } from '@expo/vector-icons';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerificationOTP'>;
@@ -52,9 +54,22 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     try {
       if (!email) throw new Error('Missing email parameter');
       await verifyOTP(email, otp);
+
+      // Update Firestore user status
+      if (auth.currentUser) {
+        await setUserEmailVerifiedInFirestore(auth.currentUser.uid);
+      }
+
       setLoading(false);
       Alert.alert('Success', 'Email verified successfully!', [
-        { text: 'Continue', onPress: () => navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] }) }
+        {
+          text: 'Continue',
+          onPress: () => {
+            // This will trigger AppNavigator to re-evaluate userStatus
+            // and show ProfileSetup
+            navigation.reset({ index: 0, routes: [{ name: 'ProfileSetup' }] });
+          }
+        }
       ]);
     } catch (error: any) {
       setLoading(false);
@@ -81,16 +96,45 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     }
   };
 
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      // If we're at the root of this stack (unverified user state),
+      // "Back" should probably sign out the user so they can try a different email.
+      Alert.alert(
+        'Cancel Verification',
+        'Are you sure you want to cancel and go back to sign in? This will sign you out.',
+        [
+          { text: 'Wait', style: 'cancel' },
+          {
+            text: 'Yes, Sign Out',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                console.log("[Auth] Manually signing out from OTP screen...");
+                await signOutUser();
+                // Forces AppNavigator to reset
+              } catch (e) {
+                console.error("[Auth] Sign out error:", e);
+              }
+            }
+          }
+        ]
+      );
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scroll}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="mark-email-read" size={48} color={colors.primary} />
             </View>
             <Text style={[styles.title, { color: colors.onSurface }]}>Verify Your Email</Text>
@@ -124,7 +168,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
               onPress={handleVerify}
               disabled={loading || otp.length !== 6}
             >
-              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.verifyBtnText}>Verify</Text>}
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.verifyBtnText, { color: colors.onPrimary }]}>Verify</Text>}
             </TouchableOpacity>
 
             <View style={styles.resendContainer}>

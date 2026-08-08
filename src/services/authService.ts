@@ -18,8 +18,9 @@ const functions = getFunctions(app, 'us-central1');
 /* =========================================================
    📧 SEND OTP (HTTP)
 ========================================================= */
-export const sendOTPEmailHTTP = async (email: string) => {
-  console.log(`[HTTP] Calling sendOTPEmailTest for: ${email}`);
+export const sendOTPEmailHTTP = async (email: string, checkExists: boolean = false) => {
+  const trimmedEmail = email.trim().toLowerCase();
+  console.log(`[HTTP] Calling sendOTPEmailTest for: ${trimmedEmail}, checkExists: ${checkExists}`);
   const url = 'https://us-central1-splitmate-d2d66.cloudfunctions.net/sendOTPEmailTest';
 
   try {
@@ -28,7 +29,7 @@ export const sendOTPEmailHTTP = async (email: string) => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      body: JSON.stringify({ email: trimmedEmail, checkExists }),
     });
 
     const result = await response.json();
@@ -49,7 +50,9 @@ export const sendOTPEmailHTTP = async (email: string) => {
    🔑 VERIFY OTP (HTTP)
 ========================================================= */
 export const verifyOTP = async (email: string, otp: string) => {
-  console.log("[OTP] Verifying:", email, otp);
+  const trimmedEmail = email.trim().toLowerCase();
+  const trimmedOtp = otp.trim();
+  console.log("[OTP] Verifying:", trimmedEmail, trimmedOtp);
 
   try {
     const response = await fetch(
@@ -60,24 +63,25 @@ export const verifyOTP = async (email: string, otp: string) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          otp: otp,
+          email: trimmedEmail,
+          otp: trimmedOtp,
         }),
       }
     );
 
     const result = await response.json();
-    console.log("[OTP] verify response:", result);
+    console.log("[OTP] verify response status:", response.status, result);
 
     if (!response.ok) {
+      console.warn("[OTP] Verification rejected by server:", result.error);
       throw new Error(result.error || "Invalid or expired OTP");
     }
 
     return result;
 
   } catch (error: any) {
-    console.error("[OTP] verify failed:", error);
-    throw new Error(error.message || "OTP verification failed");
+    console.error("[OTP] verify failed exception:", error);
+    throw error;
   }
 };
 

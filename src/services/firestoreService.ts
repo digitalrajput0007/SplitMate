@@ -271,6 +271,26 @@ export const getUserProfileFromFirestore = async (uid: string): Promise<UserProf
 };
 
 /**
+ * Checks if a mobile number is already registered to another user
+ */
+export const isMobileNumberRegistered = async (mobile: string, currentUid: string): Promise<boolean> => {
+  try {
+    // Standardize to include country code if not present, or search both
+    const q = query(
+      collection(db, 'users'),
+      where('mobile', 'in', [mobile, `+91 ${mobile}`, `+91${mobile}`])
+    );
+    const snap = await getDocs(q);
+
+    // If any user is found with this mobile, check if it's NOT the current user
+    return snap.docs.some(d => d.id !== currentUid);
+  } catch (error) {
+    console.error('Error checking mobile registration:', error);
+    return false;
+  }
+};
+
+/**
  * Searches for a user by their exact phone number
  */
 export const findUserByPhone = async (phoneNumber: string): Promise<UserProfile | null> => {

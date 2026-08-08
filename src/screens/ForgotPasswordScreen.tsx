@@ -40,7 +40,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
     setSuccessMessage('');
     try {
       if (ENABLE_OTP) {
-        await sendOTPEmailHTTP(trimmedEmail);
+        await sendOTPEmailHTTP(trimmedEmail, true); // true = check if user exists
         setLoading(false);
         navigation.navigate('ResetPasswordOTP', { email: trimmedEmail });
       } else {
@@ -65,8 +65,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="lock-reset" size={48} color={colors.primary} />
             </View>
 
@@ -78,8 +78,8 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
             </Text>
 
             {!!successMessage && (
-              <View style={styles.successContainer}>
-                <Text style={styles.successText}>{successMessage}</Text>
+              <View style={[styles.successContainer, { backgroundColor: colors.positiveContainer }]}>
+                <Text style={[styles.successText, { color: colors.positiveText }]}>{successMessage}</Text>
               </View>
             )}
 
@@ -101,9 +101,9 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#FFF" size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
-                <Text style={styles.btnText}>
+                <Text style={[styles.btnText, { color: colors.onPrimary }]}>
                   {ENABLE_OTP ? 'Send Code' : 'Send Reset Link'}
                 </Text>
               )}
