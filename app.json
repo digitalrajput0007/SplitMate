@@ -16,7 +16,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/foreground_layer.png",
+        "backgroundImage": "./assets/background_layer.png",
         "backgroundColor": "#24389C"
       },
       "package": "com.splitmate.newapp",

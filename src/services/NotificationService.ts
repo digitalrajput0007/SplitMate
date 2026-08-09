@@ -215,6 +215,7 @@ export const NotificationService = {
           data: {
             ...payload.data,
             type: payload.type,
+            largeIcon: 'ic_notification_large',
           },
           priority: 'high',
           channelId: 'default',
