@@ -1679,26 +1679,10 @@ export const sendPaymentReminder = async (
     const senderName = profile?.name || currentUser.displayName || 'A friend';
     const senderPhoto = profile?.photoUrl || currentUser.photoURL || '';
 
-    const notificationRef = doc(collection(db, 'notifications'));
-    const notificationId = notificationRef.id;
-
-    const notificationData: any = {
-      id: notificationId,
-      notificationId: notificationId,
-      userId: recipientUid,
-      recipientUid: recipientUid,
-      senderUid: currentUser.uid,
-      senderName: senderName,
-      senderPhotoUrl: senderPhoto,
-      groupId,
-      groupName: groupName || 'Group',
-      amount: amount || 0,
-      type: 'payment_reminder',
+    await NotificationService.notifyUser(recipientUid, {
+      type: 'REMINDER',
       title: 'Payment Reminder',
       message: `${senderName} sent you a reminder to settle ${formatCurrency(amount)} in ${groupName || 'Group'}`,
-      isRead: false,
-      read: false,
-      createdAt: serverTimestamp(),
       data: {
         groupId,
         amount,
@@ -1707,14 +1691,7 @@ export const sendPaymentReminder = async (
         senderUid: currentUser.uid,
         senderPhotoUrl: senderPhoto
       }
-    };
-
-    console.log('[Firestore] Sending reminder:', notificationData);
-    await setDoc(notificationRef, notificationData);
-
-    // ✅ FIXED: REMOVED DUPLICATE NOTIFICATION
-    // NotificationService.notifyUser was also creating a document in the same 'notifications' collection,
-    // causing two reminders to appear.
+    });
 
     return true;
   } catch (error) {

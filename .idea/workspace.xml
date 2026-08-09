@@ -5,24 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/src/services/settlementService.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/implementation_plan.artifact.md" beforeDir="false" afterPath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/implementation_plan.artifact.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/task.artifact.md" beforeDir="false" afterPath="$PROJECT_DIR$/.artifacts/ed7c98d8-87ad-4b12-b300-6180d4a89426/task.artifact.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/constants/theme.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/constants/theme.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/hooks/useGroupBalances.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useGroupBalances.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ActivityScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ActivityScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/AddGroupMemberModal.tsx" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/EditExpenseScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EditExpenseScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/splitmate-d2d66-firebase-adminsdk-fbsvc-94bd153b2d.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/NotificationService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/NotificationService.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/firestoreService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/firestoreService.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,6 +21,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "digitalrajput0007"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/digitalrajput0007/https---github.com-digitalrajput0007-SplitMate.git",
+    "accountId": "8ee24d15-2bef-49e8-be60-a02daf3d28d6"
+  }
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 0,
   &quot;fromUser&quot;: false
@@ -60,13 +58,21 @@
     "cf.first.check.clang-format": "false",
     "cidr.known.project.marker": "true",
     "com.google.services.firebase.aqiPopupShown": "true",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "restore-otp",
     "ignore.virus.scanning.warn.message": "true",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "C:/Users/sbiet/.gemini/antigravity-ide/scratch/SplitMate",
     "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable"
   }
 }]]></component>
+  <component name="RunManager">
+    <configuration default="true" type="JetRunConfigurationType">
+      <module name="SplitMate" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+  </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
       <changelist id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="" />

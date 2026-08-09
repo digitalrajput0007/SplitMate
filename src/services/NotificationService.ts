@@ -5,6 +5,8 @@ import { Alert, Platform } from 'react-native';
 import { db, auth } from '../config/firebase';
 import {
   doc,
+  setDoc,
+  getDoc,
   updateDoc,
   serverTimestamp,
   collection,
@@ -65,17 +67,25 @@ export const NotificationService = {
         return null;
       }
 
-      // Get Expo push token
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-      const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-
-      console.log('✅ Expo Push Token:', token);
+      // Try Expo Push Token first, fallback to Native FCM Device Token
+      let token: string | null = null;
+      try {
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+        token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        console.log('✅ Expo Push Token:', token);
+      } catch (expoPushErr: any) {
+        console.warn('Expo Push Token error, falling back to Native Device Token:', expoPushErr?.message);
+        const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
+        token = deviceTokenObj.data;
+        console.log('✅ Native FCM Device Token:', token);
+      }
 
       // Sync token to Firestore
       const user = auth.currentUser;
       if (user && token) {
         await updateDoc(doc(db, 'users', user.uid), {
-          pushToken: token, // Changed from fcmToken to pushToken for Expo compatibility
+          pushToken: token,
+          fcmToken: token,
           updatedAt: serverTimestamp()
         });
       }
@@ -117,8 +127,7 @@ export const NotificationService = {
   },
 
   /**
-   * Notify User (In-App record + Expo Push)
-   * The actual push delivery should ideally happen via Cloud Functions
+   * Notify User (In-App record + Expo Push via Expo Push API)
    */
   async notifyUser(targetUserId: string, payload: { type: NotificationType; title: string; message: string; data: any }) {
     const currentUser = auth.currentUser;
@@ -126,17 +135,59 @@ export const NotificationService = {
 
     try {
       // 1. Create In-App Notification in Firestore
-      await addDoc(collection(db, 'notifications'), {
+      const notifRef = doc(collection(db, 'notifications'));
+      await setDoc(notifRef, {
+        id: notifRef.id,
+        notificationId: notifRef.id,
         userId: targetUserId,
+        recipientUid: targetUserId,
+        senderUid: currentUser.uid,
         ...payload,
         isRead: false,
+        read: false,
         createdAt: serverTimestamp(),
       });
 
-      // Note: Triggering the push from the client is possible using Expo's API
-      // but it's best handled by a Firestore-triggered Cloud Function.
+      // 2. Fetch target user's pushToken and preferences from Firestore
+      const targetUserDoc = await getDoc(doc(db, 'users', targetUserId));
+      if (!targetUserDoc.exists()) return;
+
+      const targetUserData = targetUserDoc.data();
+      const pushToken = targetUserData?.pushToken || targetUserData?.fcmToken;
+      const prefs = targetUserData?.preferences;
+
+      // Respect user notification preferences
+      if (prefs) {
+        if (payload.type === 'GROUP_INVITE' && prefs.groupInvites === false) return;
+        if (payload.type === 'EXPENSE' && prefs.expenseAlerts === false) return;
+        if ((payload.type === 'REMINDER' || payload.type === 'payment_reminder') && prefs.settlementReminders === false) return;
+      }
+
+      // Send Push via Expo Push API if pushToken is available
+      if (pushToken && (pushToken.startsWith('ExponentPushToken') || pushToken.startsWith('ExpoPushToken'))) {
+        await fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: pushToken,
+            sound: 'default',
+            title: payload.title,
+            body: payload.message,
+            data: {
+              ...payload.data,
+              type: payload.type,
+            },
+            priority: 'high',
+          }),
+        });
+      }
     } catch (e) {
       console.error('NotifyUser Error:', e);
     }
   }
 };
+
