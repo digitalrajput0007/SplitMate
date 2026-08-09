@@ -17,24 +17,65 @@ export { formatCurrency };
 import { db, auth } from '../config/firebase';
 import { NotificationService } from './NotificationService';
 
+// In-memory profile cache for reducing Firestore calls
+const userProfileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
+const userProfileListeners = new Map<string, Set<(profile: UserProfile | null) => void>>();
+const userProfileUnsubscribers = new Map<string, () => void>();
+
 /**
- * Real-time listener for a specific user profile
+ * Real-time listener for a specific user profile with in-memory caching & deduplication
  */
 export function subscribeToUserProfile(uid: string, onUpdate: (profile: UserProfile | null) => void) {
-  const userRef = doc(db, 'users', uid);
-  return onSnapshot(
-    userRef,
-    (snap) => {
-      if (snap.exists()) {
-        onUpdate(snap.data() as UserProfile);
-      } else {
-        onUpdate(null);
+  if (!uid) {
+    onUpdate(null);
+    return () => {};
+  }
+
+  // 1. Immediately return cached profile if present
+  const cached = userProfileCache.get(uid);
+  if (cached) {
+    onUpdate(cached.data);
+  }
+
+  // 2. Register callback to set of listeners for this uid
+  if (!userProfileListeners.has(uid)) {
+    userProfileListeners.set(uid, new Set());
+  }
+  const callbacks = userProfileListeners.get(uid)!;
+  callbacks.add(onUpdate);
+
+  // 3. If listener already attached to Firestore for this uid, reuse it
+  if (!userProfileUnsubscribers.has(uid)) {
+    const userRef = doc(db, 'users', uid);
+    const unsub = onSnapshot(
+      userRef,
+      (snap) => {
+        const profile = snap.exists() ? (snap.data() as UserProfile) : null;
+        userProfileCache.set(uid, { data: profile, timestamp: Date.now() });
+        userProfileListeners.get(uid)?.forEach(cb => cb(profile));
+      },
+      (error) => {
+        console.error('Error listening to user profile:', error);
       }
-    },
-    (error) => {
-      console.error('Error listening to user profile:', error);
+    );
+    userProfileUnsubscribers.set(uid, unsub);
+  }
+
+  // 4. Return cleanup function
+  return () => {
+    const activeCallbacks = userProfileListeners.get(uid);
+    if (activeCallbacks) {
+      activeCallbacks.delete(onUpdate);
+      if (activeCallbacks.size === 0) {
+        userProfileListeners.delete(uid);
+        const unsub = userProfileUnsubscribers.get(uid);
+        if (unsub) {
+          unsub();
+          userProfileUnsubscribers.delete(uid);
+        }
+      }
     }
-  );
+  };
 }
 
 export interface PaymentMethod {
@@ -43,6 +84,18 @@ export interface PaymentMethod {
   type: 'UPI' | 'Bank' | 'Other';
   label: string;
   isDefault: boolean;
+}
+
+export interface UserGroupSummary {
+  groupId: string;
+  name: string;
+  photoUrl?: string;
+  photoThumbnailUrl?: string;
+  groupType?: string;
+  netBalance?: number;
+  role?: 'Admin' | 'Member';
+  lastExpenseDate?: any;
+  updatedAt?: any;
 }
 
 export interface UserProfile {
@@ -71,6 +124,7 @@ export interface UserProfile {
     theme?: string;
     language?: string;
   };
+  groupsSummary?: UserGroupSummary[];
   createdAt?: any;
 }
 
@@ -79,6 +133,7 @@ export interface GroupMemberDetail {
   name: string;
   email?: string;
   photoUrl?: string;
+  photoThumbnailUrl?: string;
   role?: 'Admin' | 'Member';
   joinedAt?: number;
   includeExistingExpenses?: boolean;
@@ -109,6 +164,7 @@ export interface GroupData {
   endDate?: string;
   memberIds: string[];
   members?: Array<{ name: string; email?: string }>;
+  membersDetails?: GroupMemberDetail[];
   memberProfiles?: Record<string, GroupMemberDetail>;
   membersJoinedAt?: Record<string, number>;
   memberExistingExpensesPreference?: Record<string, boolean>;
@@ -996,13 +1052,20 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
     if (!user) throw new Error('Unauthenticated');
 
     const expenseRef = doc(collection(db, 'expenses'));
+    const subcollExpenseRef = doc(db, 'groups', expense.groupId, 'expenses', expenseRef.id);
+    
     const expenseData = {
       ...expense,
       expenseId: expenseRef.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
     };
-    await setDoc(expenseRef, expenseData);
+
+    // Write to both subcollection & legacy top-level for 100% backward compatibility
+    await Promise.all([
+      setDoc(expenseRef, expenseData),
+      setDoc(subcollExpenseRef, expenseData)
+    ]);
 
     // Notify other group members
     try {

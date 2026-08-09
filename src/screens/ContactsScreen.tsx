@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -275,10 +276,14 @@ export default function ContactsScreen() {
       ) : (
         <FlatList
           data={filteredContacts}
-          keyExtractor={(item) => item.phone}
+          keyExtractor={(item, index) => item.phone || `contact-${index}`}
           renderItem={renderContact}
           ListHeaderComponent={HeaderComponent}
           contentContainerStyle={styles.list}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             searchQuery ? (
               <View style={styles.noResults}>

@@ -34,18 +34,26 @@ if (Platform.OS === 'web') {
   document.head.append(style);
 }
 
+import * as SplashScreen from 'expo-splash-screen';
+import { InteractionManager } from 'react-native';
+
+// Keep splash screen visible while loading resources
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 function MainAppContent() {
   const { colors, isDark } = useTheme();
 
   React.useEffect(() => {
-    // 3. Request permissions and sync Push Token on startup (Native only)
-    if (Platform.OS !== 'web') {
-      try {
-        NotificationService.requestUserPermission();
-      } catch (e) {
-        console.warn('Push notification permission failed:', e);
+    // Defer non-critical push notification permissions after UI mount
+    InteractionManager.runAfterInteractions(() => {
+      if (Platform.OS !== 'web') {
+        try {
+          NotificationService.requestUserPermission();
+        } catch (e) {
+          console.warn('Push notification permission failed:', e);
+        }
       }
-    }
+    });
   }, []);
 
   return (
@@ -80,13 +88,14 @@ export default function App() {
     ...Ionicons.font,
   });
 
+  React.useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded]);
+
   if (!fontsLoaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#24389C', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#FFFFFF" />
-        <Text style={{ color: '#fff', marginTop: 16 }}>Loading SplitMate Fonts...</Text>
-      </View>
-    );
+    return null;
   }
 
   return (

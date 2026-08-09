@@ -8,6 +8,7 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   ActivityIndicator,
+  InteractionManager,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -106,31 +107,39 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const unsubActivity = subscribeUserActivityFeed(groups.map(g => g.groupId), (activities) => {
-      setRecentActivities(activities.slice(0, 5));
-    });
+    let unsubActivity: (() => void) | undefined;
+    let unsubNotifications: (() => void) | undefined;
+    let unsubInsights: (() => void) | undefined;
+    let unsubProfile: (() => void) | undefined;
 
-    const unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
-      setUnreadNotifications(notifList.filter(n => !n.isRead && !n.read));
-    });
+    const task = InteractionManager.runAfterInteractions(() => {
+      unsubActivity = subscribeUserActivityFeed(groups.map(g => g.groupId), (activities) => {
+        setRecentActivities(activities.slice(0, 5));
+      });
 
-    const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);
+      unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
+        setUnreadNotifications(notifList.filter(n => !n.isRead && !n.read));
+      });
 
-    const unsubProfile = subscribeToUserProfile(currentUser.uid, (data) => {
-      if (data) {
-        if (data.name) setFirstName(data.name.split(' ')[0]);
-        setUserPhoto(data.photoUrl || '');
-        setUserPhotoThumb(data.photoThumbnailUrl || '');
-      }
+      unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);
+
+      unsubProfile = subscribeToUserProfile(currentUser.uid, (data) => {
+        if (data) {
+          if (data.name) setFirstName(data.name.split(' ')[0]);
+          setUserPhoto(data.photoUrl || '');
+          setUserPhotoThumb(data.photoThumbnailUrl || '');
+        }
+      });
     });
 
     return () => {
-      unsubActivity();
-      unsubNotifications();
-      unsubInsights();
-      unsubProfile();
+      task.cancel();
+      if (unsubActivity) unsubActivity();
+      if (unsubNotifications) unsubNotifications();
+      if (unsubInsights) unsubInsights();
+      if (unsubProfile) unsubProfile();
     };
-  }, [currentUser, groups.length]);
+  }, [currentUser?.uid, groups.length]);
 
   const handleActionCTA = () => {
     switch (actionState.priority) {

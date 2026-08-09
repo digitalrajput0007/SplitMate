@@ -132,7 +132,7 @@ export default function GroupsScreen() {
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
-  const renderGroupCard = (item: any, isOwner: boolean) => {
+  const renderGroupCard = React.useCallback((item: any, isOwner: boolean) => {
     const myShare = groupBalances[item.groupId] || 0;
     let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
     let balanceAmount = 'Settled up';
@@ -178,7 +178,7 @@ export default function GroupsScreen() {
         }
       />
     );
-  };
+  }, [groupBalances, allUsersMap, navigation]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

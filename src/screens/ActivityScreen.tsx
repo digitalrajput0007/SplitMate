@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   ActivityIndicator,
   StatusBar as RNStatusBar,
   Platform,
@@ -97,23 +98,57 @@ export default function ActivityScreen() {
     };
   };
 
+  const renderActivityItem = ({ item }: { item: ActivityItem }) => {
+    const actor = getActorInfo(item.actorUid);
+    return (
+      <View style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+        <SmartImage
+          uri={actor.photo || undefined}
+          thumbnailUri={actor.thumb || undefined}
+          name={actor.name}
+          mode="thumbnail"
+          size={44}
+          fallbackIcon="person"
+          style={styles.avatarImg}
+        />
+        <View style={styles.feedContent}>
+          <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
+            <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.title}</Text>
+          </Text>
+          <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
+          <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
+        </View>
+        {item.amount > 0 && (
+          <View style={styles.feedRight}>
+            <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
+              {formatCurrency(item.amount)}
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const HeaderComponent = () => (
+    <View style={{ marginBottom: Spacing.md }}>
+      <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
+      <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Real-time timeline of your group activity</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
-        <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Real-time timeline of your group activity</Text>
-
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing timeline...</Text>
-          </View>
-        ) : activities.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing timeline...</Text>
+        </View>
+      ) : activities.length === 0 ? (
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}>
+          <HeaderComponent />
           <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
             <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
               <MaterialIcons name="history" size={48} color={colors.outline} />
@@ -123,45 +158,21 @@ export default function ActivityScreen() {
               New expenses, settlements, and groups will appear here as they happen.
             </Text>
           </View>
-        ) : (
-          <View style={styles.feedList}>
-            {activities.map((item) => {
-              const actor = getActorInfo(item.actorUid);
-              return (
-                <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                  {/* Actor Avatar */}
-                  <SmartImage
-                    uri={actor.photo || undefined}
-                    thumbnailUri={actor.thumb || undefined}
-                    name={actor.name}
-                    mode="thumbnail"
-                    size={44}
-                    fallbackIcon="person"
-                    style={styles.avatarImg}
-                  />
-
-                  <View style={styles.feedContent}>
-                    <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
-                      <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
-                      <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.title}</Text>
-                    </Text>
-                    <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
-                    <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
-                  </View>
-
-                  {item.amount > 0 && (
-                    <View style={styles.feedRight}>
-                      <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
-                        {formatCurrency(item.amount)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={activities}
+          keyExtractor={(item) => item.id}
+          renderItem={renderActivityItem}
+          ListHeaderComponent={HeaderComponent}
+          contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
+      )}
     </SafeAreaView>
   );
 }
