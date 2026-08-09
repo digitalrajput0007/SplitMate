@@ -145,6 +145,10 @@ function MainTabNavigator() {
 }
 
 import { subscribeToUserProfile } from '../services/firestoreService';
+import { NotificationService } from '../services/NotificationService';
+
+import { createNavigationContainerRef } from '@react-navigation/native';
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 export default function AppNavigator() {
   const { colors, isDark } = useTheme();
@@ -155,6 +159,23 @@ export default function AppNavigator() {
   const [userStatus, setUserStatus] = React.useState<{ isVerified: boolean; hasProfile: boolean } | null>(null);
 
   React.useEffect(() => {
+    // Register global notification listeners for deep-linking
+    const unsubNotif = NotificationService.setupListeners({
+      navigate: (name: any, params?: any) => {
+        if (navigationRef.isReady()) {
+          navigationRef.navigate(name, params);
+        } else {
+          console.warn('[Navigation] Navigation ref not ready yet');
+        }
+      }
+    });
+
+    return () => {
+      unsubNotif();
+    };
+  }, []);
+
+  React.useEffect(() => {
     let unsubProfile: (() => void) | undefined;
 
     const unsubAuth = onAuthStateChanged(auth, (authUser) => {
@@ -163,6 +184,10 @@ export default function AppNavigator() {
 
       if (authUser) {
         setLoadingProfile(true);
+        // Sync push token to Firestore for logged in user
+        NotificationService.requestUserPermission().catch(e => 
+          console.warn('[NotificationService] Failed to sync push token on auth:', e)
+        );
         // Use real-time listener for profile to detect verification/setup changes instantly
         unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
           console.log("[Auth] Profile update received:", profile ? "found" : "not found");
@@ -208,9 +233,9 @@ export default function AppNavigator() {
   };
 
   return (
-    <NavigationContainer theme={navTheme} key={user ? `auth-${userStatus?.hasProfile}` : 'unauth'}>
+    <NavigationContainer ref={navigationRef} theme={navTheme}>
       <Stack.Navigator
-        initialRouteName={!user ? "SignIn" : (!userStatus?.isVerified ? "EmailVerificationOTP" : (!userStatus?.hasProfile ? "ProfileSetup" : "MainTabs"))}
+        initialRouteName={!user ? "Splash" : (!userStatus?.isVerified ? "EmailVerificationOTP" : (!userStatus?.hasProfile ? "ProfileSetup" : "MainTabs"))}
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',

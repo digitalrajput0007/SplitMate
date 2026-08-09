@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#24389C"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true
@@ -19,8 +19,12 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#24389C"
       },
-      "package": "com.splitmate.app",
+      "package": "com.splitmate.newapp",
       "googleServicesFile": "./google-services.json",
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#24389C"
+      },
       "permissions": [
         "READ_CONTACTS",
         "WRITE_CONTACTS",
@@ -38,6 +42,13 @@
       "@react-native-google-signin/google-signin",
       "expo-localization",
       "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#24389C"
+        }
+      ],
       [
         "expo-contacts",
         {

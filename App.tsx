@@ -4,10 +4,11 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import AppNavigator from './src/navigation/AppNavigator';
+import { NotificationService } from './src/services/NotificationService';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { SecurityProvider } from './src/context/SecurityContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { NotificationService } from './src/services/NotificationService';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 
 // 5. Config expo-notifications at the root
 try {
@@ -75,6 +76,8 @@ export default function App() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    ...MaterialIcons.font,
+    ...Ionicons.font,
   });
 
   if (!fontsLoaded) {

@@ -1,4 +1,4 @@
-package com.splitmate.app
+package com.splitmate.newapp
 
 import android.os.Build
 import android.os.Bundle

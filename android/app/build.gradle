@@ -86,7 +86,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.splitmate.app'
+    namespace 'com.splitmate.newapp'
     defaultConfig {
         applicationId 'com.splitmate.newapp'
         minSdkVersion rootProject.ext.minSdkVersion

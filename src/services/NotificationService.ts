@@ -67,6 +67,19 @@ export const NotificationService = {
         return null;
       }
 
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'Default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#24389C',
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          sound: 'default',
+          enableVibrate: true,
+          showBadge: true,
+        });
+      }
+
       // Try Expo Push Token first, fallback to Native FCM Device Token
       let token: string | null = null;
       try {
@@ -83,11 +96,12 @@ export const NotificationService = {
       // Sync token to Firestore
       const user = auth.currentUser;
       if (user && token) {
-        await updateDoc(doc(db, 'users', user.uid), {
+        await setDoc(doc(db, 'users', user.uid), {
           pushToken: token,
           fcmToken: token,
           updatedAt: serverTimestamp()
-        });
+        }, { merge: true });
+        console.log(`[NotificationService] Synced push token for user ${user.uid}:`, token);
       }
       return token;
     } catch (e) {
@@ -120,10 +134,36 @@ export const NotificationService = {
   },
 
   handleNotificationNavigation(data: any, navigation: any) {
-    if (!data) return;
-    if (data.groupId) {
-      navigation.navigate('GroupDetail', { groupId: data.groupId, groupName: data.groupName || 'Group' });
-    }
+    if (!data || !navigation) return;
+    console.log('[NotificationService] Navigating with payload data:', data);
+
+    setTimeout(() => {
+      try {
+        const type = data.type || data.notificationType;
+
+        if (type === 'GROUP_INVITE' || type === 'group_invitation') {
+          navigation.navigate('Notifications');
+        } else if (type === 'SETTLEMENT' || type === 'REMINDER' || type === 'payment_reminder') {
+          if (data.groupId) {
+            navigation.navigate('GroupDetail', {
+              groupId: data.groupId,
+              groupName: data.groupName || 'Group'
+            });
+          } else {
+            navigation.navigate('SettlementCenter');
+          }
+        } else if (data.groupId) {
+          navigation.navigate('GroupDetail', {
+            groupId: data.groupId,
+            groupName: data.groupName || 'Group'
+          });
+        } else {
+          navigation.navigate('Notifications');
+        }
+      } catch (err) {
+        console.error('[NotificationService] Navigation error:', err);
+      }
+    }, 200);
   },
 
   /**
@@ -164,26 +204,35 @@ export const NotificationService = {
       }
 
       // Send Push via Expo Push API if pushToken is available
-      if (pushToken && (pushToken.startsWith('ExponentPushToken') || pushToken.startsWith('ExpoPushToken'))) {
-        await fetch('https://exp.host/--/api/v2/push/send', {
+      if (pushToken) {
+        console.log(`[NotificationService] Sending push notification to token: ${pushToken}`);
+        
+        let pushPayload: any = {
+          to: pushToken,
+          sound: 'default',
+          title: payload.title,
+          body: payload.message,
+          data: {
+            ...payload.data,
+            type: payload.type,
+          },
+          priority: 'high',
+          channelId: 'default',
+        };
+
+        const response = await fetch('https://exp.host/--/api/v2/push/send', {
           method: 'POST',
           headers: {
             'Accept': 'application/json',
             'Accept-encoding': 'gzip, deflate',
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            to: pushToken,
-            sound: 'default',
-            title: payload.title,
-            body: payload.message,
-            data: {
-              ...payload.data,
-              type: payload.type,
-            },
-            priority: 'high',
-          }),
+          body: JSON.stringify(pushPayload),
         });
+        const resData = await response.json();
+        console.log('[NotificationService] Expo Push response:', resData);
+      } else {
+        console.warn(`[NotificationService] Cannot send push notification. Missing pushToken for user ${targetUserId}`);
       }
     } catch (e) {
       console.error('NotifyUser Error:', e);
