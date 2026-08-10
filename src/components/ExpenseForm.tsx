@@ -20,6 +20,15 @@ import { Image } from 'react-native';
 import { SmartImage } from './SmartImage';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
+import { Switch } from 'react-native';
+
+export interface RecurringConfig {
+  isRecurring: boolean;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  startDate: string; // 'YYYY-MM-DD'
+  endDate: string | null; // 'YYYY-MM-DD' | null
+}
+
 export interface ExpenseFormData {
   title: string;
   amount: number;
@@ -30,6 +39,7 @@ export interface ExpenseFormData {
   date?: string;
   notes?: string;
   receiptUrl?: string;
+  recurringConfig?: RecurringConfig;
 }
 
 interface Member {
@@ -132,6 +142,13 @@ export default function ExpenseForm({
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
+
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+  const [startDate, setStartDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
   const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
   const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
@@ -292,6 +309,13 @@ export default function ExpenseForm({
     const splitDetails = calculateSplitDetails();
     if (!splitDetails) return;
 
+    const formatDateStr = (d: Date): string => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
     const data: ExpenseFormData = {
       title: description.trim(),
       amount: parsedAmount,
@@ -302,6 +326,14 @@ export default function ExpenseForm({
       date: date.toISOString(),
       notes: notes.trim(),
       receiptUrl: initialData?.receiptUrl || '',
+      recurringConfig: isRecurring
+        ? {
+            isRecurring: true,
+            frequency,
+            startDate: formatDateStr(startDate),
+            endDate: endDate ? formatDateStr(endDate) : null,
+          }
+        : undefined,
     };
 
     onSubmit(data);
@@ -312,7 +344,12 @@ export default function ExpenseForm({
   };
 
   return (
-    <ScrollView style={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={[styles.form, { backgroundColor: colors.background }]}
+      contentContainerStyle={{ backgroundColor: colors.background }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       {/* Amount Input */}
       <View style={[styles.amountCard, { backgroundColor: colors.primaryContainer }]}>
         <Text style={[styles.amountLabel, { color: colors.onPrimaryContainer }]}>Total Amount</Text>
@@ -547,6 +584,131 @@ export default function ExpenseForm({
         )}
       </View>
 
+      {/* Recurring Expense Section */}
+      <View style={[styles.field, styles.recurringCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+        <View style={styles.recurringRow}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={[styles.recurringTitle, { color: colors.onSurface }]}>Make this a recurring expense</Text>
+            <Text style={[styles.recurringSub, { color: colors.onSurfaceVariant }]}>
+              Automatically create future expenses on schedule
+            </Text>
+          </View>
+          <Switch
+            value={isRecurring}
+            onValueChange={setIsRecurring}
+            trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryContainer }}
+            thumbColor={isRecurring ? colors.primary : colors.outline}
+          />
+        </View>
+
+        {isRecurring && (
+          <View style={styles.recurringConfigSection}>
+            <View style={[styles.recurringDivider, { backgroundColor: colors.divider }]} />
+
+            {/* Frequency Pills */}
+            <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant, marginTop: 4 }]}>Repeat Frequency</Text>
+            <View style={styles.frequencyRow}>
+              {(['weekly', 'monthly', 'yearly'] as const).map((freq) => (
+                <TouchableOpacity
+                  key={freq}
+                  style={[
+                    styles.freqPill,
+                    {
+                      backgroundColor: frequency === freq ? colors.primaryContainer : colors.surfaceContainerLow,
+                      borderColor: frequency === freq ? colors.primary : colors.outlineVariant,
+                    },
+                  ]}
+                  onPress={() => setFrequency(freq)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.freqText,
+                      {
+                        color: frequency === freq ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                        fontWeight: frequency === freq ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Start Date & End Date Row */}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Start Date</Text>
+                <TouchableOpacity
+                  style={[styles.textInput, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLow, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 }]}
+                  onPress={() => setShowStartDatePicker(true)}
+                >
+                  <Text style={{ color: colors.onSurface, fontSize: 13 }}>{formatDateShort(startDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.primary} />
+                </TouchableOpacity>
+                {showStartDatePicker && (
+                  <DateTimePicker
+                    value={startDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      setShowStartDatePicker(false);
+                      if (selectedDate) setStartDate(selectedDate);
+                    }}
+                  />
+                )}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>End Date (Optional)</Text>
+                <TouchableOpacity
+                  style={[styles.textInput, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLow, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 }]}
+                  onPress={() => setShowEndDatePicker(true)}
+                >
+                  <Text style={{ color: endDate ? colors.onSurface : colors.outline, fontSize: 13 }}>
+                    {endDate ? formatDateShort(endDate) : 'No End Date'}
+                  </Text>
+                  {endDate ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setEndDate(null);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialIcons name="cancel" size={16} color={colors.outline} />
+                    </TouchableOpacity>
+                  ) : (
+                    <MaterialIcons name="calendar-today" size={16} color={colors.outline} />
+                  )}
+                </TouchableOpacity>
+                {showEndDatePicker && (
+                  <DateTimePicker
+                    value={endDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={startDate}
+                    onChange={(event, selectedDate) => {
+                      setShowEndDatePicker(false);
+                      if (selectedDate) setEndDate(selectedDate);
+                    }}
+                  />
+                )}
+              </View>
+            </View>
+
+            {/* Summary Text Box */}
+            <View style={[styles.summaryBox, { backgroundColor: colors.primaryContainer }]}>
+              <MaterialIcons name="repeat" size={18} color={colors.primary} />
+              <Text style={[styles.summaryText, { color: colors.onPrimaryContainer }]}>
+                {`Repeats ${frequency} starting ${formatDateShort(startDate)}${endDate ? ` until ${formatDateShort(endDate)}` : ''}`}
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+
       {/* Submit Button */}
       <TouchableOpacity
         style={[styles.submitBtn, { backgroundColor: colors.primary }, submitting && { opacity: 0.6 }]}
@@ -726,4 +888,61 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   submitBtnText: { ...Typography.titleMd, fontWeight: '700' },
+  recurringCard: {
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+  },
+  recurringRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recurringTitle: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  recurringSub: {
+    ...Typography.labelMd,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  recurringConfigSection: {
+    marginTop: 8,
+  },
+  recurringDivider: {
+    height: 1,
+    marginVertical: 10,
+  },
+  frequencyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  freqPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freqText: {
+    ...Typography.labelMd,
+  },
+  summaryBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: BorderRadius.md,
+    marginTop: 12,
+  },
+  summaryText: {
+    ...Typography.labelMd,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
 });

@@ -181,13 +181,15 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
 
     const unsubAuth = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
+        setLoadingProfile(true);
         const isGoogleUser = authUser.providerData.some(p => p.providerId === 'google.com');
 
-        // Check if user already has a complete profile in Firestore
+        // Check if user already completed profile setup in Firestore or Auth displayName
         let hasCompleteProfile = false;
         try {
           const profile = await getUserProfileFromFirestore(authUser.uid);
-          if (profile && (profile as any).name && (profile as any).mobile) {
+          const name = (profile as any)?.name || authUser.displayName;
+          if (name && typeof name === 'string' && name.trim() !== '') {
             hasCompleteProfile = true;
           }
         } catch (e) {
@@ -213,7 +215,8 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         if (!unsubProfile) {
           unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
             if (profile) {
-              const complete = !!((profile as any)?.name && (profile as any)?.mobile);
+              const name = (profile as any)?.name || authUser.displayName;
+              const complete = !!(name && typeof name === 'string' && name.trim() !== '');
               setUserStatus({
                 isVerified: authUser.emailVerified || isGoogleUser || (profile as any)?.emailVerified || (profile as any)?.isVerified || false,
                 hasProfile: complete,
@@ -244,7 +247,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
     };
   }, []);
 
-  if (initializing || security.isLoading) {
+  if (initializing || loadingProfile || security.isLoading) {
     return null;
   }
 

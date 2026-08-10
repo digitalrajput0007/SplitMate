@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
   Image,
   ActivityIndicator,
   Alert,
@@ -18,6 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
@@ -33,6 +35,7 @@ import { SmartImage } from '../components/SmartImage';
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
 export default function ProfileSetupScreen({ navigation, route }: Props) {
+  const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
 
   const [name, setName] = useState('');
@@ -170,7 +173,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           photoUrl: photoUrl || currentUser?.photoURL || '',
           photoThumbnailUrl: photoThumbnailUrl,
           photoMetadata: photoMetadata,
-          paymentHandle: paymentHandle.trim(),
+          paymentHandle: paymentHandle ? paymentHandle.trim() : '',
           dob: formattedDob,
           mobile: fullMobile,
         });
@@ -187,164 +190,174 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Setup Profile</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={[styles.title, { color: colors.onBackground }]}>Setup Profile</Text>
 
-        {/* Avatar Section matching initials placeholder & camera badge */}
-        <View style={styles.avatarContainer}>
-          <TouchableOpacity style={styles.avatarWrapper} onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
-            <View style={styles.avatarCircle}>
-              <SmartImage
-                uri={photoUrl || undefined}
-                thumbnailUri={photoThumbnailUrl || undefined}
-                name={name}
-                size={120}
-                fallbackIcon="person"
-              />
-              {isUploading && (
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }]}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{Math.round(progress)}%</Text>
-                </View>
+          {/* Avatar Section matching initials placeholder & camera badge */}
+          <View style={styles.avatarContainer}>
+            <TouchableOpacity style={styles.avatarWrapper} onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
+              <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHigh }]}>
+                <SmartImage
+                  uri={photoUrl || undefined}
+                  thumbnailUri={photoThumbnailUrl || undefined}
+                  name={name}
+                  size={120}
+                  fallbackIcon="person"
+                />
+                {isUploading && (
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }]}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{Math.round(progress)}%</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+                <MaterialIcons name="camera-alt" size={18} color={colors.onPrimary} />
+              </View>
+            </TouchableOpacity>
+
+            {photoUrl ? (
+              <TouchableOpacity onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} style={styles.removePhotoBtn}>
+                <Text style={[styles.removePhotoText, { color: colors.error }]}>Remove Photo</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {/* Form Container */}
+          <View style={styles.formContainer}>
+            {/* Full Name */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Full Name <Text style={{ color: colors.error }}>*</Text>
+              </Text>
+              <View style={[styles.inputBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <TextInput
+                  style={[styles.inputText, { color: colors.onSurface }]}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g. Rahul Sharma"
+                  placeholderTextColor={colors.outline}
+                />
+              </View>
+            </View>
+
+            {/* Date of Birth */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Date of Birth <Text style={{ color: colors.error }}>*</Text>
+              </Text>
+              <TouchableOpacity
+                style={[styles.inputBoxRow, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.inputText, { color: dobDate ? colors.onSurface : colors.outline }]}>
+                  {dobDate
+                    ? `${String(dobDate.getDate()).padStart(2, '0')}-${String(dobDate.getMonth() + 1).padStart(2, '0')}-${dobDate.getFullYear()}`
+                    : 'DD-MM-YYYY'}
+                </Text>
+                <MaterialIcons name="calendar-today" size={20} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+
+              {showDatePicker && typeof DateTimePicker === 'function' && (
+                <DateTimePicker
+                  value={dobDate || new Date(1998, 0, 1)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  maximumDate={new Date()}
+                  onChange={(event: any, selectedDate?: Date) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setDobDate(selectedDate);
+                  }}
+                />
               )}
             </View>
-            <View style={styles.cameraBadge}>
-              <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
 
-          {photoUrl ? (
-            <TouchableOpacity onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} style={styles.removePhotoBtn}>
-              <Text style={styles.removePhotoText}>Remove Photo</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Form Container */}
-        <View style={styles.formContainer}>
-          {/* Full Name */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Full Name <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <View style={styles.inputBox}>
-              <TextInput
-                style={styles.inputText}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Rahul Sharma"
-                placeholderTextColor="#A0A0A0"
-              />
-            </View>
-          </View>
-
-          {/* Date of Birth */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Date of Birth <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <TouchableOpacity
-              style={styles.inputBoxRow}
-              onPress={() => setShowDatePicker(true)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.inputText, !dobDate && { color: '#A0A0A0' }]}>
-                {dobDate
-                  ? `${String(dobDate.getDate()).padStart(2, '0')}-${String(dobDate.getMonth() + 1).padStart(2, '0')}-${dobDate.getFullYear()}`
-                  : 'DD-MM-YYYY'}
+            {/* Mobile Number */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Mobile Number (10 digits) <Text style={{ color: colors.error }}>*</Text>
               </Text>
-              <MaterialIcons name="calendar-today" size={20} color="#1A1C1C" />
-            </TouchableOpacity>
-
-            {showDatePicker && typeof DateTimePicker === 'function' && (
-              <DateTimePicker
-                value={dobDate || new Date(1998, 0, 1)}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                onChange={(event: any, selectedDate?: Date) => {
-                  setShowDatePicker(false);
-                  if (selectedDate) setDobDate(selectedDate);
-                }}
-              />
-            )}
-          </View>
-
-          {/* Mobile Number */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Mobile Number (10 digits) <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <View style={styles.inputBoxRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Spacing.sm }}>
-                <Text style={{ fontSize: 16, marginRight: 4 }}>🇮🇳</Text>
-                <Text style={[styles.inputText, { fontWeight: '600' }]}>+91</Text>
+              <View style={[styles.inputBoxRow, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Spacing.sm }}>
+                  <Text style={{ fontSize: 16, marginRight: 4 }}>🇮🇳</Text>
+                  <Text style={[styles.inputText, { color: colors.onSurface, fontWeight: '600' }]}>+91</Text>
+                </View>
+                <TextInput
+                  style={[styles.inputText, { flex: 1, color: colors.onSurface }]}
+                  value={mobileNumber}
+                  onChangeText={(val) => {
+                    const cleaned = val.replace(/[^0-9]/g, '').slice(0, 10);
+                    setMobileNumber(cleaned);
+                  }}
+                  placeholder="9876543210"
+                  placeholderTextColor={colors.outline}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
               </View>
-              <TextInput
-                style={[styles.inputText, { flex: 1 }]}
-                value={mobileNumber}
-                onChangeText={(val) => {
-                  const cleaned = val.replace(/[^0-9]/g, '').slice(0, 10);
-                  setMobileNumber(cleaned);
-                }}
-                placeholder="9876543210"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                maxLength={10}
-              />
             </View>
+
+            {/* UPI ID (Optional) */}
+            <View style={styles.fieldGroup}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>UPI ID / Payment Handle</Text>
+                <Text style={{ fontSize: 12, color: colors.outline, fontWeight: '500' }}>(Optional)</Text>
+              </View>
+              <View style={[styles.inputBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <TextInput
+                  style={[styles.inputText, { color: colors.onSurface }]}
+                  value={paymentHandle}
+                  onChangeText={(val) => setPaymentHandle(val.replace(/\s+/g, ''))}
+                  placeholder="user@okhdfcbank"
+                  placeholderTextColor={colors.outline}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              <View style={[styles.upiInfoCard, { backgroundColor: colors.primaryContainer }]}>
+                <MaterialIcons name="info-outline" size={18} color={colors.primary} />
+                <Text style={[styles.upiInfoText, { color: colors.onPrimaryContainer }]}>
+                  Your UPI ID lets group members settle up debts directly to your Google Pay, PhonePe, or Paytm account with one tap!
+                </Text>
+              </View>
+            </View>
+
+            {/* Primary Continue Button */}
+            <TouchableOpacity
+              style={[styles.continueButton, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+              onPress={handleCompleteProfile}
+              activeOpacity={0.85}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <Text style={[styles.continueButtonText, { color: colors.onPrimary }]}>Continue</Text>
+              )}
+            </TouchableOpacity>
           </View>
+        </ScrollView>
 
-          {/* UPI ID (Optional) */}
-          <View style={styles.fieldGroup}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.fieldLabel}>UPI ID / Payment Handle</Text>
-              <Text style={{ fontSize: 12, color: Colors.onSurfaceVariant, fontWeight: '500' }}>(Optional)</Text>
-            </View>
-            <View style={styles.inputBox}>
-              <TextInput
-                style={styles.inputText}
-                value={paymentHandle}
-                onChangeText={(val) => setPaymentHandle(val.replace(/\s+/g, ''))}
-                placeholder="user@okhdfcbank"
-                placeholderTextColor="#A0A0A0"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-            <View style={styles.upiInfoCard}>
-              <MaterialIcons name="info-outline" size={18} color={Colors.primary} />
-              <Text style={styles.upiInfoText}>
-                Your UPI ID lets group members settle up debts directly to your Google Pay, PhonePe, or Paytm account with one tap!
-              </Text>
-            </View>
-          </View>
-
-          {/* Primary Continue Button matching exact blue pill in screenshot */}
-          <TouchableOpacity
-            style={[styles.continueButton, saving && styles.disabledButton]}
-            onPress={handleCompleteProfile}
-            activeOpacity={0.85}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.continueButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      <MediaPickerSheet
-        visible={isPickerVisible}
-        onDismiss={() => setIsPickerVisible(false)}
-        onCamera={takePhoto}
-        onGallery={pickFromGallery}
-        onFiles={browseFiles}
-        onRemove={photoUrl ? removeMedia : undefined}
-      />
+        <MediaPickerSheet
+          visible={isPickerVisible}
+          onDismiss={() => setIsPickerVisible(false)}
+          onCamera={takePhoto}
+          onGallery={pickFromGallery}
+          onFiles={browseFiles}
+          onRemove={photoUrl ? removeMedia : undefined}
+        />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -352,7 +365,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   scroll: {
     flexGrow: 1,

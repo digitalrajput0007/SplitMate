@@ -39,6 +39,7 @@ import {
   addSettlementToFirestore,
   confirmSettlementInFirestore,
   rejectSettlementInFirestore,
+  processDueRecurringExpenses,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { useHomeActions } from '../hooks/useHomeActions';
@@ -69,6 +70,15 @@ export default function HomeScreen() {
   });
   const [showNoGroupsDialog, setShowNoGroupsDialog] = useState(false);
   const [showSelectGroupSheet, setShowSelectGroupSheet] = useState(false);
+
+  // Trigger background process for due recurring expenses idempotently
+  useEffect(() => {
+    if (currentUser) {
+      processDueRecurringExpenses().catch((e) =>
+        console.warn('[Recurring] Background process error:', e)
+      );
+    }
+  }, [currentUser?.uid]);
 
   // Listen to needed user profiles for activity feed
   useEffect(() => {

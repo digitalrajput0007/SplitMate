@@ -56,8 +56,8 @@ function MainAppContent() {
   return (
     <ErrorBoundary>
       <SecurityProvider>
-        <SafeAreaProvider style={{ flex: 1 }}>
-          <StatusBar style={isDark ? "light" : "dark"} />
+        <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
+          <StatusBar style={isDark ? "light" : "dark"} backgroundColor={colors.background} />
           <View style={{ flex: 1, backgroundColor: colors.background }}>
             {Platform.OS === 'web' ? (
               <View style={webStyles.outerContainer}>
@@ -92,9 +92,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-        <MainAppContent />
-      </View>
+      <MainAppContent />
     </ThemeProvider>
   );
 }

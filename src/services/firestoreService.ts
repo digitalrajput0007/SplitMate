@@ -4,13 +4,15 @@ import {
   setDoc, 
   updateDoc,
   getDoc, 
+  getDocFromCache,
   getDocs, 
   deleteDoc, 
   query, 
   where, 
   onSnapshot, 
   serverTimestamp, 
-  orderBy 
+  orderBy,
+  runTransaction
 } from 'firebase/firestore';
 import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
@@ -216,6 +218,27 @@ export interface ExpenseData {
   createdAt?: any;
 }
 
+export interface RecurringExpenseData {
+  recurringExpenseId?: string;
+  groupId: string;
+  title: string;
+  amount: number;
+  paidBy: string;
+  splitBetween: string[];
+  splitDetails: Record<string, number>;
+  splitType?: 'equal' | 'exact' | 'percentage';
+  category?: string;
+  notes?: string;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  startDate: string;
+  endDate: string | null;
+  nextRun: string;
+  active: boolean;
+  createdBy: string;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
 export interface SettlementData {
   settlementId?: string;
   groupId: string;
@@ -375,12 +398,29 @@ export const setUserEmailVerifiedInFirestore = async (uid: string): Promise<void
 
 export const getUserProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
   try {
-    const userRef = doc(db, 'users', uid);
-    // Add 2.5s timeout so network latency or offline Firestore doesn't hang login UI
-    const fetchPromise = getDoc(userRef).then((snap) => (snap.exists() ? (snap.data() as UserProfile) : null));
-    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+    const cached = userProfileCache.get(uid);
+    if (cached?.data) return cached.data;
 
-    return await Promise.race([fetchPromise, timeoutPromise]);
+    const userRef = doc(db, 'users', uid);
+
+    try {
+      const cacheSnap = await getDocFromCache(userRef);
+      if (cacheSnap.exists()) {
+        const prof = cacheSnap.data() as UserProfile;
+        userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
+        return prof;
+      }
+    } catch (cacheErr) {
+      // Not in offline cache, proceed to server
+    }
+
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const prof = snap.data() as UserProfile;
+      userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
+      return prof;
+    }
+    return null;
   } catch (error: any) {
     if (error?.code !== 'unavailable' && !error?.message?.includes('offline')) {
       console.log('Firestore Profile Fetch Notice:', error?.message || error);
@@ -552,13 +592,14 @@ export const createGroupInFirestore = async (
 
     // Filter invited members excluding creator
     const invitedMemberIds = Array.from(new Set(memberIds.filter((id) => id !== currentUser.uid)));
-    const allMemberIds = [currentUser.uid, ...invitedMemberIds];
+    // Only creator is an active member at creation time. Invited members join upon accepting invitation.
+    const initialMemberIds = [currentUser.uid];
 
     const groupRef = doc(collection(db, 'groups'));
     const groupData: GroupData = {
       groupId: groupRef.id,
       name: name.trim(),
-      memberIds: allMemberIds,
+      memberIds: initialMemberIds,
       membersJoinedAt: joinedAtMap,
       memberExistingExpensesPreference: existingExpensesPrefMap,
       createdBy: currentUser.uid,
@@ -636,16 +677,6 @@ export const inviteUserToGroupInFirestore = async (
     const groupSnap = await getDoc(groupRef);
     if (!groupSnap.exists()) throw new Error('Group not found');
     const groupData = groupSnap.data() as GroupData;
-
-    const currentMemberIds = groupData.memberIds || [];
-
-    if (!currentMemberIds.includes(newMemberUid)) {
-      currentMemberIds.push(newMemberUid);
-      await updateDoc(groupRef, {
-        memberIds: currentMemberIds,
-        updatedAt: serverTimestamp(),
-      });
-    }
 
     // Issue a pending invitation for the new user
     console.log(`[Firestore] About to write invitation for user: ${newMemberUid}`);
@@ -802,10 +833,29 @@ export const deleteGroupFromFirestore = async (groupId: string) => {
   try {
     console.log(`[Firestore] Starting cascading delete/cancel for group: ${groupId}`);
 
-    // 0. Fetch group to get member IDs (important for finding invitations reliably)
+    // 0. Fetch group to get member IDs and group name
     const groupRef = doc(db, 'groups', groupId);
     const groupSnap = await getDoc(groupRef);
-    const memberIds = groupSnap.exists() ? (groupSnap.data() as GroupData).memberIds || [] : [];
+    const groupData = groupSnap.exists() ? (groupSnap.data() as GroupData) : null;
+    const memberIds = groupData?.memberIds || [];
+    const groupName = groupData?.name || 'Group';
+
+    // Send notification to other members that group was deleted
+    const currentUser = auth.currentUser;
+    if (currentUser && memberIds.length > 0) {
+      const otherMembers = memberIds.filter((id) => id !== currentUser.uid);
+      const ownerName = currentUser.displayName || 'The owner';
+
+      const notifyOps = otherMembers.map((uid) =>
+        NotificationService.notifyUser(uid, {
+          type: 'GROUP_DELETED',
+          title: 'Group Deleted',
+          message: `${ownerName} deleted the group "${groupName}"`,
+          data: { groupId, groupName },
+        }).catch(() => {})
+      );
+      await Promise.all(notifyOps);
+    }
 
     // 1. Find all invitations associated with this group
     const invIdsToProcess = new Set<string>();
@@ -1042,38 +1092,47 @@ export const declineGroupInvitation = async (invitationId: string, groupId: stri
 
 export const cancelGroupInvitation = async (groupId: string, toUserId: string) => {
   try {
-    // 1. Find and delete the pending invitation
-    const invQuery = query(
-      collection(db, 'groupInvitations'),
-      where('groupId', '==', groupId),
-      where('toUserId', '==', toUserId),
-      where('status', '==', 'pending')
-    );
-    const invSnap = await getDocs(invQuery);
-    for (const docSnap of invSnap.docs) {
-      try {
-        // Try to update status first (to hide it immediately)
-        await updateDoc(docSnap.ref, {
-          status: 'cancelled',
-          updatedAt: serverTimestamp()
-        });
-        // Then try to delete
-        await deleteDoc(docSnap.ref);
-      } catch (err) {
-        console.warn(`[Firestore] Non-critical: Could not fully delete invitation ${docSnap.id}. It is now marked as cancelled.`);
+    // 1. Find and delete/cancel all invitations for this user and group
+    try {
+      const invQuery = query(
+        collection(db, 'groupInvitations'),
+        where('groupId', '==', groupId)
+      );
+      const invSnap = await getDocs(invQuery);
+      for (const docSnap of invSnap.docs) {
+        const data = docSnap.data();
+        if (data.toUserId === toUserId) {
+          try {
+            await updateDoc(docSnap.ref, {
+              status: 'cancelled',
+              updatedAt: serverTimestamp(),
+            });
+            await deleteDoc(docSnap.ref);
+          } catch (e) {
+            console.warn(`[Firestore] Non-critical error deleting invitation ${docSnap.id}:`, e);
+          }
+        }
       }
+    } catch (e) {
+      console.warn('[Firestore] Error querying invitations to cancel:', e);
     }
 
-    // 2. Remove user from group memberIds
-    const groupRef = doc(db, 'groups', groupId);
-    const groupSnap = await getDoc(groupRef);
-    if (groupSnap.exists()) {
-      const gData = groupSnap.data() as GroupData;
-      const updatedMemberIds = (gData.memberIds || []).filter((id) => id !== toUserId);
-      await updateDoc(groupRef, {
-        memberIds: updatedMemberIds,
-        updatedAt: serverTimestamp(),
-      });
+    // 2. Remove user from group memberIds if present
+    try {
+      const groupRef = doc(db, 'groups', groupId);
+      const groupSnap = await getDoc(groupRef);
+      if (groupSnap.exists()) {
+        const gData = groupSnap.data() as GroupData;
+        if (gData.memberIds && gData.memberIds.includes(toUserId)) {
+          const updatedMemberIds = gData.memberIds.filter((id) => id !== toUserId);
+          await updateDoc(groupRef, {
+            memberIds: updatedMemberIds,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[Firestore] Error updating group memberIds on invitation cancel:', e);
     }
   } catch (error) {
     console.error('Error cancelling group invitation:', error);
@@ -1194,8 +1253,9 @@ export const subscribeToUserGroups = (
       invSnap.docs.forEach((docSnap) => {
         const data = docSnap.data();
         const existingStatus = invitationMap.get(data.groupId);
-        // Prioritize 'accepted' status if any invitation for this group was accepted
-        if (data.status === 'accepted' || existingStatus !== 'accepted') {
+        if (data.status === 'accepted') {
+          invitationMap.set(data.groupId, 'accepted');
+        } else if (existingStatus !== 'accepted') {
           invitationMap.set(data.groupId, data.status);
         }
       });
@@ -1205,12 +1265,11 @@ export const subscribeToUserGroups = (
         const data = docSnap.data() as GroupData;
         const gId = docSnap.id;
 
-        // Creator always sees group. Invited users only see group if invitation status is 'accepted'
-        const isCreator = data.createdBy === uid;
+        const isMember = (data.memberIds || []).includes(uid);
         const invStatus = invitationMap.get(gId);
-        const isAccepted = invStatus === 'accepted';
+        const isPendingOrDeclined = invStatus === 'pending' || invStatus === 'declined' || invStatus === 'cancelled';
 
-        if (isCreator || isAccepted) {
+        if (isMember && !isPendingOrDeclined) {
           groups.push({
             balanceLabel: 'settled',
             balanceAmount: formatCurrency(0),
@@ -1281,17 +1340,15 @@ export const subscribeToAcceptedMembers = (
       const user = userMap.get(uid);
       if (!user) return;
 
-      if (uid === createdBy) {
+      const status = invMap.get(uid);
+      if (status === 'pending') {
+        pending.push(user);
+      } else if (status === 'declined') {
+        declined.push(user);
+      } else if (status === 'accepted' || uid === createdBy || memberIds.includes(uid)) {
         accepted.push(user);
       } else {
-        const status = invMap.get(uid);
-        if (status === 'accepted') {
-          accepted.push(user);
-        } else if (status === 'declined') {
-          declined.push(user);
-        } else {
-          pending.push(user);
-        }
+        pending.push(user);
       }
     });
 
@@ -1350,6 +1407,11 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
     const user = auth.currentUser;
     if (!user) throw new Error('Unauthenticated');
 
+    const groupSnap = await getDoc(doc(db, 'groups', expense.groupId));
+    if (!groupSnap.exists()) {
+      throw new Error('This group has been deleted by the admin.');
+    }
+
     const expenseRef = doc(collection(db, 'expenses'));
     const subcollExpenseRef = doc(db, 'groups', expense.groupId, 'expenses', expenseRef.id);
 
@@ -1392,6 +1454,167 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
   } catch (error) {
     console.error('Error adding expense to Firestore:', error);
     throw error;
+  }
+};
+
+// -------------------------------------------------------------
+// RECURRING EXPENSES COLLECTION & PROCESSING
+// -------------------------------------------------------------
+
+export const calculateNextRunDate = (dateStr: string, frequency: 'weekly' | 'monthly' | 'yearly'): string => {
+  const parts = dateStr.split('-');
+  const yyyy = parseInt(parts[0], 10);
+  const mm = parseInt(parts[1], 10);
+  const dd = parseInt(parts[2], 10);
+  const d = new Date(yyyy, mm - 1, dd);
+
+  if (frequency === 'weekly') {
+    d.setDate(d.getDate() + 7);
+  } else if (frequency === 'monthly') {
+    const targetMonth = d.getMonth() + 1;
+    d.setMonth(targetMonth);
+    if (d.getMonth() > targetMonth % 12) {
+      d.setDate(0);
+    }
+  } else if (frequency === 'yearly') {
+    d.setFullYear(d.getFullYear() + 1);
+  }
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+export const createRecurringExpenseInFirestore = async (data: {
+  groupId: string;
+  title: string;
+  amount: number;
+  paidBy: string;
+  splitDetails: Record<string, number>;
+  splitType?: 'equal' | 'exact' | 'percentage';
+  category?: string;
+  notes?: string;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  startDate: string;
+  endDate: string | null;
+}): Promise<string> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Unauthenticated');
+
+  const recRef = doc(collection(db, 'recurringExpenses'));
+  const splitBetween = Object.keys(data.splitDetails || {}).filter(
+    (uid) => (data.splitDetails[uid] || 0) > 0
+  );
+
+  const nextRunDate = calculateNextRunDate(data.startDate, data.frequency);
+
+  const payload: RecurringExpenseData = {
+    recurringExpenseId: recRef.id,
+    groupId: data.groupId,
+    title: data.title,
+    amount: data.amount,
+    paidBy: data.paidBy,
+    splitBetween,
+    splitDetails: data.splitDetails,
+    splitType: data.splitType || 'equal',
+    category: data.category || '📦 Other',
+    notes: data.notes || '',
+    frequency: data.frequency,
+    startDate: data.startDate,
+    endDate: data.endDate || null,
+    nextRun: nextRunDate,
+    active: true,
+    createdBy: user.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(recRef, payload);
+  return recRef.id;
+};
+
+export const processDueRecurringExpenses = async (): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Single-field query for active recurring expenses (avoids needing a Firestore composite index)
+    const q = query(
+      collection(db, 'recurringExpenses'),
+      where('active', '==', true)
+    );
+
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+
+    // Filter in-memory for expenses due on or before today
+    const dueDocs = snap.docs.filter((d) => {
+      const rec = d.data() as RecurringExpenseData;
+      return rec.nextRun && rec.nextRun <= todayStr;
+    });
+
+    if (dueDocs.length === 0) return;
+
+    for (const recDoc of dueDocs) {
+      const rec = recDoc.data() as RecurringExpenseData;
+      if (!rec.active || !rec.recurringExpenseId) continue;
+
+      const runDate = rec.nextRun;
+
+      if (rec.endDate && runDate > rec.endDate) {
+        await updateDoc(doc(db, 'recurringExpenses', rec.recurringExpenseId), {
+          active: false,
+          updatedAt: serverTimestamp(),
+        });
+        continue;
+      }
+
+      // Idempotency check with deterministic ID
+      const deterministicId = `rec_${rec.recurringExpenseId}_${runDate}`;
+      const expenseRef = doc(db, 'expenses', deterministicId);
+      const subcollRef = doc(db, 'groups', rec.groupId, 'expenses', deterministicId);
+
+      try {
+        await runTransaction(db, async (transaction) => {
+          const expSnap = await transaction.get(expenseRef);
+          if (!expSnap.exists()) {
+            const expenseData: ExpenseData = {
+              expenseId: deterministicId,
+              groupId: rec.groupId,
+              title: rec.title,
+              amount: rec.amount,
+              paidBy: rec.paidBy,
+              createdBy: rec.createdBy,
+              splitType: rec.splitType || 'equal',
+              splitDetails: rec.splitDetails,
+              category: rec.category || '📦 Other',
+              date: new Date(runDate).toISOString(),
+              notes: rec.notes ? `${rec.notes} (Recurring)` : 'Recurring expense',
+              createdAt: serverTimestamp(),
+            };
+
+            transaction.set(expenseRef, expenseData);
+            transaction.set(subcollRef, expenseData);
+          }
+
+          const nextRunDate = calculateNextRunDate(runDate, rec.frequency);
+          const isExpired = rec.endDate ? nextRunDate > rec.endDate : false;
+
+          transaction.update(doc(db, 'recurringExpenses', rec.recurringExpenseId!), {
+            nextRun: nextRunDate,
+            active: !isExpired,
+            updatedAt: serverTimestamp(),
+          });
+        });
+      } catch (trErr) {
+        console.error(`[Recurring] Idempotency transaction error for ${rec.recurringExpenseId}:`, trErr);
+      }
+    }
+  } catch (err) {
+    console.error('[Recurring] Error in processDueRecurringExpenses:', err);
   }
 };
 

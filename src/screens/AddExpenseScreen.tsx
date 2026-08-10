@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { Spacing, Typography } from '../constants/theme';
 import { auth } from '../config/firebase';
 import {
   addExpenseToFirestore,
+  createRecurringExpenseInFirestore,
   subscribeToGroupDetail,
   subscribeToAcceptedMembers,
   getAllUsersFromFirestore,
@@ -41,6 +42,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [receiptMetadata, setReceiptMetadata] = useState<any>(null);
+  const groupOwnerRef = useRef<string | null>(null);
 
   const {
     isUploading,
@@ -67,12 +69,39 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       return;
     }
 
+    const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
+      if (data) {
+        if (data.createdBy) groupOwnerRef.current = data.createdBy;
+      } else {
+        const isOwner = groupOwnerRef.current === currentUser?.uid;
+        if (isOwner) {
+          navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+        } else {
+          Alert.alert(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+                },
+              },
+            ]
+          );
+        }
+      }
+    });
+
     const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted) => {
       setActiveMembers(accepted);
       setLoading(false);
     });
 
-    return () => unsubMembers();
+    return () => {
+      unsubGroup();
+      unsubMembers();
+    };
   }, [groupId]);
 
   const handleSave = async (formData: ExpenseFormData) => {
@@ -84,6 +113,23 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         receiptUrl: receiptUrl,
         receiptMetadata: receiptMetadata,
       });
+
+      if (formData.recurringConfig?.isRecurring) {
+        await createRecurringExpenseInFirestore({
+          groupId: groupId || '',
+          title: formData.title,
+          amount: formData.amount,
+          paidBy: formData.paidBy,
+          splitDetails: formData.splitDetails,
+          splitType: formData.splitType,
+          category: formData.category,
+          notes: formData.notes,
+          frequency: formData.recurringConfig.frequency,
+          startDate: formData.recurringConfig.startDate,
+          endDate: formData.recurringConfig.endDate,
+        });
+      }
+
       navigation.goBack();
     } catch (error: any) {
       console.error('Error adding expense:', error);
@@ -111,7 +157,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Top Header */}

@@ -115,7 +115,7 @@ export default function GroupsScreen() {
       if (activeFilter === 'You Are Owed') if (balance <= 0.05) return false;
       if (activeFilter === 'Settled') if (Math.abs(balance) > 0.05) return false;
 
-      if (activeType && g.groupType !== activeType) return false;
+      if (activeType && (g.groupType || '').toLowerCase() !== activeType.toLowerCase()) return false;
 
       return true;
     };
@@ -128,7 +128,7 @@ export default function GroupsScreen() {
       joined: filteredActive.filter(g => g.createdBy !== currentUser?.uid),
       archived: filteredArchived,
     };
-  }, [groups, archivedGroups, searchQuery, activeFilter, groupBalances, currentUser?.uid]);
+  }, [groups, archivedGroups, searchQuery, activeFilter, activeType, groupBalances, currentUser?.uid]);
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 

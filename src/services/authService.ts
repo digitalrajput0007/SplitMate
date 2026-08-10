@@ -3,6 +3,9 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  updatePassword,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User,
   GoogleAuthProvider,
   signInWithCredential,
@@ -265,4 +268,23 @@ export const signOutUser = async (): Promise<void> => {
 ========================================================= */
 export const getCurrentUser = (): User | null => {
   return auth.currentUser;
+};
+
+/* =========================================================
+   🔑 CHANGE PASSWORD
+========================================================= */
+export const changeUserPassword = async (currentPassword: string, newPassword: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error('No authenticated user found.');
+
+  if (!currentPassword) {
+    throw new Error('Please enter your current password.');
+  }
+
+  // First re-authenticate with current password to verify identity
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+
+  // Then update password
+  await updatePassword(user, newPassword);
 };

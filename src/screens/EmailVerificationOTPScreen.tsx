@@ -184,8 +184,8 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: colors.background }}>
+        <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}>
           <TouchableOpacity style={styles.backBtn} onPress={handleBack}>
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>

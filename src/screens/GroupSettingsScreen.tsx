@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -108,6 +108,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [userExpenses, setUserExpenses] = useState<ExpenseData[]>([]);
   const [userSettlements, setUserSettlements] = useState<SettlementData[]>([]);
+  const isDeletingRef = useRef(false);
 
   const isOwner = group?.createdBy === currentUser?.uid;
 
@@ -124,6 +125,19 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           if (data.endDate) setEndDate(new Date(data.endDate));
           if (data.familyName) setFamilyName(data.familyName);
           if (data.setupMonthlySplit !== undefined) setSetupMonthlySplit(data.setupMonthlySplit);
+        } else if (!isDeletingRef.current) {
+          Alert.alert(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+                },
+              },
+            ]
+          );
         }
       });
 
@@ -472,9 +486,9 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           onPress: async () => {
             try {
               await cancelGroupInvitation(groupId, u.uid);
-              loadMembersStatus(groupId);
               Alert.alert('Success', 'Invitation cancelled successfully.');
-            } catch (e) {
+            } catch (e: any) {
+              console.error('Error cancelling invitation:', e);
               Alert.alert('Error', 'Failed to cancel invitation.');
             }
           },
@@ -496,9 +510,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           style: 'destructive',
           onPress: async () => {
             try {
+              isDeletingRef.current = true;
               await deleteGroupFromFirestore(groupId);
-              navigation.navigate('MainTabs');
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
             } catch (error: any) {
+              isDeletingRef.current = false;
               Alert.alert('Error', error.message || 'Failed to delete group.');
             }
           },

@@ -287,20 +287,6 @@ export default function AccountScreen() {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => navigation.navigate('RecurringExpenses')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
-                <MaterialIcons name="autorenew" size={24} color={colors.primary} />
-              </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Recurring Expenses & Subs</Text>
-              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
-            </TouchableOpacity>
-
-            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
               onPress={() => navigation.navigate('PrivacySecurity')}
               activeOpacity={0.7}
             >

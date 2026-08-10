@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -54,6 +54,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const groupOwnerRef = useRef<string | null>(null);
 
   useEffect(() => {
     initializeInterstitialAd();
@@ -64,7 +65,28 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
     // 1. Subscribe to Group Detail (for Photo and Name)
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
-      setGroup(data);
+      if (data) {
+        setGroup(data);
+        if (data.createdBy) groupOwnerRef.current = data.createdBy;
+      } else {
+        const isOwner = groupOwnerRef.current === currentUid;
+        if (isOwner) {
+          navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+        } else {
+          Alert.alert(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+                },
+              },
+            ]
+          );
+        }
+      }
     });
 
     const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));

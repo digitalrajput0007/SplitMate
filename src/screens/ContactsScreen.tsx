@@ -256,7 +256,7 @@ export default function ContactsScreen() {
         <M3SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search your contacts..."
+          placeholder="Search on SplitMate with phone number"
         />
       </View>
 

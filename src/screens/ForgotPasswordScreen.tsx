@@ -58,10 +58,10 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1, backgroundColor: colors.background }}
       >
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView style={{ flex: 1, backgroundColor: colors.background }} contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>

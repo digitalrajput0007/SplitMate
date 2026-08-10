@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,6 +45,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
   const [pendingMembers, setPendingMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const groupOwnerRef = useRef<string | null>(null);
 
   // Map for easy profile lookups (Reactive)
   const memberProfilesMap = useMemo(() => {
@@ -55,7 +57,28 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
-      if (data) setGroup(data);
+      if (data) {
+        setGroup(data);
+        if (data.createdBy) groupOwnerRef.current = data.createdBy;
+      } else {
+        const isOwner = groupOwnerRef.current === currentUid;
+        if (isOwner) {
+          navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+        } else {
+          Alert.alert(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+                },
+              },
+            ]
+          );
+        }
+      }
     });
 
     const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending) => {
