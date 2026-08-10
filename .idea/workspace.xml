@@ -5,28 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/App.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/android/app/src/main/res/values/styles.xml" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/src/main/res/values/styles.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/context/ThemeContext.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/context/ThemeContext.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/AccountScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/AccountScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/AddExpenseScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/EmailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EmailScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/EmailVerificationOTPScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EmailVerificationOTPScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ForgotPasswordScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ForgotPasswordScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/HomeScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/PrivacySecurityScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/PrivacySecurityScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ResetPasswordOTPScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ResetPasswordOTPScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/SignInScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SignInScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/authService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/authService.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/firestoreService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/firestoreService.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/M3BottomSheet.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/M3BottomSheet.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
