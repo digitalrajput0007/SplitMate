@@ -167,20 +167,11 @@ export default function ProfileEditScreen({ navigation }: Props) {
               </View>
             </TouchableOpacity>
 
-            <View style={styles.photoActions}>
-              <TouchableOpacity onPress={() => setIsPickerVisible(true)}>
-                <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
+            {photoUrl ? (
+              <TouchableOpacity onPress={handleRemovePhoto} style={{ marginTop: 8 }}>
+                <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
-
-              {photoUrl ? (
-                <>
-                  <View style={[styles.actionDivider, { backgroundColor: colors.divider }]} />
-                  <TouchableOpacity onPress={handleRemovePhoto}>
-                    <Text style={[styles.avatarHint, { color: colors.error }]}>Remove</Text>
-                  </TouchableOpacity>
-                </>
-              ) : null}
-            </View>
+            ) : null}
           </View>
 
           {/* Form Fields */}

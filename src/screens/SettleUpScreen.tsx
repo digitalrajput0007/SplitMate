@@ -116,8 +116,13 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   }, [group?.memberIds.join(','), currentUid]);
 
   const simplifiedDebts = useMemo(() => {
-    return simplifyDebts(expenses, settlements, memberProfiles);
-  }, [expenses, settlements, memberProfiles]);
+    const raw = simplifyDebts(expenses, settlements, memberProfiles, group?.memberExistingExpensesPreference);
+    const activeMemberIds = group?.memberIds || [];
+    if (activeMemberIds.length === 0) return raw;
+    return raw.filter(
+      (d) => activeMemberIds.includes(d.fromUserId) && activeMemberIds.includes(d.toUserId)
+    );
+  }, [expenses, settlements, memberProfiles, group?.memberIds, group?.memberExistingExpensesPreference]);
 
   const totalGroupExpense = expenses.reduce((acc, exp) => acc + exp.amount, 0);
   const userTotalPaid = expenses
@@ -164,15 +169,20 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       await addSettlementToFirestore({
         groupId: groupId,
         fromUserId: debt.fromUserId,
+        fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
         toUserId: debt.toUserId,
+        toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
         amount: debt.amount,
-        status: 'completed',
+        status: 'pending',
       });
       
-      Alert.alert('Success', 'Settlement recorded.');
+      Alert.alert(
+        'Settlement Request Sent',
+        `A settlement request has been sent to ${debt.toName}. The balance will be marked settled once they confirm receipt.`
+      );
       showSettleUpInterstitial();
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to record settlement.');
+      Alert.alert('Error', 'Failed to send settlement request.');
     } finally {
       setSettlingId(null);
     }
@@ -210,7 +220,12 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             name={group?.name}
             size={40}
             mode="full"
-            fallbackIcon={group?.groupType === 'Trip' ? 'flight' : 'groups'}
+            fallbackIcon={
+              group?.groupType === 'Trip' ? 'flight' :
+              group?.groupType === 'Family' ? 'home' :
+              group?.groupType === 'Couple' ? 'favorite' :
+              group?.groupType === 'Flatmate' ? 'apartment' : 'groups'
+            }
             style={styles.headerGroupAvatar}
           />
           <View>

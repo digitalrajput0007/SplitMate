@@ -143,6 +143,7 @@ export interface GroupInvitation {
   invitationId?: string;
   groupId: string;
   groupName: string;
+  groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Home' | 'Other';
   groupPhotoUrl?: string;
   groupPhotoThumbnailUrl?: string;
   fromUserId?: string;
@@ -162,6 +163,12 @@ export interface GroupData {
   enableDates?: boolean;
   startDate?: string;
   endDate?: string;
+  enableSettleReminder?: boolean;
+  settleReminderDate?: string;
+  enableBalanceAlert?: boolean;
+  balanceAlertThreshold?: number;
+  enableFlatmateSettleReminder?: boolean;
+  flatmateReminderDate?: string;
   memberIds: string[];
   members?: Array<{ name: string; email?: string }>;
   membersDetails?: GroupMemberDetail[];
@@ -523,6 +530,12 @@ export const createGroupInFirestore = async (
     enableDates?: boolean;
     startDate?: string;
     endDate?: string;
+    enableSettleReminder?: boolean;
+    settleReminderDate?: string;
+    enableBalanceAlert?: boolean;
+    balanceAlertThreshold?: number;
+    enableFlatmateSettleReminder?: boolean;
+    flatmateReminderDate?: string;
   }
 ): Promise<string> => {
   try {
@@ -558,6 +571,12 @@ export const createGroupInFirestore = async (
       ...(extraDetails?.enableDates !== undefined && { enableDates: extraDetails.enableDates }),
       ...(extraDetails?.startDate && { startDate: extraDetails.startDate }),
       ...(extraDetails?.endDate && { endDate: extraDetails.endDate }),
+      ...(extraDetails?.enableSettleReminder !== undefined && { enableSettleReminder: extraDetails.enableSettleReminder }),
+      ...(extraDetails?.settleReminderDate && { settleReminderDate: extraDetails.settleReminderDate }),
+      ...(extraDetails?.enableBalanceAlert !== undefined && { enableBalanceAlert: extraDetails.enableBalanceAlert }),
+      ...(extraDetails?.balanceAlertThreshold !== undefined && { balanceAlertThreshold: extraDetails.balanceAlertThreshold }),
+      ...(extraDetails?.enableFlatmateSettleReminder !== undefined && { enableFlatmateSettleReminder: extraDetails.enableFlatmateSettleReminder }),
+      ...(extraDetails?.flatmateReminderDate && { flatmateReminderDate: extraDetails.flatmateReminderDate }),
     };
 
     await setDoc(groupRef, groupData);
@@ -572,6 +591,7 @@ export const createGroupInFirestore = async (
           invitationId: invRef.id,
           groupId: groupRef.id,
           groupName: name.trim(),
+          groupType: extraDetails?.groupType || 'Other',
           groupPhotoUrl: extraDetails?.photoUrl || '',
           groupPhotoThumbnailUrl: extraDetails?.photoThumbnailUrl || '',
           fromUserId: currentUser.uid,
@@ -603,21 +623,22 @@ export const createGroupInFirestore = async (
   }
 };
 
-export const inviteMemberToGroup = async (
+export const inviteUserToGroupInFirestore = async (
   groupId: string,
   newMemberUid: string,
   includeExistingExpenses: boolean
 ) => {
   try {
     const currentUser = auth.currentUser;
-    if (!currentUser) throw new Error('User not authenticated');
+    if (!currentUser) throw new Error('Unauthenticated');
 
     const groupRef = doc(db, 'groups', groupId);
-    const snap = await getDoc(groupRef);
-    if (!snap.exists()) throw new Error('Group not found');
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Group not found');
+    const groupData = groupSnap.data() as GroupData;
 
-    const groupData = snap.data() as GroupData;
     const currentMemberIds = groupData.memberIds || [];
+
     if (!currentMemberIds.includes(newMemberUid)) {
       currentMemberIds.push(newMemberUid);
       await updateDoc(groupRef, {
@@ -634,6 +655,7 @@ export const inviteMemberToGroup = async (
         invitationId: invRef.id,
         groupId,
         groupName: groupData.name || 'Group',
+        groupType: groupData.groupType || 'Other',
         groupPhotoUrl: groupData.photoUrl || '',
         groupPhotoThumbnailUrl: groupData.photoThumbnailUrl || '',
         fromUserId: currentUser.uid,
@@ -658,6 +680,74 @@ export const inviteMemberToGroup = async (
     }
   } catch (error) {
     console.error('Error inviting member to group:', error);
+    throw error;
+  }
+};
+
+export const reinviteUserToGroupInFirestore = async (groupId: string, invitedUid: string) => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('Unauthenticated');
+
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (!groupSnap.exists()) throw new Error('Group not found');
+    const groupData = groupSnap.data() as GroupData;
+
+    // Delete or update existing invitation document(s) for this user & group
+    try {
+      const invQuery = query(
+        collection(db, 'groupInvitations'),
+        where('groupId', '==', groupId),
+        where('toUserId', '==', invitedUid)
+      );
+      const invSnap = await getDocs(invQuery);
+      for (const invDoc of invSnap.docs) {
+        try {
+          await deleteDoc(invDoc.ref);
+        } catch (e) {
+          await updateDoc(invDoc.ref, { status: 'cancelled' }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn('Non-fatal error cleaning up old invitation:', e);
+    }
+
+    // Create fresh new invitation document
+    const invRef = doc(collection(db, 'groupInvitations'));
+    const invData = sanitizeData({
+      invitationId: invRef.id,
+      groupId,
+      groupName: groupData.name || 'Group',
+      groupType: groupData.groupType || 'Other',
+      groupPhotoUrl: groupData.photoUrl || '',
+      groupPhotoThumbnailUrl: groupData.photoThumbnailUrl || '',
+      fromUserId: currentUser.uid,
+      toUserId: invitedUid,
+      invitedByName: currentUser.displayName || 'Group Admin',
+      includeExistingExpenses: true,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    });
+
+    await setDoc(invRef, invData);
+    console.log(`✓ RE-INVITATION WRITTEN SUCCESSFULLY for user ${invitedUid} (invId: ${invRef.id})`);
+
+    // Send push notification
+    (async () => {
+      try {
+        await NotificationService.notifyUser(invitedUid, {
+          type: 'GROUP_INVITE',
+          title: 'Group Invitation',
+          message: `${currentUser.displayName || 'Someone'} re-invited you to "${groupData.name || 'Group'}"`,
+          data: { groupId, groupName: groupData.name || 'Group' }
+        });
+      } catch (err) {
+        console.error('Re-invite notification error:', err);
+      }
+    })();
+  } catch (error: any) {
+    console.error('Error re-inviting user to group:', error);
     throw error;
   }
 };
@@ -796,8 +886,10 @@ export const addMemberToGroupWithPreference = async (
   newMemberUid: string,
   includeExistingExpenses: boolean
 ) => {
-  return inviteMemberToGroup(groupId, newMemberUid, includeExistingExpenses);
+  return inviteUserToGroupInFirestore(groupId, newMemberUid, includeExistingExpenses);
 };
+
+export const inviteMemberToGroup = inviteUserToGroupInFirestore;
 
 export const acceptGroupInvitation = async (invitationId: string, groupId: string) => {
   try {
@@ -816,26 +908,87 @@ export const acceptGroupInvitation = async (invitationId: string, groupId: strin
       updatedAt: serverTimestamp(),
     });
 
-    // Update group membersJoinedAt and memberExistingExpensesPreference
+    // Update group memberIds, membersJoinedAt and memberExistingExpensesPreference
     const groupRef = doc(db, 'groups', groupId);
     const groupSnap = await getDoc(groupRef);
     if (groupSnap.exists()) {
       const gData = groupSnap.data() as GroupData;
+      const currentMemberIds = gData.memberIds || [];
+      if (!currentMemberIds.includes(currentUser.uid)) {
+        currentMemberIds.push(currentUser.uid);
+      }
+
       const membersJoinedAt = gData.membersJoinedAt || {};
       membersJoinedAt[currentUser.uid] = Date.now();
 
       const memberExistingExpensesPreference = gData.memberExistingExpensesPreference || {};
-      memberExistingExpensesPreference[currentUser.uid] = invData.includeExistingExpenses !== false;
+      const shouldIncludeExisting = invData.includeExistingExpenses !== false;
+      memberExistingExpensesPreference[currentUser.uid] = shouldIncludeExisting;
 
       await updateDoc(groupRef, {
+        memberIds: currentMemberIds,
         membersJoinedAt,
         memberExistingExpensesPreference,
         updatedAt: serverTimestamp(),
       });
+
+      if (shouldIncludeExisting) {
+        await redistributeExistingGroupExpenses(groupId, currentUser.uid, currentMemberIds, memberExistingExpensesPreference);
+      }
     }
   } catch (error) {
     console.error('Error accepting group invitation:', error);
     throw error;
+  }
+};
+
+export const redistributeExistingGroupExpenses = async (
+  groupId: string,
+  newMemberUid: string,
+  allMemberIds: string[],
+  preferences?: Record<string, boolean>
+) => {
+  try {
+    console.log(`[Firestore] Redistributing existing expenses for group ${groupId} to include member ${newMemberUid}`);
+    const expQuery = query(collection(db, 'expenses'), where('groupId', '==', groupId));
+    const expSnap = await getDocs(expQuery);
+
+    const updateOps = expSnap.docs.map(async (expDoc) => {
+      const expData = expDoc.data() as ExpenseData;
+      const totalAmount = expData.amount || 0;
+      const currentSplits = expData.splitDetails || {};
+
+      const participatingUids = allMemberIds.filter((uid) => {
+        if (uid in currentSplits && currentSplits[uid] > 0) return true;
+        const pref = preferences?.[uid] ?? true;
+        return pref !== false;
+      });
+
+      if (participatingUids.length === 0) return;
+
+      const equalShare = Math.round((totalAmount / participatingUids.length) * 100) / 100;
+      const newSplitDetails: Record<string, number> = {};
+      let runningSum = 0;
+
+      participatingUids.forEach((uid, idx) => {
+        if (idx === participatingUids.length - 1) {
+          newSplitDetails[uid] = Math.round((totalAmount - runningSum) * 100) / 100;
+        } else {
+          newSplitDetails[uid] = equalShare;
+          runningSum += equalShare;
+        }
+      });
+
+      await updateDoc(expDoc.ref, {
+        splitDetails: newSplitDetails,
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    await Promise.all(updateOps);
+    console.log(`✓ Existing expenses redistributed for group ${groupId}`);
+  } catch (error) {
+    console.error('Error redistributing existing group expenses:', error);
   }
 };
 
@@ -845,10 +998,30 @@ export const declineGroupInvitation = async (invitationId: string, groupId: stri
     if (!currentUser) throw new Error('User not authenticated');
 
     const invRef = doc(db, 'groupInvitations', invitationId);
+    const invSnap = await getDoc(invRef);
+    const invData = invSnap.exists() ? (invSnap.data() as GroupInvitation) : null;
+
     await updateDoc(invRef, {
       status: 'declined',
       updatedAt: serverTimestamp(),
     });
+
+    // Notify the inviter / group admin about the rejection
+    (async () => {
+      try {
+        const inviterUid = invData?.fromUserId;
+        if (inviterUid && inviterUid !== currentUser.uid) {
+          await NotificationService.notifyUser(inviterUid, {
+            type: 'GROUP_INVITE',
+            title: 'Invitation Declined',
+            message: `${currentUser.displayName || 'Someone'} declined the invitation to "${invData?.groupName || 'Group'}"`,
+            data: { groupId, groupName: invData?.groupName }
+          });
+        }
+      } catch (notifErr) {
+        console.error('Error sending decline invitation notification:', notifErr);
+      }
+    })();
 
     // Remove user from group memberIds
     const groupRef = doc(db, 'groups', groupId);
@@ -904,6 +1077,59 @@ export const cancelGroupInvitation = async (groupId: string, toUserId: string) =
     }
   } catch (error) {
     console.error('Error cancelling group invitation:', error);
+    throw error;
+  }
+};
+
+export const removeMemberFromGroup = async (groupId: string, memberUid: string) => {
+  try {
+    console.log(`[Firestore] Removing member ${memberUid} from group ${groupId}`);
+
+    // 1. Find and delete ALL invitations for this user+group (any status)
+    const invQuery = query(
+      collection(db, 'groupInvitations'),
+      where('groupId', '==', groupId),
+      where('toUserId', '==', memberUid)
+    );
+    const invSnap = await getDocs(invQuery);
+    console.log(`[Firestore] Found ${invSnap.docs.length} invitation docs to clean up`);
+
+    for (const docSnap of invSnap.docs) {
+      try {
+        await updateDoc(docSnap.ref, {
+          status: 'removed',
+          updatedAt: serverTimestamp()
+        });
+        await deleteDoc(docSnap.ref);
+      } catch (err) {
+        console.warn(`[Firestore] Non-critical: Could not fully delete invitation ${docSnap.id}.`);
+      }
+    }
+
+    // 2. Remove user from group memberIds
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    if (groupSnap.exists()) {
+      const gData = groupSnap.data() as GroupData;
+      const updatedMemberIds = (gData.memberIds || []).filter((id) => id !== memberUid);
+
+      // Also clean up membersJoinedAt and memberExistingExpensesPreference
+      const membersJoinedAt = gData.membersJoinedAt || {};
+      delete membersJoinedAt[memberUid];
+
+      const memberExistingExpensesPreference = gData.memberExistingExpensesPreference || {};
+      delete memberExistingExpensesPreference[memberUid];
+
+      await updateDoc(groupRef, {
+        memberIds: updatedMemberIds,
+        membersJoinedAt,
+        memberExistingExpensesPreference,
+        updatedAt: serverTimestamp(),
+      });
+      console.log(`✓ Member ${memberUid} removed from group ${groupId}. Remaining members: ${updatedMemberIds.length}`);
+    }
+  } catch (error) {
+    console.error('Error removing member from group:', error);
     throw error;
   }
 };
@@ -967,7 +1193,11 @@ export const subscribeToUserGroups = (
       const invitationMap = new Map<string, string>(); // groupId -> status
       invSnap.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        invitationMap.set(data.groupId, data.status);
+        const existingStatus = invitationMap.get(data.groupId);
+        // Prioritize 'accepted' status if any invitation for this group was accepted
+        if (data.status === 'accepted' || existingStatus !== 'accepted') {
+          invitationMap.set(data.groupId, data.status);
+        }
       });
 
       const groups: GroupData[] = [];
@@ -1000,7 +1230,7 @@ export const subscribeToUserGroups = (
 
 export const subscribeToAcceptedMembers = (
   groupId: string,
-  onUpdate: (members: UserProfile[], pending: UserProfile[]) => void
+  onUpdate: (members: UserProfile[], pending: UserProfile[], declined: UserProfile[]) => void
 ) => {
   const groupRef = doc(db, 'groups', groupId);
   const invQuery = query(collection(db, 'groupInvitations'), where('groupId', '==', groupId));
@@ -1010,6 +1240,25 @@ export const subscribeToAcceptedMembers = (
   let userMap = new Map<string, UserProfile>();
   let userUnsubs = new Map<string, () => void>();
 
+  const syncUserListeners = () => {
+    const ids = new Set<string>(currentGroup?.memberIds || []);
+    allInvitations.forEach(d => {
+      if (d.toUserId) ids.add(d.toUserId);
+    });
+
+    ids.forEach(uid => {
+      if (!userUnsubs.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            userMap.set(uid, profile);
+            notify();
+          }
+        });
+        userUnsubs.set(uid, unsub);
+      }
+    });
+  };
+
   const notify = () => {
     if (!currentGroup) return;
 
@@ -1017,14 +1266,18 @@ export const subscribeToAcceptedMembers = (
     const createdBy = currentGroup.createdBy;
 
     const invMap = new Map<string, string>(); // toUserId -> status
+    const allUserUids = new Set<string>(memberIds);
+
     allInvitations.forEach((d) => {
       invMap.set(d.toUserId, d.status);
+      if (d.toUserId) allUserUids.add(d.toUserId);
     });
 
     const accepted: UserProfile[] = [];
     const pending: UserProfile[] = [];
+    const declined: UserProfile[] = [];
 
-    memberIds.forEach((uid) => {
+    allUserUids.forEach((uid) => {
       const user = userMap.get(uid);
       if (!user) return;
 
@@ -1034,38 +1287,28 @@ export const subscribeToAcceptedMembers = (
         const status = invMap.get(uid);
         if (status === 'accepted') {
           accepted.push(user);
-        } else if (!status || status === 'pending') {
+        } else if (status === 'declined') {
+          declined.push(user);
+        } else {
           pending.push(user);
         }
       }
     });
 
-    onUpdate(accepted, pending);
+    onUpdate(accepted, pending, declined);
   };
 
   const unsubGroup = onSnapshot(groupRef, (snap) => {
     if (snap.exists()) {
       currentGroup = snap.data() as GroupData;
-      const ids = currentGroup.memberIds || [];
-
-      // Setup listeners for each user
-      ids.forEach(uid => {
-        if (!userUnsubs.has(uid)) {
-          const unsub = subscribeToUserProfile(uid, (profile) => {
-            if (profile) {
-              userMap.set(uid, profile);
-              notify();
-            }
-          });
-          userUnsubs.set(uid, unsub);
-        }
-      });
+      syncUserListeners();
       notify();
     }
   });
 
   const unsubInvs = onSnapshot(invQuery, (snap) => {
     allInvitations = snap.docs.map(d => d.data());
+    syncUserListeners();
     notify();
   });
 
@@ -1109,7 +1352,7 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
 
     const expenseRef = doc(collection(db, 'expenses'));
     const subcollExpenseRef = doc(db, 'groups', expense.groupId, 'expenses', expenseRef.id);
-    
+
     const expenseData = {
       ...expense,
       expenseId: expenseRef.id,
@@ -1117,32 +1360,33 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
       createdAt: serverTimestamp(),
     };
 
-    // Write to both subcollection & legacy top-level for 100% backward compatibility
-    await Promise.all([
-      setDoc(expenseRef, expenseData),
-      setDoc(subcollExpenseRef, expenseData)
-    ]);
+    // Write primary document instantly & write subcollection in background
+    const writePromise = setDoc(expenseRef, expenseData);
+    setDoc(subcollExpenseRef, expenseData).catch(() => {});
+    await writePromise;
 
-    // Notify other group members
-    try {
-      const groupSnap = await getDoc(doc(db, 'groups', expense.groupId));
-      if (groupSnap.exists()) {
-        const gData = groupSnap.data() as GroupData;
-        const otherMembers = (gData.memberIds || []).filter(uid => uid !== user.uid);
+    // Send notifications asynchronously in background (Non-blocking)
+    (async () => {
+      try {
+        const groupSnap = await getDoc(doc(db, 'groups', expense.groupId));
+        if (groupSnap.exists()) {
+          const gData = groupSnap.data() as GroupData;
+          const otherMembers = (gData.memberIds || []).filter(uid => uid !== user.uid);
 
-        const notifyOps = otherMembers.map(uid =>
-          NotificationService.notifyUser(uid, {
-            type: 'EXPENSE',
-            title: 'New Expense',
-            message: `${user.displayName || 'Someone'} added ₹${expense.amount} for "${expense.title}" in ${gData.name}`,
-            data: { groupId: expense.groupId, expenseId: expenseRef.id, groupName: gData.name }
-          })
-        );
-        await Promise.all(notifyOps);
+          const notifyOps = otherMembers.map(uid =>
+            NotificationService.notifyUser(uid, {
+              type: 'EXPENSE',
+              title: 'New Expense',
+              message: `${user.displayName || 'Someone'} added ₹${expense.amount} for "${expense.title}" in ${gData.name}`,
+              data: { groupId: expense.groupId, expenseId: expenseRef.id, groupName: gData.name }
+            })
+          );
+          await Promise.all(notifyOps);
+        }
+      } catch (notifErr) {
+        console.error('Error sending expense notifications in background:', notifErr);
       }
-    } catch (notifErr) {
-      console.error('Error sending expense notifications:', notifErr);
-    }
+    })();
 
     return expenseRef.id;
   } catch (error) {
@@ -1153,8 +1397,73 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
 
 export const updateExpenseInFirestore = async (expenseId: string, data: Partial<ExpenseData>) => {
   try {
+    const user = auth.currentUser;
     const expenseRef = doc(db, 'expenses', expenseId);
-    await setDoc(expenseRef, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+
+    const updatePayload = { ...data, updatedAt: serverTimestamp() };
+    
+    // Instantly execute primary write
+    const writePromise = setDoc(expenseRef, updatePayload, { merge: true });
+
+    // Perform old snapshot comparison, activity logging, and notification dispatch asynchronously in background
+    (async () => {
+      try {
+        const oldSnap = await getDoc(expenseRef);
+        const oldExpense = oldSnap.exists() ? (oldSnap.data() as ExpenseData) : null;
+
+        if (oldExpense?.groupId) {
+          const subcollExpenseRef = doc(db, 'groups', oldExpense.groupId, 'expenses', expenseId);
+          await setDoc(subcollExpenseRef, updatePayload, { merge: true }).catch(() => {});
+
+          if (user) {
+            const changes: string[] = [];
+            if (data.amount !== undefined && data.amount !== oldExpense.amount) {
+              changes.push(`Amount: ₹${oldExpense.amount} → ₹${data.amount}`);
+            }
+            if (data.title !== undefined && data.title.trim() !== oldExpense.title) {
+              changes.push(`Title: "${oldExpense.title}" → "${data.title.trim()}"`);
+            }
+            if (data.category !== undefined && data.category !== oldExpense.category) {
+              changes.push(`Category: ${oldExpense.category} → ${data.category}`);
+            }
+            const changeSummary = changes.length > 0 ? changes.join(', ') : 'Details updated';
+
+            // Log activity
+            const actRef = doc(collection(db, 'activities'));
+            setDoc(actRef, {
+              activityId: actRef.id,
+              groupId: oldExpense.groupId,
+              type: 'expense',
+              title: `Updated "${data.title || oldExpense.title}" (${changeSummary})`,
+              actorUid: user.uid,
+              amount: data.amount !== undefined ? data.amount : oldExpense.amount,
+              createdAt: serverTimestamp(),
+            }).catch(() => {});
+
+            // Send notification to all other group members showing changed values
+            const groupSnap = await getDoc(doc(db, 'groups', oldExpense.groupId));
+            if (groupSnap.exists()) {
+              const gData = groupSnap.data() as GroupData;
+              const otherMembers = (gData.memberIds || []).filter((uid) => uid !== user.uid);
+
+              const notifyOps = otherMembers.map((uid) =>
+                NotificationService.notifyUser(uid, {
+                  type: 'EXPENSE',
+                  title: 'Expense Updated',
+                  message: `${user.displayName || 'Someone'} updated "${oldExpense.title}" in ${gData.name} (${changeSummary})`,
+                  data: { groupId: oldExpense.groupId, expenseId, groupName: gData.name },
+                })
+              );
+              await Promise.all(notifyOps);
+            }
+          }
+        }
+      } catch (bgErr) {
+        console.warn('[Firestore] Background expense update task warning:', bgErr);
+      }
+    })();
+
+    await writePromise;
   } catch (error) {
     console.error('Error updating expense:', error);
     throw error;
@@ -1201,23 +1510,34 @@ export const addCommentToExpense = async (expenseId: string, text: string) => {
     };
     await setDoc(commentRef, commentData);
 
-    // Notify expense creator
-    try {
-      const expSnap = await getDoc(doc(db, 'expenses', expenseId));
-      if (expSnap.exists()) {
-        const expData = expSnap.data() as ExpenseData;
-        if (expData.createdBy && expData.createdBy !== user.uid) {
-          await NotificationService.notifyUser(expData.createdBy, {
-            type: 'COMMENT',
-            title: 'New Comment',
-            message: `${user.displayName || 'Someone'} commented on your expense "${expData.title}"`,
-            data: { groupId: expData.groupId, expenseId, groupName: '' } // Fetch group name if needed
-          });
+    // Notify all group members in background
+    (async () => {
+      try {
+        const expSnap = await getDoc(doc(db, 'expenses', expenseId));
+        if (expSnap.exists()) {
+          const expData = expSnap.data() as ExpenseData;
+          if (expData.groupId) {
+            const groupSnap = await getDoc(doc(db, 'groups', expData.groupId));
+            if (groupSnap.exists()) {
+              const gData = groupSnap.data() as GroupData;
+              const otherMembers = (gData.memberIds || []).filter((uid) => uid !== user.uid);
+
+              const notifyOps = otherMembers.map((uid) =>
+                NotificationService.notifyUser(uid, {
+                  type: 'COMMENT',
+                  title: `Comment on "${expData.title}"`,
+                  message: `${user.displayName || 'Someone'} commented: "${text.trim()}" in ${gData.name}`,
+                  data: { groupId: expData.groupId, expenseId, groupName: gData.name },
+                })
+              );
+              await Promise.all(notifyOps);
+            }
+          }
         }
+      } catch (e) {
+        console.error('[Firestore] Comment notification error:', e);
       }
-    } catch (e) {
-      console.error('Comment notif error:', e);
-    }
+    })();
 
     return true;
   } catch (error) {
@@ -1266,33 +1586,121 @@ export const subscribeToGroupExpenses = (
 // -------------------------------------------------------------
 export const addSettlementToFirestore = async (settlement: Omit<SettlementData, 'settlementId' | 'createdAt'>): Promise<string> => {
   try {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Unauthenticated');
+
     const settlementRef = doc(collection(db, 'settlements'));
     const settlementData = {
       ...settlement,
+      status: settlement.status || 'pending',
       settlementId: settlementRef.id,
       createdAt: serverTimestamp(),
     };
     await setDoc(settlementRef, settlementData);
 
-    // Notify recipient
-    try {
-      const user = auth.currentUser;
-      if (user) {
+    // Notify recipient (the ower/receiver) to confirm
+    (async () => {
+      try {
         const recipientId = settlement.toUserId === user.uid ? settlement.fromUserId : settlement.toUserId;
         await NotificationService.notifyUser(recipientId, {
           type: 'SETTLEMENT',
-          title: 'Settlement Done',
-          message: `${user.displayName || 'Someone'} settled ₹${settlement.amount}`,
-          data: { groupId: settlement.groupId }
+          title: 'Settlement Confirmation Required',
+          message: `${settlement.fromName || user.displayName || 'Someone'} paid ₹${settlement.amount}. Tap to confirm receipt.`,
+          data: { groupId: settlement.groupId, settlementId: settlementRef.id, amount: settlement.amount }
         });
+      } catch (e) {
+        console.error('Settlement notif error:', e);
       }
-    } catch (e) {
-      console.error('Settlement notif error:', e);
-    }
+    })();
 
     return settlementRef.id;
   } catch (error) {
     console.error('Error adding settlement to Firestore:', error);
+    throw error;
+  }
+};
+
+export const confirmSettlementInFirestore = async (settlementId: string): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    const sRef = doc(db, 'settlements', settlementId);
+    const sSnap = await getDoc(sRef);
+
+    if (!sSnap.exists()) throw new Error('Settlement not found');
+    const sData = sSnap.data() as SettlementData;
+
+    await updateDoc(sRef, {
+      status: 'completed',
+      confirmedAt: serverTimestamp(),
+      confirmedBy: user?.uid || '',
+    });
+
+    // Log activity
+    (async () => {
+      try {
+        const actRef = doc(collection(db, 'activities'));
+        await setDoc(actRef, {
+          activityId: actRef.id,
+          groupId: sData.groupId,
+          type: 'settlement',
+          title: `Settled ₹${sData.amount} between ${sData.fromName || 'Member'} and ${sData.toName || 'Member'}`,
+          actorUid: user?.uid || '',
+          amount: sData.amount,
+          createdAt: serverTimestamp(),
+        });
+      } catch (actErr) {
+        console.warn('Error logging settlement activity:', actErr);
+      }
+    })();
+
+    // Notify sender that settlement was confirmed
+    if (user && sData.fromUserId && sData.fromUserId !== user.uid) {
+      (async () => {
+        try {
+          await NotificationService.notifyUser(sData.fromUserId, {
+            type: 'SETTLEMENT',
+            title: 'Settlement Confirmed',
+            message: `${user.displayName || sData.toName || 'Someone'} confirmed your settlement of ₹${sData.amount}`,
+            data: { groupId: sData.groupId, settlementId },
+          });
+        } catch (notifErr) {
+          console.error('Error notifying settlement sender:', notifErr);
+        }
+      })();
+    }
+  } catch (error) {
+    console.error('Error confirming settlement:', error);
+    throw error;
+  }
+};
+
+export const rejectSettlementInFirestore = async (settlementId: string): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    const sRef = doc(db, 'settlements', settlementId);
+    const sSnap = await getDoc(sRef);
+
+    if (!sSnap.exists()) return;
+    const sData = sSnap.data() as SettlementData;
+
+    await deleteDoc(sRef);
+
+    if (user && sData.fromUserId && sData.fromUserId !== user.uid) {
+      (async () => {
+        try {
+          await NotificationService.notifyUser(sData.fromUserId, {
+            type: 'SETTLEMENT',
+            title: 'Settlement Declined',
+            message: `${user.displayName || sData.toName || 'Someone'} declined your settlement request of ₹${sData.amount}`,
+            data: { groupId: sData.groupId },
+          });
+        } catch (notifErr) {
+          console.error('Error notifying settlement rejection:', notifErr);
+        }
+      })();
+    }
+  } catch (error) {
+    console.error('Error rejecting settlement:', error);
     throw error;
   }
 };
@@ -1482,6 +1890,46 @@ export const subscribeUserActivityFeed = (
   };
 };
 
+export const getEffectiveSplitDetails = (
+  exp: ExpenseData,
+  groupData?: GroupData
+): Record<string, number> => {
+  const rawSplits = exp.splitDetails || {};
+  if (!groupData) return rawSplits;
+
+  const memberIds = groupData.memberIds || [];
+  if (memberIds.length === 0) return rawSplits;
+
+  const preferences = groupData.memberExistingExpensesPreference || {};
+
+  // Find all participating members for this expense
+  const participatingUids = memberIds.filter((uid) => {
+    if (uid in rawSplits && rawSplits[uid] > 0) return true;
+    const pref = preferences[uid] ?? true;
+    return pref !== false;
+  });
+
+  if (participatingUids.length === 0 || Object.keys(rawSplits).length >= participatingUids.length) {
+    return rawSplits;
+  }
+
+  const totalAmount = exp.amount || 0;
+  const equalShare = Math.round((totalAmount / participatingUids.length) * 100) / 100;
+  const effective: Record<string, number> = {};
+  let runningSum = 0;
+
+  participatingUids.forEach((uid, idx) => {
+    if (idx === participatingUids.length - 1) {
+      effective[uid] = Math.round((totalAmount - runningSum) * 100) / 100;
+    } else {
+      effective[uid] = equalShare;
+      runningSum += equalShare;
+    }
+  });
+
+  return effective;
+};
+
 export const subscribeUserGroupBalances = (
   uid: string,
   onBalancesUpdate: (balances: Record<string, number>) => void
@@ -1493,19 +1941,14 @@ export const subscribeUserGroupBalances = (
 
   const expensesQuery = query(collection(db, 'expenses'));
   const settlementsQuery = query(collection(db, 'settlements'));
+  const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
 
   let allExpenses: ExpenseData[] = [];
   let allSettlements: SettlementData[] = [];
+  let userGroupsMap = new Map<string, GroupData>();
 
-  const recalculate = async () => {
+  const recalculate = () => {
     const groupBalances: Record<string, number> = {};
-
-    // Fetch user groups for preferences
-    const userGroupsSnap = await getDocs(query(collection(db, 'groups'), where('memberIds', 'array-contains', uid)));
-    const userGroupsMap = new Map<string, GroupData>();
-    userGroupsSnap.docs.forEach((docSnap) => {
-      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
-    });
 
     allExpenses.forEach((exp) => {
       const gId = exp.groupId;
@@ -1518,9 +1961,9 @@ export const subscribeUserGroupBalances = (
 
       if (!includeExisting && joinedAt && expTime < joinedAt) return;
 
-      const splitDetails = exp.splitDetails || {};
+      const effectiveSplits = getEffectiveSplitDetails(exp, groupData);
       const isPayer = exp.paidBy === uid;
-      const userShare = splitDetails[uid] || 0;
+      const userShare = effectiveSplits[uid] || 0;
 
       if (!(gId in groupBalances)) groupBalances[gId] = 0;
 
@@ -1562,9 +2005,18 @@ export const subscribeUserGroupBalances = (
     recalculate();
   });
 
+  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    userGroupsMap.clear();
+    snap.docs.forEach((docSnap) => {
+      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+    });
+    recalculate();
+  });
+
   return () => {
     unsub1();
     unsub2();
+    unsub3();
   };
 };
 
@@ -1588,23 +2040,20 @@ export const subscribeUserBalanceSummary = (
 
   const expensesQuery = query(collection(db, 'expenses'));
   const settlementsQuery = query(collection(db, 'settlements'));
+  const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
 
   let allExpenses: ExpenseData[] = [];
   let allSettlements: SettlementData[] = [];
+  let userGroupsMap = new Map<string, GroupData>();
 
-  const recalculateBalances = async () => {
+  const recalculateBalances = () => {
     let owedSum = 0;
     let oweSum = 0;
 
-    // Fetch user groups to retrieve joinedAt timestamps and includeExistingExpenses preferences
-    const userGroupsSnap = await getDocs(query(collection(db, 'groups'), where('memberIds', 'array-contains', uid)));
-    const userGroupsMap = new Map<string, GroupData>();
-    userGroupsSnap.docs.forEach((docSnap) => {
-      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
-    });
-
     allExpenses.forEach((exp) => {
       const groupData = userGroupsMap.get(exp.groupId);
+      if (!groupData) return;
+
       const joinedAt = groupData?.membersJoinedAt?.[uid];
       const includeExisting = groupData?.memberExistingExpensesPreference?.[uid] ?? true;
 
@@ -1615,9 +2064,9 @@ export const subscribeUserBalanceSummary = (
         return;
       }
 
-      const splitDetails = exp.splitDetails || {};
+      const effectiveSplits = getEffectiveSplitDetails(exp, groupData);
       const isPayer = exp.paidBy === uid;
-      const userShare = splitDetails[uid] || 0;
+      const userShare = effectiveSplits[uid] || 0;
 
       if (isPayer) {
         // Amount others owe me for this expense
@@ -1662,9 +2111,18 @@ export const subscribeUserBalanceSummary = (
     recalculateBalances();
   });
 
+  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    userGroupsMap.clear();
+    snap.docs.forEach((docSnap) => {
+      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+    });
+    recalculateBalances();
+  });
+
   return () => {
     unsub1();
     unsub2();
+    unsub3();
   };
 };
 

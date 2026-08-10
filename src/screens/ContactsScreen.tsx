@@ -108,7 +108,12 @@ export default function ContactsScreen() {
     setPlatformSearching(true);
     try {
       const user = await findUserByPhone(phone);
-      setPlatformResult(user);
+      // Don't show result if the found user is the current user (self)
+      if (user && user.uid === currentUser?.uid) {
+        setPlatformResult(null);
+      } else {
+        setPlatformResult(user);
+      }
     } catch (e) {
       console.log('Special search error:', e);
     } finally {

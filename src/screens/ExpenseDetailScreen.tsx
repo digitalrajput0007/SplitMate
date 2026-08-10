@@ -33,6 +33,8 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 import { ImagePreviewModal } from '../components/ImagePreviewModal';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
@@ -51,6 +53,24 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const [showComments, setShowComments] = useState(false);
   const [sendingComment, setSendingComment] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+  } = useMediaManager({
+    purpose: 'receipt',
+    id: expense?.groupId || 'temp',
+    onSuccess: (urls) => {
+      if (expense) {
+        setExpense({ ...expense, receiptUrl: urls.original });
+      }
+    },
+  });
 
   useEffect(() => {
     if (initialExpense?.expenseId) {
@@ -119,7 +139,6 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
     setSaving(true);
     try {
       await updateExpenseInFirestore(expense.expenseId, formData);
-      Alert.alert('Expense Updated', 'The expense details have been updated.');
       setIsEditing(false);
     } catch (error: any) {
       console.error('Error updating expense:', error);
@@ -225,9 +244,13 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           <ExpenseForm
             members={members}
             initialData={expense}
+            onPickReceipt={() => setIsPickerVisible(true)}
+            onRemoveReceipt={() => setExpense(expense ? { ...expense, receiptUrl: '' } : null)}
             onSubmit={handleUpdate}
             submitting={saving}
             submitLabel="Update Expense"
+            isUploading={isUploading}
+            progress={progress}
           />
         </View>
       ) : (
@@ -328,12 +351,12 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
 
           {/* 7.5 Comments Section */}
           {showComments && (
-            <View style={styles.commentsContainer}>
-              <View style={[styles.commentInputRow, { borderBottomColor: colors.divider }]}>
+            <View style={[styles.commentsContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+              <View style={[styles.commentInputRow, { borderBottomColor: colors.outlineVariant }]}>
                 <TextInput
                   style={[styles.commentInput, { color: colors.onSurface, backgroundColor: colors.surfaceContainerLow }]}
                   placeholder="Add a comment..."
-                  placeholderTextColor={colors.outline}
+                  placeholderTextColor={colors.onSurfaceVariant}
                   value={newComment}
                   onChangeText={setNewComment}
                   multiline
@@ -343,23 +366,23 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
                   onPress={handleAddComment}
                   disabled={sendingComment || !newComment.trim()}
                 >
-                  {sendingComment ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={18} color="#fff" />}
+                  {sendingComment ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <MaterialIcons name="send" size={18} color={colors.onPrimary} />}
                 </TouchableOpacity>
               </View>
 
               <View style={styles.commentList}>
                 {comments.length === 0 ? (
-                  <Text style={[styles.noCommentsText, { color: colors.outline }]}>No comments yet.</Text>
+                  <Text style={[styles.noCommentsText, { color: colors.onSurfaceVariant }]}>No comments yet.</Text>
                 ) : (
                   comments.map((c) => (
-                    <View key={c.commentId} style={styles.commentItem}>
+                    <View key={c.commentId} style={[styles.commentItem, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
                       <View style={styles.commentHeader}>
-                        <Text style={[styles.commentUser, { color: colors.onSurface }]}>{c.userName}</Text>
-                        <Text style={[styles.commentTime, { color: colors.outline }]}>
+                        <Text style={[styles.commentUser, { color: colors.primary }]}>{c.userName}</Text>
+                        <Text style={[styles.commentTime, { color: colors.onSurfaceVariant }]}>
                           {c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
                         </Text>
                       </View>
-                      <Text style={[styles.commentText, { color: colors.onSurfaceVariant }]}>{c.text}</Text>
+                      <Text style={[styles.commentText, { color: colors.onSurface, marginTop: 4 }]}>{c.text}</Text>
                     </View>
                   ))
                 )}
@@ -390,6 +413,15 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           onClose={() => setShowImagePreview(false)}
         />
       )}
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        title="Attach Receipt"
+      />
     </SafeAreaView>
   );
 }
@@ -532,23 +564,20 @@ const styles = StyleSheet.create({
   actionChipText: { ...Typography.labelLg },
   commentsContainer: {
     padding: Spacing.md,
-    backgroundColor: '#FFFFFF', // Use static color to avoid ReferenceError if Colors fails
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EEEEEE',
-    marginTop: -16,
+    marginTop: Spacing.md,
   },
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingBottom: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
   },
   commentInput: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 40,
@@ -562,11 +591,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   commentList: {
-    paddingTop: 16,
-    gap: 16,
+    paddingTop: 12,
+    gap: 10,
   },
   commentItem: {
-    gap: 2,
+    padding: 10,
+    borderRadius: 12,
   },
   commentHeader: {
     flexDirection: 'row',

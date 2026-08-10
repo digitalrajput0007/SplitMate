@@ -129,7 +129,12 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
               name={groupName}
               mode="full"
               size={40}
-              fallbackIcon={group?.groupType === 'Trip' ? 'flight' : 'groups'}
+              fallbackIcon={
+                group?.groupType === 'Trip' ? 'flight' :
+                group?.groupType === 'Family' ? 'home' :
+                group?.groupType === 'Couple' ? 'favorite' :
+                group?.groupType === 'Flatmate' ? 'apartment' : 'groups'
+              }
               style={styles.avatarImage}
             />
             <View>

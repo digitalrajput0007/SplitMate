@@ -37,6 +37,9 @@ import {
   SettlementData,
   formatCurrency,
   subscribeToAcceptedMembers,
+  reinviteUserToGroupInFirestore,
+  removeMemberFromGroup,
+  addSettlementToFirestore,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
@@ -100,6 +103,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
   const [acceptedUsers, setAcceptedUsers] = useState<UserProfile[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
+  const [declinedUsers, setDeclinedUsers] = useState<UserProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [userExpenses, setUserExpenses] = useState<ExpenseData[]>([]);
@@ -123,9 +127,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         }
       });
 
-      const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending) => {
+      const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending, declined) => {
         setAcceptedUsers(accepted);
         setPendingUsers(pending);
+        setDeclinedUsers(declined);
       });
 
       const unsubExp = subscribeToGroupExpenses(groupId, (expList) => {
@@ -233,6 +238,152 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
               Alert.alert('Success', `${u.name} is now the group owner.`);
             } catch (e) {
               Alert.alert('Error', 'Failed to transfer ownership.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleReinviteMember = async (u: UserProfile) => {
+    if (!groupId) return;
+    try {
+      await reinviteUserToGroupInFirestore(groupId, u.uid);
+      Alert.alert('Re-invited', `A new invitation request has been sent to ${u.name}.`);
+    } catch (error: any) {
+      console.error('Re-invite error details:', error);
+      Alert.alert('Error', error?.message || 'Failed to re-invite member.');
+    }
+  };
+
+  const calculateMemberBalance = (targetUid: string) => {
+    let paid = 0;
+    let share = 0;
+
+    userExpenses.forEach((item) => {
+      if (item.paidBy === targetUid) {
+        paid += (item.amount || 0);
+      }
+      share += (item.splitDetails?.[targetUid] || 0);
+    });
+
+    let received = 0;
+    let sent = 0;
+
+    userSettlements.forEach((s) => {
+      if (s.status === 'completed' || !s.status) {
+        if (s.toUserId === targetUid) received += (s.amount || 0);
+        if (s.fromUserId === targetUid) sent += (s.amount || 0);
+      }
+    });
+
+    return Math.round((paid - share + sent - received) * 100) / 100;
+  };
+
+  const handleRemoveMemberClick = (u: UserProfile) => {
+    if (!groupId) return;
+    const balance = calculateMemberBalance(u.uid);
+
+    if (Math.abs(balance) < 0.05) {
+      Alert.alert(
+        'Remove Member',
+        `Remove ${u.name} from this group? They will no longer see group expenses.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await removeMemberFromGroup(groupId, u.uid);
+                Alert.alert('Removed', `${u.name} has been removed from the group.`);
+              } catch (err) {
+                Alert.alert('Error', 'Failed to remove member.');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    const isOwed = balance > 0;
+    const absVal = Math.abs(balance);
+    const formattedVal = formatCurrency(absVal);
+    const statusText = isOwed ? `is owed ${formattedVal}` : `owes ${formattedVal}`;
+
+    Alert.alert(
+      'Unsettled Balance Warning ⚠️',
+      `${u.name} ${statusText} in this group.\n\nChoose how to handle this balance before removing them:`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark Settled',
+          onPress: async () => {
+            try {
+              if (isOwed) {
+                await addSettlementToFirestore({
+                  groupId,
+                  fromUserId: currentUser?.uid || '',
+                  toUserId: u.uid,
+                  amount: absVal,
+                  notes: `Auto-settled upon removing ${u.name}`,
+                  status: 'completed',
+                });
+              } else {
+                await addSettlementToFirestore({
+                  groupId,
+                  fromUserId: u.uid,
+                  toUserId: currentUser?.uid || '',
+                  amount: absVal,
+                  notes: `Auto-settled upon removing ${u.name}`,
+                  status: 'completed',
+                });
+              }
+              await removeMemberFromGroup(groupId, u.uid);
+              Alert.alert('Success', `Settled ${formattedVal} and removed ${u.name}.`);
+            } catch (e) {
+              Alert.alert('Error', 'Failed to settle and remove member.');
+            }
+          },
+        },
+        {
+          text: 'Redistribute Balance',
+          onPress: async () => {
+            try {
+              const remainingMembers = acceptedUsers.filter(x => x.uid !== u.uid);
+              if (remainingMembers.length === 0) {
+                Alert.alert('Error', 'No remaining members to redistribute balance to.');
+                return;
+              }
+              const perPersonShare = Math.round((absVal / remainingMembers.length) * 100) / 100;
+
+              for (const rem of remainingMembers) {
+                if (isOwed) {
+                  await addSettlementToFirestore({
+                    groupId,
+                    fromUserId: rem.uid,
+                    toUserId: u.uid,
+                    amount: perPersonShare,
+                    notes: `Balance redistributed upon removing ${u.name}`,
+                    status: 'completed',
+                  });
+                } else {
+                  await addSettlementToFirestore({
+                    groupId,
+                    fromUserId: u.uid,
+                    toUserId: rem.uid,
+                    amount: perPersonShare,
+                    notes: `Balance redistributed upon removing ${u.name}`,
+                    status: 'completed',
+                  });
+                }
+              }
+
+              await removeMemberFromGroup(groupId, u.uid);
+              Alert.alert('Success', `Redistributed ${formattedVal} among remaining members and removed ${u.name}.`);
+            } catch (e) {
+              Alert.alert('Error', 'Failed to redistribute balance and remove member.');
             }
           },
         },
@@ -405,7 +556,12 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
               thumbnailUri={groupPhotoThumbnail || undefined}
               name={groupName}
               size={80}
-              fallbackIcon={groupType === 'Trip' ? 'flight' : 'groups'}
+              fallbackIcon={
+                groupType === 'Trip' ? 'flight' :
+                groupType === 'Family' ? 'home' :
+                groupType === 'Couple' ? 'favorite' :
+                groupType === 'Flatmate' ? 'apartment' : 'groups'
+              }
             />
             {isOwner && (
               <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
@@ -583,7 +739,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Section 2: Members */}
         <View style={styles.section}>
           <View style={styles.membersHeaderRow}>
-            <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
+            <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length + declinedUsers.length})</Text>
             {isOwner && (
               <TouchableOpacity
                 style={styles.addMemberBtn}
@@ -638,7 +794,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     {isOwner && !isMe && (
                       <TouchableOpacity
                         style={styles.removeIconBtn}
-                        onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
+                        onPress={() => handleRemoveMemberClick(u)}
                       >
                         <MaterialIcons name="person-remove" size={20} color={colors.error} />
                       </TouchableOpacity>
@@ -653,7 +809,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 key={u.uid}
                 style={[
                   styles.memberRowItem,
-                  index !== pendingUsers.length - 1 && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
+                  (index !== pendingUsers.length - 1 || declinedUsers.length > 0) && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
                   { backgroundColor: colors.surfaceContainerHighest + '44' },
                 ]}
               >
@@ -679,6 +835,43 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     onPress={() => handleCancelInvite(u)}
                   >
                     <MaterialIcons name="close" size={20} color={colors.error} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+
+            {declinedUsers.map((u, index) => (
+              <View
+                key={u.uid}
+                style={[
+                  styles.memberRowItem,
+                  index !== declinedUsers.length - 1 && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
+                  { backgroundColor: colors.errorContainer + '22' },
+                ]}
+              >
+                <View style={styles.memberLeftInfo}>
+                  <View style={[styles.memberAvatarCircle, { backgroundColor: colors.errorContainer }]}>
+                    {u.photoUrl ? (
+                      <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    ) : (
+                      <Text style={[styles.memberAvatarText, { color: colors.error }]}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
+                    )}
+                  </View>
+                  <View>
+                    <Text style={[styles.memberItemName, { color: colors.onSurface }]}>{u.name}</Text>
+                    <Text style={[styles.memberRoleText, { color: colors.error, fontWeight: '600' }]}>
+                      Invitation Declined ❌
+                    </Text>
+                  </View>
+                </View>
+
+                {isOwner && (
+                  <TouchableOpacity
+                    style={[styles.adminActionBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => handleReinviteMember(u)}
+                  >
+                    <MaterialIcons name="refresh" size={16} color={colors.onPrimary} />
+                    <Text style={[styles.adminActionText, { color: colors.onPrimary }]}>Re-invite</Text>
                   </TouchableOpacity>
                 )}
               </View>

@@ -15,13 +15,15 @@ export interface SimplifiedDebt {
 export const simplifyDebts = (
   expenses: ExpenseData[],
   settlements: SettlementData[],
-  memberProfiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>
+  memberProfiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }>,
+  memberPreferences?: Record<string, boolean>
 ): SimplifiedDebt[] => {
+  const allKnownUids = Object.keys(memberProfiles);
   // Step 1: Calculate net balance for every member
   const netBalances: Record<string, number> = {};
 
   // Initialize all known members to 0
-  Object.keys(memberProfiles).forEach((uid) => {
+  allKnownUids.forEach((uid) => {
     netBalances[uid] = 0;
   });
 
@@ -29,12 +31,36 @@ export const simplifyDebts = (
   expenses.forEach((exp) => {
     const payer = exp.paidBy;
     const totalAmount = exp.amount;
-    const splitDetails = exp.splitDetails || {};
+    const rawSplits = exp.splitDetails || {};
+
+    // Determine participating members for this expense
+    const participatingUids = allKnownUids.filter((uid) => {
+      if (uid in rawSplits && rawSplits[uid] > 0) return true;
+      const pref = memberPreferences?.[uid] ?? true;
+      return pref !== false;
+    });
+
+    let effectiveSplits: Record<string, number> = {};
+
+    if (participatingUids.length > 0 && (!rawSplits || Object.keys(rawSplits).length < participatingUids.length)) {
+      const equalShare = Math.round((totalAmount / participatingUids.length) * 100) / 100;
+      let runningSum = 0;
+      participatingUids.forEach((uid, index) => {
+        if (index === participatingUids.length - 1) {
+          effectiveSplits[uid] = Math.round((totalAmount - runningSum) * 100) / 100;
+        } else {
+          effectiveSplits[uid] = equalShare;
+          runningSum += equalShare;
+        }
+      });
+    } else {
+      effectiveSplits = rawSplits;
+    }
 
     if (!(payer in netBalances)) netBalances[payer] = 0;
     netBalances[payer] += totalAmount;
 
-    Object.entries(splitDetails).forEach(([memberId, share]) => {
+    Object.entries(effectiveSplits).forEach(([memberId, share]) => {
       if (!(memberId in netBalances)) netBalances[memberId] = 0;
       netBalances[memberId] -= share;
     });

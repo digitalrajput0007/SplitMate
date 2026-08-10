@@ -40,10 +40,26 @@ export const SmartImage = React.memo(function SmartImage({
       ? name.trim().split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2)
       : null;
 
+    const isCustomIcon = fallbackIcon && fallbackIcon !== 'person';
+
     return (
       <View style={[styles.fallback, { backgroundColor: colors.primaryFixed }, style, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}>
-        {initials ? (
-          <Text style={[styles.initials, { fontSize: size ? size * 0.4 : 16, color: colors.primary }]}>{initials}</Text>
+        {isCustomIcon ? (
+          <MaterialIcons name={fallbackIcon} size={size ? size * 0.5 : 24} color={colors.primary} />
+        ) : initials ? (
+          <Text
+            style={[
+              styles.initials,
+              {
+                fontSize: size ? size * 0.38 : 16,
+                color: colors.primary,
+              },
+            ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {initials}
+          </Text>
         ) : (
           <MaterialIcons name={fallbackIcon} size={size ? size * 0.5 : 24} color={colors.primary} />
         )}
@@ -93,7 +109,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   initials: {
-    ...Typography.titleSm,
     fontWeight: '700',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+    textAlign: 'center',
   },
 });

@@ -47,6 +47,8 @@ interface ExpenseFormProps {
   onSubmit: (data: ExpenseFormData) => void;
   submitting?: boolean;
   submitLabel?: string;
+  isUploading?: boolean;
+  progress?: number;
 }
 
 export const CATEGORIES = ['🍕 Food', '🚕 Travel', '🏠 Rent', '🎬 Fun', '🛒 Shopping', '💊 Health', '📦 Other'];
@@ -64,6 +66,8 @@ export default function ExpenseForm({
   onSubmit,
   submitting = false,
   submitLabel = 'Save Expense',
+  isUploading = false,
+  progress = 0,
 }: ExpenseFormProps) {
   const { colors } = useTheme();
 
@@ -506,7 +510,17 @@ export default function ExpenseForm({
       {/* Receipt */}
       <View style={styles.field}>
         <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Receipt (Optional)</Text>
-        {initialData?.receiptUrl ? (
+        {isUploading ? (
+          <View style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary, borderWidth: 1.5 }]}>
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 6 }} />
+            <Text style={{ color: colors.primary, fontWeight: '600', ...Typography.labelMd }}>
+              Uploading Receipt... {progress}%
+            </Text>
+            <View style={{ width: '80%', height: 4, borderRadius: 2, backgroundColor: colors.outlineVariant, marginTop: 8, overflow: 'hidden' }}>
+              <View style={{ width: `${progress}%`, height: '100%', backgroundColor: colors.primary }} />
+            </View>
+          </View>
+        ) : initialData?.receiptUrl ? (
           <View style={styles.receiptContainer}>
             <TouchableOpacity onPress={() => setShowImagePreview(true)} activeOpacity={0.9} style={{ flex: 1 }}>
               <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />

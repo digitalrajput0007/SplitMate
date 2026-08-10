@@ -173,13 +173,19 @@ export default function SettlementCenterScreen({ navigation }: Props) {
               await addSettlementToFirestore({
                 groupId: debt.groupId,
                 fromUserId: debt.fromUserId,
+                fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
                 toUserId: debt.toUserId,
+                toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
                 amount: debt.amount,
-                status: 'completed',
+                status: 'pending',
               });
+              Alert.alert(
+                'Settlement Request Sent',
+                `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
+              );
               loadData();
             } catch (e) {
-              Alert.alert('Error', 'Failed to record settlement.');
+              Alert.alert('Error', 'Failed to send settlement request.');
             }
           },
         },

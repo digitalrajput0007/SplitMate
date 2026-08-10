@@ -140,6 +140,8 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
               onSubmit={handleSave}
               submitting={submitting}
               submitLabel="Add Expense"
+              isUploading={isUploading}
+              progress={progress}
             />
           </View>
         )}

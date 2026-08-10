@@ -17,6 +17,8 @@ import {
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Platform } from "react-native";
 
+import { NotificationService } from "./NotificationService";
+
 // Initialize Google Signin exactly once
 if (Platform.OS !== 'web') {
   console.log("[Auth] Configuring Google Sign-in with ID:", WEB_CLIENT_ID);
@@ -250,6 +252,11 @@ export const updateUserProfile = async (
    🚪 LOGOUT
 ========================================================= */
 export const signOutUser = async (): Promise<void> => {
+  try {
+    await NotificationService.unregisterPushToken();
+  } catch (e) {
+    console.warn('[Auth] Error unregistering push token on sign out:', e);
+  }
   await signOut(auth);
 };
 

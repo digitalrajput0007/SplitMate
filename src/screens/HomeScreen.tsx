@@ -37,6 +37,8 @@ import {
   GroupInvitation,
   markNotificationAsRead,
   addSettlementToFirestore,
+  confirmSettlementInFirestore,
+  rejectSettlementInFirestore,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { useHomeActions } from '../hooks/useHomeActions';
@@ -172,14 +174,10 @@ export default function HomeScreen() {
   };
 
   const handleConfirmPayment = async (s: SettlementData) => {
+    if (!s.settlementId) return;
     try {
-      await addSettlementToFirestore({
-        groupId: s.groupId,
-        fromUserId: s.fromUserId,
-        toUserId: s.toUserId,
-        amount: s.amount,
-        status: 'completed',
-      });
+      await confirmSettlementInFirestore(s.settlementId);
+      Alert.alert('Settlement Confirmed', 'The balance has been updated.');
     } catch (e) {
       console.log('Error confirming settlement:', e);
     }
@@ -191,6 +189,7 @@ export default function HomeScreen() {
       console.warn('[Home] Cannot dismiss reminder: missing ID', n);
       return;
     }
+    setUnreadNotifications((prev) => prev.filter((item) => (item.id || item.notificationId) !== id));
     await markNotificationAsRead(id);
   };
 
@@ -344,8 +343,13 @@ export default function HomeScreen() {
                     name={inv.groupName}
                     size={40}
                     mode="thumbnail"
-                    fallbackIcon="groups"
-                    style={{ borderRadius: 8 }}
+                    fallbackIcon={
+                      inv.groupType === 'Trip' ? 'flight' :
+                      inv.groupType === 'Family' ? 'home' :
+                      inv.groupType === 'Couple' ? 'favorite' :
+                      inv.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                    }
+                    style={{ borderRadius: 20 }}
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>{inv.groupName}</Text>
@@ -411,7 +415,10 @@ export default function HomeScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.actionIconBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => navigation.navigate('SettleUp', { groupId: rem.groupId || rem.data?.groupId })}
+                        onPress={() => {
+                          handleDismissReminder(rem);
+                          navigation.navigate('SettleUp', { groupId: rem.groupId || rem.data?.groupId });
+                        }}
                       >
                         <MaterialIcons name="payments" size={20} color="#FFFFFF" />
                       </TouchableOpacity>
@@ -432,21 +439,49 @@ export default function HomeScreen() {
             <View style={{ gap: Spacing.sm }}>
               {pendingConfirmations.map((s) => {
                 const fromUser = allUsersMap.get(s.fromUserId);
+                const fromName = fromUser?.name || 'A friend';
+                const fromPhoto = fromUser?.photoUrl;
+                const fromPhotoThumb = fromUser?.photoThumbnailUrl;
+
                 return (
                   <View key={s.settlementId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                    <View style={[styles.invitationIconCircle, { backgroundColor: colors.secondaryContainer }]}>
-                      <MaterialIcons name="check-circle" size={20} color={colors.onSecondaryContainer} />
-                    </View>
+                    <SmartImage
+                      uri={fromPhoto}
+                      thumbnailUri={fromPhotoThumb}
+                      name={fromName}
+                      size={40}
+                      mode="thumbnail"
+                      fallbackIcon="person"
+                      style={{ borderRadius: 20 }}
+                    />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>Confirm Receipt</Text>
-                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>{fromUser?.name || 'Friend'} paid you {formatCurrency(s.amount)}</Text>
+                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>Confirm Settlement</Text>
+                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>
+                        <Text style={{ fontWeight: 'bold', color: colors.onSurface }}>{fromName}</Text> paid you {formatCurrency(s.amount)}
+                      </Text>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.reviewBtn, { backgroundColor: colors.primary }]}
-                      onPress={() => handleConfirmPayment(s)}
-                    >
-                      <Text style={styles.reviewBtnText}>Confirm</Text>
-                    </TouchableOpacity>
+                    <View style={styles.invitationActions}>
+                      <TouchableOpacity
+                        style={[styles.actionIconBtn, { backgroundColor: '#EF4444' }]}
+                        onPress={async () => {
+                          if (s.settlementId) {
+                            try {
+                              await rejectSettlementInFirestore(s.settlementId);
+                            } catch (e) {
+                              console.error('Error rejecting settlement:', e);
+                            }
+                          }
+                        }}
+                      >
+                        <Ionicons name="close" size={20} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionIconBtn, { backgroundColor: '#22C55E' }]}
+                        onPress={() => handleConfirmPayment(s)}
+                      >
+                        <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -551,7 +586,12 @@ export default function HomeScreen() {
                   name={group.name}
                   size={40}
                   mode="thumbnail"
-                  fallbackIcon={group.groupType === 'Trip' ? 'flight' : 'groups'}
+                  fallbackIcon={
+                    group.groupType === 'Trip' ? 'flight' :
+                    group.groupType === 'Family' ? 'home' :
+                    group.groupType === 'Couple' ? 'favorite' :
+                    group.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                  }
                   style={{ borderRadius: 8 }}
                 />
                 <View>

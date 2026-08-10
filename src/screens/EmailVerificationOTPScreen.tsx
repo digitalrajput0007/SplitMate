@@ -116,7 +116,9 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
       isVerifyingRef.current = false;
       setLoading(false);
       let userFriendlyMessage = 'Verification failed. Please check the code and try again.';
-      if (error.code === 'auth/email-already-in-use') {
+      if (error.message && (error.message.includes('Invalid OTP') || error.message.includes('400'))) {
+        userFriendlyMessage = 'Invalid verification code. Please check your email and try again.';
+      } else if (error.code === 'auth/email-already-in-use') {
         userFriendlyMessage = 'An account with this email already exists. Please sign in instead.';
       } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
         userFriendlyMessage = 'Incorrect password. Please check your credentials.';
@@ -198,11 +200,13 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
               <Text style={{ fontWeight: '700', color: colors.onSurface }}>{email || 'your email'}</Text>
             </Text>
 
-            {!!errorMessage && (
-              <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer }]}>
-                <Text style={[styles.errorText, { color: colors.error }]}>{errorMessage}</Text>
-              </View>
-            )}
+            <View style={{ minHeight: 44, justifyContent: 'center', marginBottom: 12 }}>
+              {!!errorMessage && (
+                <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, marginTop: 0 }]}>
+                  <Text style={[styles.errorText, { color: colors.error }]}>{errorMessage}</Text>
+                </View>
+              )}
+            </View>
 
             <OTPInputBlocks
               value={otp}

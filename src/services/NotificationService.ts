@@ -8,6 +8,7 @@ import {
   setDoc,
   getDoc,
   updateDoc,
+  deleteField,
   serverTimestamp,
   collection,
   addDoc,
@@ -28,6 +29,8 @@ export interface AppNotification {
   data: {
     groupId?: string;
     expenseId?: string;
+    settlementId?: string;
+    groupName?: string;
     [key: string]: any;
   };
   isRead: boolean;
@@ -38,13 +41,32 @@ export interface AppNotification {
   read?: boolean;
 }
 
-let cachedSyncedToken = '';
+let cachedSyncedToken: string | null = null;
 
 /**
  * Expo Push Notification Service
  * Compatible with Expo Go, Android, and iOS without native modules.
  */
 export const NotificationService = {
+  /**
+   * Unregister Push Token when user signs out
+   */
+  async unregisterPushToken() {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db, 'users', user.uid), {
+          pushToken: deleteField(),
+          fcmToken: deleteField(),
+        });
+        console.log(`[NotificationService] Unregistered push token for user ${user.uid}`);
+      }
+    } catch (err) {
+      console.warn('[NotificationService] Error unregistering push token:', err);
+    } finally {
+      cachedSyncedToken = null;
+    }
+  },
 
   /**
    * Request permission and get Expo Push Token
