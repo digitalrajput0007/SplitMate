@@ -35,7 +35,7 @@ try {
   if (Platform.OS === 'web') {
     auth = getAuth(app);
   } else {
-    // For Expo Go and Native Android
+    // Fast native persistence via AsyncStorage
     auth = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage)
     });
@@ -44,11 +44,12 @@ try {
   auth = getAuth(app);
 }
 
-// Initialize Firestore Database with Memory Cache for speed (or persistence if preferred)
+// Initialize Firestore Database with Memory Cache and Auto-Detect Long Polling for robust network streams
 let db: any;
 try {
   db = initializeFirestore(app, {
     localCache: memoryLocalCache(),
+    experimentalAutoDetectLongPolling: true,
   });
 } catch (e) {
   db = getFirestore(app);

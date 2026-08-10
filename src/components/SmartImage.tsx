@@ -29,7 +29,7 @@ export const SmartImage = React.memo(function SmartImage({
   ...props
 }: SmartImageProps) {
   const { colors } = useTheme();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
 
   // 1. Determine if we have any source at all
@@ -53,6 +53,7 @@ export const SmartImage = React.memo(function SmartImage({
 
   // 2. Dual-Layer Strategy: Prefer thumbnail for lists, full image for detail screens
   const sourceUri = mode === 'thumbnail' ? (thumbnailUri || uri) : (uri || thumbnailUri);
+  const isSmallAvatar = !!(size && size <= 64);
 
   return (
     <View style={[{ position: 'relative', overflow: 'hidden' }, style as any, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}>
@@ -60,9 +61,11 @@ export const SmartImage = React.memo(function SmartImage({
         source={{ uri: sourceUri }}
         style={[StyleSheet.absoluteFillObject]}
         contentFit="cover"
-        transition={200}
+        transition={isSmallAvatar ? 0 : 150}
         cachePolicy="memory-disk"
-        onLoadStart={() => setIsLoading(true)}
+        onLoadStart={() => {
+          if (!isSmallAvatar) setIsLoading(true);
+        }}
         onLoadEnd={() => setIsLoading(false)}
         onError={() => {
           setIsLoading(false);
@@ -70,7 +73,7 @@ export const SmartImage = React.memo(function SmartImage({
         }}
         {...props}
       />
-      {isLoading && (
+      {isLoading && !isSmallAvatar && (
         <View style={[StyleSheet.absoluteFillObject, styles.placeholder, { backgroundColor: colors.surfaceContainerHigh }]}>
           <ActivityIndicator size="small" color={colors.primary} />
         </View>

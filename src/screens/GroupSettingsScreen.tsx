@@ -40,7 +40,6 @@ import {
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
@@ -744,11 +743,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={groupPhoto ? removeMedia : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

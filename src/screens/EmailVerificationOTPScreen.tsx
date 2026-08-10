@@ -16,8 +16,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
-import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail } from '../services/authService';
-import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
+import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail, signInWithEmail, warmUpOTPService } from '../services/authService';
+import { setUserEmailVerifiedInFirestore, getUserProfileFromFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OTPInputBlocks } from '../components';
@@ -34,6 +34,11 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
   const [resending, setResending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // Pre-warm OTP backend on mount to eliminate cold-start latency
+  useEffect(() => {
+    warmUpOTPService();
+  }, []);
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (timer > 0) {
@@ -44,43 +49,85 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     return () => clearInterval(interval);
   }, [timer]);
 
-  const handleVerify = async () => {
+  const isVerifyingRef = React.useRef(false);
+
+  const handleVerify = async (codeToVerify?: string) => {
+    if (isVerifyingRef.current) return;
+    const targetOtp = codeToVerify || otp;
     setErrorMessage('');
-    if (otp.length !== 6) {
+    if (targetOtp.length !== 6) {
       setErrorMessage('Please enter the 6-digit code sent to your email.');
       return;
     }
 
+    isVerifyingRef.current = true;
     setLoading(true);
+
     try {
       if (!email) throw new Error('Missing email parameter');
       const password = (route.params as any)?.password;
 
-      await verifyOTP(email, otp);
+      // 1. Verify OTP
+      await verifyOTP(email, targetOtp);
 
-      // ✅ SIGNUP FLOW: Create account only AFTER OTP verified
+      // 2. Handle User Sign Up / Sign In
+      let activeUser = auth.currentUser;
+
       if (password) {
-        console.log("[Auth] OTP verified, creating user account...");
-        await signUpWithEmail(email, password);
-      } else {
-        // Verification flow for existing user
-        if (auth.currentUser) {
-          await setUserEmailVerifiedInFirestore(auth.currentUser.uid);
+        try {
+          console.log("[Auth] OTP verified, creating user account...");
+          activeUser = await signUpWithEmail(email, password);
+        } catch (authErr: any) {
+          if (authErr.code === 'auth/email-already-in-use') {
+            console.log("[Auth] Account already exists for email, signing in...");
+            activeUser = await signInWithEmail(email, password);
+          } else {
+            throw authErr;
+          }
+        }
+      } else if (activeUser) {
+        setUserEmailVerifiedInFirestore(activeUser.uid).catch(e =>
+          console.warn('Background verification sync error:', e)
+        );
+      }
+
+      // 3. Determine if user needs Profile Setup or Main Application
+      let needsProfileSetup = true;
+      if (activeUser?.uid) {
+        try {
+          const profile = await getUserProfileFromFirestore(activeUser.uid);
+          if (profile && profile.name && profile.mobile) {
+            needsProfileSetup = false;
+          }
+        } catch (e) {
+          console.warn('[Auth] Profile check error, defaulting to profile setup:', e);
         }
       }
 
-      setLoading(false);
-      Alert.alert('Success', 'Email verified successfully!', [
-        {
-          text: 'Continue',
-          onPress: () => {
-            // AppNavigator will handle redirection
-          }
-        }
-      ]);
+      // Direct smooth navigation transition without intermediate state flicker
+      if (needsProfileSetup) {
+        console.log('[Auth] Redirecting to Profile Setup screen...');
+        navigation.navigate('ProfileSetup');
+      } else {
+        console.log('[Auth] Profile exists, redirecting to Main Tabs...');
+        navigation.navigate('MainTabs');
+      }
     } catch (error: any) {
+      isVerifyingRef.current = false;
       setLoading(false);
-      setErrorMessage(error.message || 'Verification Failed. Invalid or expired OTP.');
+      let userFriendlyMessage = 'Verification failed. Please check the code and try again.';
+      if (error.code === 'auth/email-already-in-use') {
+        userFriendlyMessage = 'An account with this email already exists. Please sign in instead.';
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        userFriendlyMessage = 'Incorrect password. Please check your credentials.';
+      } else if (error.code === 'auth/user-not-found') {
+        userFriendlyMessage = 'No account found with this email address.';
+      } else if (error.code === 'auth/weak-password') {
+        userFriendlyMessage = 'Password must be at least 6 characters.';
+      } else if (error.message) {
+        userFriendlyMessage = error.message.replace(/^Firebase:\s*Error\s*\(auth\/[^)]+\)\.?\s*/i, '');
+      }
+      setErrorMessage(userFriendlyMessage);
     }
   };
 
@@ -162,6 +209,9 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
               onChange={(text) => {
                 setOtp(text);
                 if (errorMessage) setErrorMessage('');
+              }}
+              onComplete={(code) => {
+                handleVerify(code);
               }}
               disabled={loading}
             />

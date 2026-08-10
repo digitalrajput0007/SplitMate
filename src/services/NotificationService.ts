@@ -38,6 +38,8 @@ export interface AppNotification {
   read?: boolean;
 }
 
+let cachedSyncedToken = '';
+
 /**
  * Expo Push Notification Service
  * Compatible with Expo Go, Android, and iOS without native modules.
@@ -68,11 +70,11 @@ export const NotificationService = {
       }
 
       if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync('default', {
-          name: 'Default',
+        await Notifications.setNotificationChannelAsync('splitmate_notifications_v1', {
+          name: 'SplitMate Notifications',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#24389C',
+          lightColor: '#0065F2',
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
           sound: 'default',
           enableVibrate: true,
@@ -85,23 +87,22 @@ export const NotificationService = {
       try {
         const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
         token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-        console.log('✅ Expo Push Token:', token);
       } catch (expoPushErr: any) {
         console.warn('Expo Push Token error, falling back to Native Device Token:', expoPushErr?.message);
         const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
         token = deviceTokenObj.data;
-        console.log('✅ Native FCM Device Token:', token);
       }
 
-      // Sync token to Firestore
+      // Sync token to Firestore only if token has changed or not yet cached
       const user = auth.currentUser;
-      if (user && token) {
+      if (user && token && cachedSyncedToken !== `${user.uid}_${token}`) {
+        cachedSyncedToken = `${user.uid}_${token}`;
         await setDoc(doc(db, 'users', user.uid), {
           pushToken: token,
           fcmToken: token,
           updatedAt: serverTimestamp()
         }, { merge: true });
-        console.log(`[NotificationService] Synced push token for user ${user.uid}:`, token);
+        console.log(`[NotificationService] Synced push token for user ${user.uid}`);
       }
       return token;
     } catch (e) {
@@ -215,10 +216,10 @@ export const NotificationService = {
           data: {
             ...payload.data,
             type: payload.type,
-            largeIcon: 'ic_notification_large',
           },
           priority: 'high',
-          channelId: 'default',
+          channelId: 'splitmate_notifications_v1',
+          _displayInForeground: true,
         };
 
         const response = await fetch('https://exp.host/--/api/v2/push/send', {

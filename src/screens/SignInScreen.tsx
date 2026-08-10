@@ -70,10 +70,14 @@ export default function SignInScreen({ navigation }: Props) {
       setLoading(false);
       console.log('Firebase Auth Error:', err);
       let message = err.message || 'An error occurred during authentication.';
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      if (
+        err.code === 'auth/email-already-in-use' ||
+        message.toLowerCase().includes('already exists') ||
+        message.toLowerCase().includes('bad request')
+      ) {
+        message = 'An account with this email already exists. Please sign in instead.';
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         message = 'Invalid email or password.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        message = 'An account with this email already exists.';
       } else if (err.code === 'auth/weak-password') {
         message = 'Password should be at least 6 characters.';
       } else if (err.code === 'auth/invalid-email') {
@@ -88,20 +92,15 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-
-      // Google users are automatically verified
-      await setUserEmailVerifiedInFirestore(result.user.uid);
-
-      const prof = await getUserProfileFromFirestore(result.user.uid);
       setLoading(false);
 
-      // AppNavigator will handle redirection automatically based on prof.name (hasProfile)
-      // If prof.name is missing, it will stay on/go to ProfileSetup
-      // If prof.name exists, it will go to MainTabs
+      // Fire Firestore profile verification sync asynchronously in background without blocking navigation
+      setUserEmailVerifiedInFirestore(result.user.uid).catch(e => 
+        console.warn('Background Google user verification sync error:', e)
+      );
     } catch (err: any) {
       setLoading(false);
       console.log('Google Auth Error:', err);
-      // AppNavigator will handle redirection automatically if user is authenticated but profile is missing
     }
   };
 

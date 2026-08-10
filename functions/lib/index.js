@@ -107,7 +107,7 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
             }
         });
         if (rateLimitExceeded) {
-            res.status(429).json({ error: "Too many requests. Please wait 30 minutes." });
+            res.status(429).json({ error: "Too many requests. Please try after some time." });
             return;
         }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -145,8 +145,13 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
     }
 });
 // ================= VERIFY OTP (HTTP onRequest) =================
-exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
-    var _a, _b, _c, _d;
+exports.verifyOTP = (0, https_1.onRequest)({ cors: true }, async (req, res) => {
+    var _a, _b, _c, _d, _e;
+    // Handle pre-warm / OPTIONS ping instantly
+    if (req.method === 'OPTIONS') {
+        res.status(204).send();
+        return;
+    }
     try {
         const email = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
         const code = (_d = (_c = req.body) === null || _c === void 0 ? void 0 : _c.otp) === null || _d === void 0 ? void 0 : _d.toString().trim();
@@ -162,13 +167,13 @@ exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
             return;
         }
         const otpData = snap.data();
-        const expiryMs = otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt.toMillis();
+        const expiryMs = ((_e = otpData === null || otpData === void 0 ? void 0 : otpData.expiresAt) === null || _e === void 0 ? void 0 : _e.toMillis()) || 0;
         const nowMs = Date.now();
         console.log(`[OTP] Checking Expiry - Now: ${nowMs}, Expiry: ${expiryMs}, Diff: ${expiryMs - nowMs}ms`);
         // Check expiration using Timestamp.toMillis() with a 10s grace period for clock drift
         if (nowMs > (expiryMs + 10000)) {
             console.log(`[OTP] EXPIRED: ${email}. Now: ${nowMs}, Expiry: ${expiryMs}`);
-            await otpRef.delete();
+            otpRef.delete().catch(() => { });
             res.status(400).json({ error: "OTP expired. Please request a new one." });
             return;
         }
@@ -177,11 +182,11 @@ exports.verifyOTP = (0, https_1.onRequest)(async (req, res) => {
             res.status(400).json({ error: "Invalid OTP" });
             return;
         }
-        // Success - Mark as verified but keep doc for resetPasswordWithOTP
-        await otpRef.update({
+        // Success - Mark as verified asynchronously without delaying client HTTP response
+        otpRef.update({
             verified: true,
             verifiedAt: firestore_2.FieldValue.serverTimestamp()
-        });
+        }).catch(e => console.warn("[OTP] Background doc update error:", e));
         console.log(`[OTP] SUCCESS: ${email} verified`);
         res.json({ success: true });
     }

@@ -37,9 +37,6 @@ if (Platform.OS === 'web') {
 import * as SplashScreen from 'expo-splash-screen';
 import { InteractionManager } from 'react-native';
 
-// Keep splash screen visible while loading resources
-SplashScreen.preventAutoHideAsync().catch(() => {});
-
 function MainAppContent() {
   const { colors, isDark } = useTheme();
 
@@ -89,18 +86,15 @@ export default function App() {
   });
 
   React.useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [fontsLoaded]);
-
-  if (!fontsLoaded) {
-    return null;
-  }
+    // Hide splash screen instantly on mount
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   return (
     <ThemeProvider>
-      <MainAppContent />
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+        <MainAppContent />
+      </View>
     </ThemeProvider>
   );
 }

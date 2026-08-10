@@ -294,6 +294,62 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
     }
 
     await setDoc(userRef, sanitized, { merge: true });
+
+    // Sync updated photo and name to all groups where this user is a member
+    if (sanitized.photoUrl !== undefined || sanitized.photoThumbnailUrl !== undefined || sanitized.name !== undefined) {
+      try {
+        const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', profile.uid));
+        const groupSnaps = await getDocs(groupsQuery);
+
+        if (!groupSnaps.empty) {
+          const batch = writeBatch(db);
+          groupSnaps.forEach((groupDoc) => {
+            const groupData = groupDoc.data();
+            let needsUpdate = false;
+            const updates: Record<string, any> = {};
+
+            if (groupData.membersDetails && Array.isArray(groupData.membersDetails)) {
+              const updatedDetails = groupData.membersDetails.map((m: any) => {
+                if (m.uid === profile.uid) {
+                  needsUpdate = true;
+                  return {
+                    ...m,
+                    ...(sanitized.name && { name: sanitized.name }),
+                    ...(sanitized.photoUrl !== undefined && { photoUrl: sanitized.photoUrl }),
+                    ...(sanitized.photoThumbnailUrl !== undefined && { photoThumbnailUrl: sanitized.photoThumbnailUrl }),
+                  };
+                }
+                return m;
+              });
+              if (needsUpdate) updates.membersDetails = updatedDetails;
+            }
+
+            if (groupData.memberProfiles && typeof groupData.memberProfiles === 'object') {
+              const memberProfiles = { ...groupData.memberProfiles };
+              if (memberProfiles[profile.uid]) {
+                needsUpdate = true;
+                memberProfiles[profile.uid] = {
+                  ...memberProfiles[profile.uid],
+                  ...(sanitized.name && { name: sanitized.name }),
+                  ...(sanitized.photoUrl !== undefined && { photoUrl: sanitized.photoUrl }),
+                  ...(sanitized.photoThumbnailUrl !== undefined && { photoThumbnailUrl: sanitized.photoThumbnailUrl }),
+                };
+                updates.memberProfiles = memberProfiles;
+              }
+            }
+
+            if (needsUpdate) {
+              batch.update(groupDoc.ref, updates);
+            }
+          });
+
+          await batch.commit();
+        }
+      } catch (syncErr) {
+        console.warn('[Firestore] Background profile sync to groups error:', syncErr);
+      }
+    }
+
     return sanitized;
   } catch (error: any) {
     console.error('Firestore Error in saveUserProfileToFirestore:', error);

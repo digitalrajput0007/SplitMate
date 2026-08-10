@@ -151,11 +151,19 @@ export default function ContactSyncScreen() {
     // 1. Platform Photo (from Firestore profile)
     // 2. Device Photo (from phonebook sync)
     // 3. Initials (handled automatically by SmartImage)
-    const priorityPhoto = platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoUrl;
+    const priorityPhoto = platformUser?.photoThumbnailUrl || platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoUrl;
+    const thumbnailUri = platformUser?.photoThumbnailUrl || priorityPhoto;
 
     return (
       <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-        <SmartImage uri={priorityPhoto} name={platformUser?.name || item.name} size={48} style={{ borderRadius: 24 }} />
+        <SmartImage
+          uri={priorityPhoto}
+          thumbnailUri={thumbnailUri}
+          name={platformUser?.name || item.name}
+          mode="thumbnail"
+          size={48}
+          style={{ borderRadius: 24 }}
+        />
 
         <View style={styles.contactInfo}>
           <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>
@@ -163,8 +171,8 @@ export default function ContactSyncScreen() {
           </Text>
           <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
           {isOnPlatform && (
-            <View style={[styles.platformBadge, { backgroundColor: colors.primaryContainer }]}>
-              <Text style={[styles.platformBadgeText, { color: colors.primary }]}>SplitMate</Text>
+            <View style={[styles.platformBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.platformBadgeText, { color: '#FFFFFF' }]}>SplitMate</Text>
             </View>
           )}
         </View>

@@ -38,22 +38,29 @@ export function useHomeActions(groupCount: number) {
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const unsubInvites = subscribeToPendingInvitations(currentUser.uid, setInvites);
-    const unsubBalance = subscribeUserBalanceSummary(currentUser.uid, setBalance);
-    const unsubPending = subscribeToUserPendingSettlements(currentUser.uid, (sets) => {
-      // Filter for settlements where I am the recipient (I need to confirm them)
-      setPendingConfirmations(sets.filter(s => s.toUserId === currentUser.uid));
-    });
-    const unsubNotifs = subscribeToNotifications(currentUser.uid, (notifs) => {
-      // Filter for unread reminders sent to me
-      setReminders(notifs.filter(n => (n.type === 'payment_reminder' || n.type === 'REMINDER') && !n.isRead && !n.read));
-    });
+    let unsubInvites: (() => void) | null = null;
+    let unsubBalance: (() => void) | null = null;
+    let unsubPending: (() => void) | null = null;
+    let unsubNotifs: (() => void) | null = null;
+
+    // Defer listener setup by 350ms to allow Home Screen UI to render instantly without network thread contention
+    const timer = setTimeout(() => {
+      unsubInvites = subscribeToPendingInvitations(currentUser.uid, setInvites);
+      unsubBalance = subscribeUserBalanceSummary(currentUser.uid, setBalance);
+      unsubPending = subscribeToUserPendingSettlements(currentUser.uid, (sets) => {
+        setPendingConfirmations(sets.filter(s => s.toUserId === currentUser.uid));
+      });
+      unsubNotifs = subscribeToNotifications(currentUser.uid, (notifs) => {
+        setReminders(notifs.filter(n => (n.type === 'payment_reminder' || n.type === 'REMINDER') && !n.isRead && !n.read));
+      });
+    }, 350);
 
     return () => {
-      unsubInvites();
-      unsubBalance();
-      unsubPending();
-      unsubNotifs();
+      clearTimeout(timer);
+      if (unsubInvites) unsubInvites();
+      if (unsubBalance) unsubBalance();
+      if (unsubPending) unsubPending();
+      if (unsubNotifs) unsubNotifs();
     };
   }, [currentUser]);
 

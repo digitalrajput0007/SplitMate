@@ -17,14 +17,14 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/foreground_layer.png",
-        "backgroundImage": "./assets/background_layer.png",
-        "backgroundColor": "#24389C"
+        "backgroundColor": "#FFFFFF",
+        "monochromeImage": "./assets/foreground_layer.png"
       },
       "package": "com.splitmate.newapp",
       "googleServicesFile": "./google-services.json",
       "notification": {
         "icon": "./assets/notification-icon.png",
-        "color": "#24389C"
+        "color": "#0065F2"
       },
       "permissions": [
         "READ_CONTACTS",
@@ -38,6 +38,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/withLargeNotificationIcon.js",
       "expo-asset",
       "expo-media-library",
       "@react-native-google-signin/google-signin",
@@ -47,7 +48,7 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#24389C"
+          "color": "#0065F2"
         }
       ],
       [

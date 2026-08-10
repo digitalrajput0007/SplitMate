@@ -79,7 +79,7 @@ export const sendOTPEmailTest = onRequest({ secrets: [BREVO_API_KEY] }, async (r
     });
 
     if (rateLimitExceeded) {
-      res.status(429).json({ error: "Too many requests. Please wait 30 minutes." });
+      res.status(429).json({ error: "Too many requests. Please try after some time." });
       return;
     }
 
@@ -124,7 +124,13 @@ export const sendOTPEmailTest = onRequest({ secrets: [BREVO_API_KEY] }, async (r
 });
 
 // ================= VERIFY OTP (HTTP onRequest) =================
-export const verifyOTP = onRequest(async (req, res) => {
+export const verifyOTP = onRequest({ cors: true }, async (req, res) => {
+  // Handle pre-warm / OPTIONS ping instantly
+  if (req.method === 'OPTIONS') {
+    res.status(204).send();
+    return;
+  }
+
   try {
     const email = req.body?.email?.toString().trim().toLowerCase();
     const code = req.body?.otp?.toString().trim();
@@ -145,7 +151,7 @@ export const verifyOTP = onRequest(async (req, res) => {
     }
 
     const otpData = snap.data();
-    const expiryMs = otpData?.expiresAt.toMillis();
+    const expiryMs = otpData?.expiresAt?.toMillis() || 0;
     const nowMs = Date.now();
 
     console.log(`[OTP] Checking Expiry - Now: ${nowMs}, Expiry: ${expiryMs}, Diff: ${expiryMs - nowMs}ms`);
@@ -153,7 +159,7 @@ export const verifyOTP = onRequest(async (req, res) => {
     // Check expiration using Timestamp.toMillis() with a 10s grace period for clock drift
     if (nowMs > (expiryMs + 10000)) {
       console.log(`[OTP] EXPIRED: ${email}. Now: ${nowMs}, Expiry: ${expiryMs}`);
-      await otpRef.delete();
+      otpRef.delete().catch(() => {});
       res.status(400).json({ error: "OTP expired. Please request a new one." });
       return;
     }
@@ -164,11 +170,11 @@ export const verifyOTP = onRequest(async (req, res) => {
       return;
     }
 
-    // Success - Mark as verified but keep doc for resetPasswordWithOTP
-    await otpRef.update({
+    // Success - Mark as verified asynchronously without delaying client HTTP response
+    otpRef.update({
       verified: true,
       verifiedAt: FieldValue.serverTimestamp()
-    });
+    }).catch(e => console.warn("[OTP] Background doc update error:", e));
 
     console.log(`[OTP] SUCCESS: ${email} verified`);
     res.json({ success: true });

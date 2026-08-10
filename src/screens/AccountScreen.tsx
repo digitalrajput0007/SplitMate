@@ -30,6 +30,7 @@ import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/types';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
+import { SmartImage } from '../components/SmartImage';
 import QRCode from 'react-native-qrcode-svg';
 
 let CameraView: any = View;
@@ -58,6 +59,7 @@ export default function AccountScreen() {
   const [displayMobile, setDisplayMobile] = useState('');
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
 
   const [qrModalVisible, setQrModalVisible] = useState(false);
@@ -76,6 +78,7 @@ export default function AccountScreen() {
       setDisplayEmail('');
       setPaymentHandle('');
       setPhotoUrl('');
+      setPhotoThumbnailUrl('');
       setDisplayMobile('');
       setProfileLoading(false);
       return;
@@ -93,6 +96,7 @@ export default function AccountScreen() {
         if (prof.email !== undefined) setDisplayEmail(prof.email);
         if (prof.paymentHandle !== undefined) setPaymentHandle(prof.paymentHandle);
         if (prof.photoUrl !== undefined) setPhotoUrl(prof.photoUrl);
+        if (prof.photoThumbnailUrl !== undefined) setPhotoThumbnailUrl(prof.photoThumbnailUrl);
         if (prof.mobile !== undefined) setDisplayMobile(prof.mobile);
       }
       setProfileLoading(false);
@@ -176,7 +180,11 @@ export default function AccountScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]} showsVerticalScrollIndicator={false}>
         <View style={styles.topHeader}>
           <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Account</Text>
-          <TouchableOpacity style={[styles.qrBtn, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
+          <TouchableOpacity
+            style={[styles.qrBtn, { backgroundColor: isDark ? '#1E293B' : colors.surfaceContainerLow, borderColor: colors.divider }]}
+            onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}
+            activeOpacity={0.7}
+          >
             <MaterialIcons name="qr-code-2" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -192,22 +200,14 @@ export default function AccountScreen() {
           </View>
         ) : (
           <View style={[styles.userCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-              {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-              ) : (
-                <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>
-                  {displayName
-                    .trim()
-                    .split(' ')
-                    .filter(Boolean)
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()
-                    .slice(0, 2) || 'U'}
-                </Text>
-              )}
-            </View>
+            <SmartImage
+              uri={photoUrl || undefined}
+              thumbnailUri={photoThumbnailUrl || undefined}
+              name={displayName}
+              size={56}
+              mode="thumbnail"
+              fallbackIcon="person"
+            />
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: colors.onSurface }]}>{displayName}</Text>
               <Text style={[styles.userEmail, { color: colors.onSurfaceVariant }]}>{displayEmail}</Text>
@@ -427,33 +427,50 @@ export default function AccountScreen() {
       <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setQrModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={[styles.qrCardExpanded, { backgroundColor: colors.surfaceContainerLowest }]}>
-            <View style={[styles.tabHeader, { borderBottomColor: colors.outlineVariant }]}>
+            <View style={[styles.tabHeader, { backgroundColor: isDark ? '#1E293B' : colors.surfaceContainerLow }]}>
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'scan' && { borderBottomColor: colors.primary }]}
+                style={[
+                  styles.tabButton,
+                  activeQrTab === 'scan' && [styles.tabButtonActive, { backgroundColor: isDark ? '#334155' : colors.surfaceContainerLowest }]
+                ]}
                 onPress={() => { setActiveQrTab('scan'); setScannedUser(null); setScannedNotFound(false); setScannedLock(false); }}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="qr-code-scanner" size={22} color={activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, { color: activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant }]}>Scan QR</Text>
+                <MaterialIcons name="qr-code-scanner" size={20} color={activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant, fontWeight: activeQrTab === 'scan' ? '700' : '500' }]}>
+                  Scan QR
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'my' && { borderBottomColor: colors.primary }]}
+                style={[
+                  styles.tabButton,
+                  activeQrTab === 'my' && [styles.tabButtonActive, { backgroundColor: isDark ? '#334155' : colors.surfaceContainerLowest }]
+                ]}
                 onPress={() => setActiveQrTab('my')}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="qr-code-2" size={22} color={activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, { color: activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant }]}>My QR</Text>
+                <MaterialIcons name="qr-code-2" size={20} color={activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant, fontWeight: activeQrTab === 'my' ? '700' : '500' }]}>
+                  My QR
+                </Text>
               </TouchableOpacity>
             </View>
 
             {activeQrTab === 'my' ? (
               <View style={styles.tabContent}>
-                <AppLogo size={56} />
                 <Text style={[styles.qrTitle, { color: colors.onSurface }]}>{displayName}</Text>
                 <View style={[styles.qrBoxLarge, { backgroundColor: '#FFFFFF' }]}>
                   <QRCode
                     value={displayMobile || currentUser?.uid || 'SPLITMATE_USER'}
-                    size={200}
-                    color="#000000"
+                    size={210}
+                    color="#0B132B"
                     backgroundColor="#FFFFFF"
+                    logo={require('../../assets/icon.png')}
+                    logoSize={48}
+                    logoMargin={4}
+                    logoBackgroundColor="#FFFFFF"
+                    logoBorderRadius={12}
                   />
                 </View>
                 <Text style={[styles.qrNote, { color: colors.onSurfaceVariant }]}>Scan this QR code using SplitMate to add me directly to your contacts.</Text>
@@ -563,9 +580,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   userCard: {
     flexDirection: 'row',

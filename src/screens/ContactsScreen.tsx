@@ -63,13 +63,16 @@ export default function ContactsScreen() {
     return () => unsub();
   }, [currentUser]);
 
-  // Sync latest platform profiles for contacts that have a UID
+  // Sync latest platform profiles in real-time for contacts that have a UID
   useEffect(() => {
     if (myContacts.length === 0) return;
 
     const unsubs: (() => void)[] = [];
+    const subscribedUids = new Set<string>();
+
     myContacts.forEach(contact => {
-      if (contact.uid && !platformProfiles[contact.uid]) {
+      if (contact.uid && !subscribedUids.has(contact.uid)) {
+        subscribedUids.add(contact.uid);
         const unsub = subscribeToUserProfile(contact.uid, (profile) => {
           if (profile) {
             setPlatformProfiles(prev => ({
@@ -148,18 +151,26 @@ export default function ContactsScreen() {
   const renderContact = useCallback(({ item }: { item: Contact }) => {
     const platformUser = item.uid ? platformProfiles[item.uid] : null;
 
-    // Priority: 1. Platform Profile Pic, 2. Device Profile Pic, 3. Initials
-    const priorityPhoto = platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoUrl;
+    // Priority: 1. Platform Thumbnail/Photo, 2. Local Contact Thumbnail/Photo
+    const priorityPhoto = platformUser?.photoThumbnailUrl || platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoThumbnailUrl || item.photoUrl;
+    const thumbnailUri = platformUser?.photoThumbnailUrl || item.photoThumbnailUrl || priorityPhoto;
 
     return (
       <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-        <SmartImage uri={priorityPhoto} name={platformUser?.name || item.name} size={48} style={{ borderRadius: 24 }} />
+        <SmartImage
+          uri={priorityPhoto}
+          thumbnailUri={thumbnailUri}
+          name={platformUser?.name || item.name}
+          mode="thumbnail"
+          size={48}
+          style={{ borderRadius: 24 }}
+        />
         <View style={styles.contactInfo}>
           <Text style={[styles.contactName, { color: colors.onSurface }]}>{platformUser?.name || item.name || item.phone}</Text>
           <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
           {item.uid && (
-            <View style={[styles.platformBadge, { backgroundColor: colors.primaryContainer }]}>
-              <Text style={[styles.platformBadgeText, { color: colors.primary }]}>SplitMate</Text>
+            <View style={[styles.platformBadge, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.platformBadgeText, { color: '#FFFFFF' }]}>SplitMate</Text>
             </View>
           )}
         </View>

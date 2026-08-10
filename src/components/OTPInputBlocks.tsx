@@ -12,12 +12,14 @@ import { useTheme } from '../context/ThemeContext';
 interface OTPInputBlocksProps {
   value: string;
   onChange: (otp: string) => void;
+  onComplete?: (otp: string) => void;
   disabled?: boolean;
 }
 
 export const OTPInputBlocks: React.FC<OTPInputBlocksProps> = ({
   value,
   onChange,
+  onComplete,
   disabled = false,
 }) => {
   const { colors } = useTheme();
@@ -44,20 +46,30 @@ export const OTPInputBlocks: React.FC<OTPInputBlocksProps> = ({
             newOtpArray[index + i] = sliced[i];
         }
         setOtpArray(newOtpArray);
-        onChange(newOtpArray.join(''));
+        const fullCode = newOtpArray.join('');
+        onChange(fullCode);
 
         // Focus the appropriate input
         const nextIndex = Math.min(index + sliced.length, 5);
         inputs.current[nextIndex]?.focus();
+
+        if (fullCode.length === 6 && onComplete) {
+          onComplete(fullCode);
+        }
         return;
     }
 
     newOtpArray[index] = newText;
     setOtpArray(newOtpArray);
-    onChange(newOtpArray.join(''));
+    const fullCode = newOtpArray.join('');
+    onChange(fullCode);
 
     if (newText !== '' && index < 5) {
       inputs.current[index + 1]?.focus();
+    }
+
+    if (fullCode.length === 6 && onComplete) {
+      onComplete(fullCode);
     }
   };
 

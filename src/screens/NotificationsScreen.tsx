@@ -12,6 +12,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -24,6 +25,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
 export default function NotificationsScreen({ navigation }: Props) {
   const currentUser = auth.currentUser;
+  const { colors, isDark } = useTheme();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,10 +49,7 @@ export default function NotificationsScreen({ navigation }: Props) {
       await markNotificationAsRead(id);
     }
 
-    // Navigate based on type
     if (item.type === 'EXPENSE' && item.data?.expenseId) {
-      // We need the full expense data to navigate to Detail, or we might need to fetch it
-      // For now, let's navigate to group if available
       if (item.data.groupId) {
         navigation.navigate('GroupDetail', {
           groupId: item.data.groupId,
@@ -58,7 +57,7 @@ export default function NotificationsScreen({ navigation }: Props) {
         });
       }
     } else if (item.type === 'GROUP_INVITE' || item.type === 'group_invitation') {
-      navigation.navigate('MainTabs'); // Home shows invitations
+      navigation.navigate('MainTabs');
     } else if (item.data?.groupId) {
       navigation.navigate('GroupDetail', {
         groupId: item.data.groupId,
@@ -68,23 +67,23 @@ export default function NotificationsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onBackground} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Notifications</Text>
+        <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Notifications</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {loading ? (
-          <ActivityIndicator size="small" color={Colors.primary} style={{ marginVertical: 24 }} />
+          <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: 24 }} />
         ) : notifications.length === 0 ? (
-          <View style={styles.emptyCard}>
+          <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainer, borderColor: colors.divider }]}>
             <Text style={styles.emptyEmoji}>🔔</Text>
-            <Text style={styles.emptyTitle}>No Notifications</Text>
-            <Text style={styles.emptySub}>You are all caught up! New payment reminders will show up here.</Text>
+            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No Notifications</Text>
+            <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>You are all caught up! New payment reminders will show up here.</Text>
           </View>
         ) : (
           <View style={styles.list}>
@@ -95,25 +94,29 @@ export default function NotificationsScreen({ navigation }: Props) {
               return (
                 <TouchableOpacity
                   key={item.id || item.notificationId}
-                  style={[styles.card, isUnread && { backgroundColor: Colors.primary + '08', borderColor: Colors.primary }]}
+                  style={[
+                    styles.card,
+                    { backgroundColor: colors.surfaceContainer, borderColor: colors.divider },
+                    isUnread && { backgroundColor: isDark ? '#1E293B' : colors.primary + '08', borderColor: colors.primary }
+                  ]}
                   onPress={() => handlePressNotif(item)}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.iconBox, { backgroundColor: isReminder ? Colors.error + '10' : Colors.surfaceContainerLow }]}>
+                  <View style={[styles.iconBox, { backgroundColor: isReminder ? colors.error + '18' : isDark ? '#334155' : colors.surfaceContainerLow }]}>
                     <MaterialIcons
                       name={isReminder ? "priority-high" : "notifications"}
                       size={20}
-                      color={isReminder ? Colors.error : Colors.primary}
+                      color={isReminder ? colors.error : colors.primary}
                     />
                   </View>
                   <View style={styles.info}>
-                    <Text style={[styles.title, isUnread && { fontWeight: '700' }]}>{item.title}</Text>
-                    <Text style={styles.subtitle}>{item.message}</Text>
-                    <Text style={styles.date}>
+                    <Text style={[styles.title, { color: colors.onBackground }, isUnread && { fontWeight: '700' }]}>{item.title}</Text>
+                    <Text style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>{item.message}</Text>
+                    <Text style={[styles.date, { color: colors.outline }]}>
                       {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
                     </Text>
                   </View>
-                  {isUnread && <View style={styles.unreadDot} />}
+                  {isUnread && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}
                 </TouchableOpacity>
               );
             })}

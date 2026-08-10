@@ -22,7 +22,6 @@ import { updateUserProfile } from '../services/authService';
 import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
 
@@ -149,7 +148,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
         <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
+            <TouchableOpacity onPress={() => setIsPickerVisible(true)} activeOpacity={0.8} style={{ position: 'relative' }}>
               <SmartImage
                 uri={photoUrl}
                 thumbnailUri={photoThumbnailUrl}
@@ -157,6 +156,12 @@ export default function ProfileEditScreen({ navigation }: Props) {
                 size={80}
                 fallbackIcon="person"
               />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
               <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
                 <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
               </View>
@@ -220,11 +225,6 @@ export default function ProfileEditScreen({ navigation }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={photoUrl ? removeMedia : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

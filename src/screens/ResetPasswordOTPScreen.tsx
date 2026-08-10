@@ -16,7 +16,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
-import { verifyOTP, sendOTPEmailHTTP, resetPasswordWithOTP } from '../services/authService';
+import { verifyOTP, sendOTPEmailHTTP, resetPasswordWithOTP, warmUpOTPService } from '../services/authService';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OTPInputBlocks } from '../components';
 
@@ -35,6 +35,11 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Pre-warm OTP backend on mount to eliminate cold-start latency
+  useEffect(() => {
+    warmUpOTPService();
+  }, []);
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (timer > 0) {
@@ -45,22 +50,35 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
     return () => clearInterval(interval);
   }, [timer]);
 
-  const handleVerify = async () => {
+  const isVerifyingRef = React.useRef(false);
+
+  const handleVerify = async (codeToVerify?: string) => {
+    if (isVerifyingRef.current) return;
+    const targetOtp = codeToVerify || otp;
     setErrorMessage('');
-    if (otp.length !== 6) {
+    if (targetOtp.length !== 6) {
       setErrorMessage('Please enter the 6-digit code sent to your email.');
       return;
     }
 
+    isVerifyingRef.current = true;
     setLoading(true);
     try {
       if (!email) throw new Error('Missing email parameter');
-      await verifyOTP(email, otp);
+      await verifyOTP(email, targetOtp);
+      isVerifyingRef.current = false;
       setLoading(false);
       setStep('password');
     } catch (error: any) {
+      isVerifyingRef.current = false;
       setLoading(false);
-      setErrorMessage(error.message || 'Verification Failed. Invalid or expired OTP.');
+      let userFriendlyMessage = 'Verification Failed. Invalid or expired OTP.';
+      if (error.code === 'auth/email-already-in-use') {
+        userFriendlyMessage = 'An account with this email already exists.';
+      } else if (error.message) {
+        userFriendlyMessage = error.message.replace(/^Firebase:\s*Error\s*\(auth\/[^)]+\)\.?\s*/i, '');
+      }
+      setErrorMessage(userFriendlyMessage);
     }
   };
 
@@ -196,6 +214,9 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
               onChange={(text) => {
                 setOtp(text);
                 if (errorMessage) setErrorMessage('');
+              }}
+              onComplete={(code) => {
+                handleVerify(code);
               }}
               disabled={loading}
             />

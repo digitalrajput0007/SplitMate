@@ -82,7 +82,7 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+        <View style={[styles.card, { backgroundColor: colors.surfaceContainer, borderColor: colors.divider }]}>
           
           {/* Group Invites */}
           <View style={styles.toggleRow}>

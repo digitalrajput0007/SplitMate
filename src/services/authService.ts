@@ -112,13 +112,29 @@ export const sendOTPEmailHTTP = async (email: string, mode: 'signup' | 'reset' |
     console.log('[HTTP] response:', result);
 
     if (!response.ok) {
-      throw new Error(result.error || 'Failed to send OTP');
+      let errMsg = result?.error || result?.message || 'Failed to send OTP';
+      if (typeof errMsg !== 'string') errMsg = 'Failed to send OTP';
+
+      if (errMsg.toLowerCase().includes('already exists') || errMsg.toLowerCase().includes('already registered')) {
+        errMsg = 'An account with this email already exists. Please sign in instead.';
+      } else if (response.status === 429 || errMsg.includes('30 minutes') || errMsg.toLowerCase().includes('too many')) {
+        errMsg = 'Too many requests. Please try after some time.';
+      } else if (response.status === 400) {
+        errMsg = 'An account with this email already exists. Please sign in instead.';
+      }
+      throw new Error(errMsg);
     }
 
     return result;
   } catch (error: any) {
     console.error('[HTTP] error:', error);
-    throw error;
+    let errMsg = error.message || 'Failed to send OTP';
+    if (errMsg.toLowerCase().includes('already exists') || errMsg.toLowerCase().includes('bad request')) {
+      errMsg = 'An account with this email already exists. Please sign in instead.';
+    } else if (errMsg.includes('30 minutes') || errMsg.toLowerCase().includes('too many')) {
+      errMsg = 'Too many requests. Please try after some time.';
+    }
+    throw new Error(errMsg);
   }
 };
 
@@ -178,21 +194,31 @@ export const resetPasswordWithOTP = async (email: string, newPassword: string) =
 };
 
 /* =========================================================
+   🔥 PRE-WARM OTP SERVICE (Eliminates Cold Start Latency)
+========================================================= */
+export const warmUpOTPService = () => {
+  fetch("https://us-central1-splitmate-d2d66.cloudfunctions.net/verifyOTP", {
+    method: "OPTIONS",
+  }).catch(() => {});
+};
+
+/* =========================================================
    🚀 SIGNUP
 ========================================================= */
 export const signUpWithEmail = async (email: string, pass: string): Promise<User> => {
   const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
   const user = userCredential.user;
 
-  await setDoc(
+  // Run Firestore document write asynchronously in background without blocking Auth completion
+  setDoc(
     doc(db, "users", user.uid),
     {
       email: email.toLowerCase(),
-      isVerified: true, // Set to true immediately in new flow
+      isVerified: true,
       createdAt: serverTimestamp(),
     },
     { merge: true }
-  );
+  ).catch((e) => console.warn("[Auth] Background setDoc error:", e));
 
   return user;
 };

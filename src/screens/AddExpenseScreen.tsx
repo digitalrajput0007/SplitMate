@@ -25,7 +25,6 @@ import {
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { useTheme } from '../context/ThemeContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 
@@ -153,11 +152,6 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         title="Attach Receipt"
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

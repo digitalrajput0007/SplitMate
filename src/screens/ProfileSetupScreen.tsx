@@ -28,7 +28,6 @@ import {
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
@@ -177,11 +176,13 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         });
       }
       setSaving(false);
-      // AppNavigator will handle redirection to MainTabs automatically via its real-time listener
-    } catch (err) {
+
+      // Redirect to MainTabs (HomeScreen)
+      navigation.navigate('MainTabs');
+    } catch (err: any) {
       setSaving(false);
-      console.log('Profile saved locally (offline / non-blocking mode):', err);
-      // AppNavigator will handle redirection if state changes
+      console.log('Error saving profile:', err);
+      Alert.alert('Error', err?.message || 'Failed to save profile. Please try again.');
     }
   };
 
@@ -201,6 +202,12 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
                 size={120}
                 fallbackIcon="person"
               />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
             </View>
             <View style={styles.cameraBadge}>
               <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
@@ -337,11 +344,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={photoUrl ? removeMedia : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

@@ -31,7 +31,6 @@ import {
 import { auth } from '../config/firebase';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
@@ -316,11 +315,6 @@ export default function CreateGroupModal({ navigation }: Props) {
           onCamera={takePhoto}
           onGallery={pickFromGallery}
           onFiles={browseFiles}
-        />
-
-        <MediaUploadOverlay
-          visible={isUploading}
-          progress={progress}
         />
       </SafeAreaView>
     );
@@ -781,11 +775,6 @@ export default function CreateGroupModal({ navigation }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={groupPhoto ? () => { setGroupPhoto(null); setGroupPhotoThumb(null); } : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );
