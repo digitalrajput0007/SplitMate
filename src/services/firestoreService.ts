@@ -513,14 +513,89 @@ export const addContactToUserFirestore = async (currentUid: string, contact: Con
   }
 };
 
-export const removeContactFromUserFirestore = async (currentUid: string, contactPhone: string): Promise<void> => {
+export const removeContactFromUserFirestore = async (currentUid: string, contactPhone: string, contactUid?: string): Promise<void> => {
   try {
-    const contactId = contactPhone.replace(/[^0-9]/g, '');
-    const contactRef = doc(db, 'users', currentUid, 'contacts', contactId);
-    await deleteDoc(contactRef);
+    const contactId = contactPhone ? contactPhone.replace(/[^0-9]/g, '') : '';
+    if (contactId) {
+      await deleteDoc(doc(db, 'users', currentUid, 'contacts', contactId)).catch(() => {});
+    }
+    if (contactPhone && contactPhone !== contactId) {
+      await deleteDoc(doc(db, 'users', currentUid, 'contacts', contactPhone)).catch(() => {});
+    }
+    if (contactUid) {
+      const q = query(collection(db, 'users', currentUid, 'contacts'), where('uid', '==', contactUid));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref).catch(() => {});
+      }
+    }
   } catch (error) {
     console.error('Error removing contact:', error);
     throw error;
+  }
+};
+
+/**
+ * Deep cleanup of a user from Firestore when an account is deleted.
+ * Removes user from all groups, deletes invitations, and removes contact entries.
+ */
+export const cleanupUserFromFirestore = async (uid: string): Promise<void> => {
+  try {
+    console.log(`[Firestore] Cleaning up data for deleted user ${uid}...`);
+
+    // 1. Fetch user doc to get phone number before deleting
+    const userDocRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(userDocRef);
+    const userPhone = userSnap.exists() ? (userSnap.data() as UserProfile).mobile || '' : '';
+    const phoneDigits = userPhone ? userPhone.replace(/[^0-9]/g, '') : '';
+
+    // 2. Remove user from all groups they belong to
+    const groupsQuery = query(
+      collection(db, 'groups'),
+      where('memberIds', 'array-contains', uid)
+    );
+    const groupsSnap = await getDocs(groupsQuery);
+    for (const groupDoc of groupsSnap.docs) {
+      const gData = groupDoc.data() as GroupData;
+      const updatedMemberIds = (gData.memberIds || []).filter((id) => id !== uid);
+      const membersJoinedAt = gData.membersJoinedAt || {};
+      delete membersJoinedAt[uid];
+      const memberExistingExpensesPreference = gData.memberExistingExpensesPreference || {};
+      delete memberExistingExpensesPreference[uid];
+
+      await updateDoc(groupDoc.ref, {
+        memberIds: updatedMemberIds,
+        membersJoinedAt,
+        memberExistingExpensesPreference,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // 3. Clean up all group invitations to/from this user
+    const invQuery1 = query(collection(db, 'groupInvitations'), where('toUserId', '==', uid));
+    const invSnap1 = await getDocs(invQuery1);
+    for (const d of invSnap1.docs) {
+      await deleteDoc(d.ref).catch(() => {});
+    }
+
+    const invQuery2 = query(collection(db, 'groupInvitations'), where('fromUserId', '==', uid));
+    const invSnap2 = await getDocs(invQuery2);
+    for (const d of invSnap2.docs) {
+      await deleteDoc(d.ref).catch(() => {});
+    }
+
+    // 4. Delete user's own contacts subcollection
+    const myContactsSnap = await getDocs(collection(db, 'users', uid, 'contacts'));
+    for (const d of myContactsSnap.docs) {
+      await deleteDoc(d.ref).catch(() => {});
+    }
+
+    // 5. Delete this user document
+    await deleteDoc(userDocRef).catch(() => {});
+
+    console.log(`[Firestore] Successfully cleaned up user ${uid} from Firestore`);
+  } catch (error) {
+    console.error('Error cleaning up user from Firestore:', error);
   }
 };
 
@@ -1415,12 +1490,12 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
     const expenseRef = doc(collection(db, 'expenses'));
     const subcollExpenseRef = doc(db, 'groups', expense.groupId, 'expenses', expenseRef.id);
 
-    const expenseData = {
+    const expenseData = sanitizeData({
       ...expense,
       expenseId: expenseRef.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
-    };
+    });
 
     // Write primary document instantly & write subcollection in background
     const writePromise = setDoc(expenseRef, expenseData);
@@ -1530,7 +1605,7 @@ export const createRecurringExpenseInFirestore = async (data: {
     updatedAt: serverTimestamp(),
   };
 
-  await setDoc(recRef, payload);
+  await setDoc(recRef, sanitizeData(payload));
   return recRef.id;
 };
 
@@ -1623,7 +1698,7 @@ export const updateExpenseInFirestore = async (expenseId: string, data: Partial<
     const user = auth.currentUser;
     const expenseRef = doc(db, 'expenses', expenseId);
 
-    const updatePayload = { ...data, updatedAt: serverTimestamp() };
+    const updatePayload = sanitizeData({ ...data, updatedAt: serverTimestamp() });
     
     // Instantly execute primary write
     const writePromise = setDoc(expenseRef, updatePayload, { merge: true });

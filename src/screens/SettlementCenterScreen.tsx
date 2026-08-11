@@ -125,9 +125,14 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
         const groupDebts = simplifyDebts(groupExps, groupSets, profiles);
 
-        // Add group metadata and filter for current user
+        const activeMemberIds = group.memberIds || [];
+        // Add group metadata and filter for current user & active members only
         groupDebts.forEach(debt => {
-          if (debt.fromUserId === currentUid || debt.toUserId === currentUid) {
+          if (
+            (debt.fromUserId === currentUid || debt.toUserId === currentUid) &&
+            activeMemberIds.includes(debt.fromUserId) &&
+            activeMemberIds.includes(debt.toUserId)
+          ) {
             aggregated.push({
               ...debt,
               groupId: group.groupId,

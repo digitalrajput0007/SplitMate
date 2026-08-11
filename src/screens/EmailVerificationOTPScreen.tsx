@@ -16,6 +16,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useSecurity } from '../context/SecurityContext';
 import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail, signInWithEmail, warmUpOTPService } from '../services/authService';
 import { setUserEmailVerifiedInFirestore, getUserProfileFromFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
@@ -27,6 +28,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EmailVerificationOTP'>;
 export default function EmailVerificationOTPScreen({ navigation, route }: Props) {
   const { email = '' } = route.params || {};
   const { colors } = useTheme();
+  const { setIsUnlocked } = useSecurity();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -90,6 +92,8 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
           console.warn('Background verification sync error:', e)
         );
       }
+
+      setIsUnlocked(true);
 
       // 3. Determine if user needs Profile Setup or Main Application
       let needsProfileSetup = true;
@@ -248,19 +252,16 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: Spacing.lg, justifyContent: 'center' },
   backBtn: { position: 'absolute', top: 20, left: 20, zIndex: 10 },
   card: {
-    backgroundColor: '#fff',
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: '#F0F0F0'
   },
   iconContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg

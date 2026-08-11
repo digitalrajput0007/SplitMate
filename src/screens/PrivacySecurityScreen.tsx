@@ -20,7 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { checkBiometricHardware, checkBiometricEnrolled, authenticateBiometric } from '../services/biometricService';
 import { deletePinHash } from '../services/secureStorageService';
-import { changeUserPassword } from '../services/authService';
+import { changeUserPassword, deleteUserAccount } from '../services/authService';
 import { auth } from '../config/firebase';
 
 export default function PrivacySecurityScreen() {
@@ -40,6 +40,43 @@ export default function PrivacySecurityScreen() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [requireCurrentPassword, setRequireCurrentPassword] = useState(false);
   const [modalErrorMessage, setModalErrorMessage] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const handleDeleteAccount = () => {
+    if (deletingAccount) return;
+
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your SplitMate account? All your active groups and expense records will be deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Permanently',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingAccount(true);
+            try {
+              await deleteUserAccount();
+              Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+            } catch (err: any) {
+              setDeletingAccount(false);
+              if (err.code === 'auth/requires-recent-login') {
+                Alert.alert(
+                  'Re-authentication Required',
+                  'This action is sensitive and requires a recent sign-in. Please log out and sign back in before deleting your account.'
+                );
+              } else {
+                Alert.alert(
+                  'Error Deleting Account',
+                  err.message || 'Failed to delete account. Please try again later.'
+                );
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleBiometricToggle = async (val: boolean) => {
     if (authenticating) return;
@@ -226,19 +263,18 @@ export default function PrivacySecurityScreen() {
 
           <TouchableOpacity
             style={styles.rowClickable}
-            onPress={() =>
-              Alert.alert(
-                'Delete Account',
-                'Are you sure you want to permanently delete your SplitMate account? All your active groups and expense records will be deleted.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Delete Permanently', style: 'destructive' },
-                ]
-              )
-            }
+            onPress={handleDeleteAccount}
+            disabled={deletingAccount}
           >
-            <Text style={[styles.rowTitle, { color: colors.error }]}>Delete Account</Text>
-            <MaterialIcons name="chevron-right" size={24} color={colors.error} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowTitle, { color: colors.error }]}>Delete Account</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Permanently delete your account & data</Text>
+            </View>
+            {deletingAccount ? (
+              <ActivityIndicator size="small" color={colors.error} />
+            ) : (
+              <MaterialIcons name="chevron-right" size={24} color={colors.error} />
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>

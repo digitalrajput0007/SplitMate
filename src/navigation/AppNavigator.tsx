@@ -251,6 +251,8 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
     return null;
   }
 
+  const showLock = user && !security.isUnlocked;
+
   const navTheme = {
     ...(isDark ? DarkTheme : DefaultTheme),
     colors: {
@@ -267,59 +269,67 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
   };
 
   return (
-    <NavigationContainer ref={navigationRef} theme={navTheme}>
-      <Stack.Navigator
-        initialRouteName={getInitialRouteName()}
-        screenOptions={{
-          headerShown: false,
-          animation: 'fade',
-        }}
-      >
-        {!user ? (
-          <>
-            <Stack.Screen name="SignIn" component={SignInScreen} />
-            <Stack.Screen name="Splash" component={SplashScreen} />
-            <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-            <Stack.Screen name="OTPVerification" component={OTPScreen} />
-            <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
-            <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
-            <Stack.Screen name="EmailScreen" component={EmailScreen} />
-          </>
-        ) : !userStatus?.hasProfile ? (
-          <>
-            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-          </>
-        ) : (
-          <>
-            {/* Authenticated Flow */}
-            <Stack.Screen name="MainTabs" component={MainTabNavigator} />
-            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-            <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
-            <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
-            <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
-            <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
-            <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
-            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
-            <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
-            <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
-            <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
-            <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
-            <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
-            <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
-            <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
-            <Stack.Screen name="ContactUs" component={ContactUsScreen} />
-            <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
-            <Stack.Screen name="SetupPin" component={SetupPinScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <View style={{ flex: 1 }}>
+      <NavigationContainer ref={navigationRef} theme={navTheme}>
+        <Stack.Navigator
+          initialRouteName={getInitialRouteName()}
+          screenOptions={{
+            headerShown: false,
+            animation: 'fade',
+          }}
+        >
+          {!user ? (
+            <>
+              <Stack.Screen name="SignIn" component={SignInScreen} />
+              <Stack.Screen name="Splash" component={SplashScreen} />
+              <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+              <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+              <Stack.Screen name="OTPVerification" component={OTPScreen} />
+              <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
+              <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
+              <Stack.Screen name="EmailScreen" component={EmailScreen} />
+            </>
+          ) : !userStatus?.hasProfile ? (
+            <>
+              <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+              <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+            </>
+          ) : (
+            <>
+              {/* Authenticated Flow */}
+              <Stack.Screen name="MainTabs" component={MainTabNavigator} />
+              <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
+              <Stack.Screen name="ContactsPermission" component={ContactsPermissionScreen} />
+              <Stack.Screen name="AddExpense" component={AddExpenseScreen} options={{ presentation: 'modal' }} />
+              <Stack.Screen name="CreateGroup" component={CreateGroupModal} options={{ presentation: 'modal' }} />
+              <Stack.Screen name="GroupDetail" component={GroupDetailScreen} />
+              <Stack.Screen name="SettleUp" component={SettleUpScreen} options={{ presentation: 'modal' }} />
+              <Stack.Screen name="SettlementCenter" component={SettlementCenterScreen} />
+              <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} />
+              <Stack.Screen name="PaymentMethods" component={PaymentMethodsScreen} />
+              <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
+              <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
+              <Stack.Screen name="AppTheme" component={AppThemeScreen as any} />
+              <Stack.Screen name="HelpSupport" component={HelpSupportScreen} />
+              <Stack.Screen name="Notifications" component={NotificationsScreen} />
+              <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
+              <Stack.Screen name="ExpenseDetail" component={ExpenseDetailScreen} />
+              <Stack.Screen name="RecurringExpenses" component={RecurringExpensesScreen} />
+              <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+              <Stack.Screen name="ContactUs" component={ContactUsScreen} />
+              <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
+              <Stack.Screen name="SetupPin" component={SetupPinScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+
+      {showLock && (
+        <View style={StyleSheet.absoluteFill}>
+          <UnlockScreen />
+        </View>
+      )}
+    </View>
   );
 }
 

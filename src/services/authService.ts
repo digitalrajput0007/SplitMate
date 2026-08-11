@@ -9,18 +9,22 @@ import {
   User,
   GoogleAuthProvider,
   signInWithCredential,
+  deleteUser,
 } from "firebase/auth";
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth, db, app, WEB_CLIENT_ID } from "../config/firebase";
 import {
   doc,
   setDoc,
+  deleteDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { Platform } from "react-native";
 
 import { NotificationService } from "./NotificationService";
+import { deletePinHash } from "./secureStorageService";
+import { cleanupUserFromFirestore } from "./firestoreService";
 
 // Initialize Google Signin exactly once
 if (Platform.OS !== 'web') {
@@ -285,6 +289,39 @@ export const changeUserPassword = async (currentPassword: string, newPassword: s
   const credential = EmailAuthProvider.credential(user.email, currentPassword);
   await reauthenticateWithCredential(user, credential);
 
+
   // Then update password
   await updatePassword(user, newPassword);
+};
+
+/* =========================================================
+   ❌ DELETE ACCOUNT
+========================================================= */
+export const deleteUserAccount = async (): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user found.');
+
+  // 1. Unregister push token
+  try {
+    await NotificationService.unregisterPushToken();
+  } catch (e) {
+    console.warn('[Auth] Error unregistering push token during account deletion:', e);
+  }
+
+  // 2. Delete PIN hash local security setting if set
+  try {
+    await deletePinHash();
+  } catch (e) {
+    console.warn('[Auth] Error deleting PIN hash:', e);
+  }
+
+  // 3. Perform comprehensive cleanup in Firestore (remove from all groups, invitations, contacts & delete user doc)
+  try {
+    await cleanupUserFromFirestore(user.uid);
+  } catch (e) {
+    console.warn('[Auth] Error cleaning up user data in Firestore:', e);
+  }
+
+  // 4. Delete user from Firebase Auth
+  await deleteUser(user);
 };

@@ -524,7 +524,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   };
 
   const getInitials = (name: string) => {
-    return name
+    return (name || '')
       .trim()
       .split(' ')
       .filter(Boolean)

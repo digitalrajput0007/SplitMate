@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onExpenseCreated = exports.resetPasswordWithOTP = exports.verifyOTP = exports.sendOTPEmailTest = void 0;
+exports.generateOTPEmailHTML = generateOTPEmailHTML;
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-functions/v2/firestore");
 const params_1 = require("firebase-functions/params");
@@ -50,6 +51,139 @@ const auth = (0, auth_1.getAuth)();
 const messaging = (0, messaging_1.getMessaging)();
 // ================= SECRETS =================
 const BREVO_API_KEY = (0, params_1.defineSecret)("BREVO_API_KEY");
+// ================= REUSABLE OTP EMAIL TEMPLATE GENERATOR =================
+function generateOTPEmailHTML(options) {
+    const isSignup = options.mode === 'signup';
+    const subject = isSignup
+        ? "Your SplitMate verification code"
+        : "Your SplitMate password reset code";
+    const heading = isSignup
+        ? "Verify your email"
+        : "Reset your password";
+    const bodyLine1 = isSignup
+        ? "Welcome to SplitMate!"
+        : "We received a request to reset your SplitMate account password.";
+    const bodyLine2 = isSignup
+        ? "Use the verification code below to complete your account setup."
+        : "Use the verification code below to continue.";
+    const additionalMessage = isSignup
+        ? "If you didn't request this code, you can safely ignore this email."
+        : "If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.";
+    const textContent = `${heading}\n\n${bodyLine1}\n${bodyLine2}\n\nOTP: ${options.otp}\n\nThis code expires in 10 minutes.\nNever share this code with anyone.\n\n${additionalMessage}\n\nSplitMate - Simple expense sharing for everyone.\n© 2026 SplitMate`;
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #F8FAFC; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; word-spacing: normal;">
+  <div style="background-color: #F8FAFC; width: 100%; padding: 40px 0;">
+    <!--[if mso]>
+    <table align="center" border="0" cellpadding="0" cellspacing="0" width="560">
+    <tr>
+    <td>
+    <![endif]-->
+    <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; margin: 0 auto; background-color: #FFFFFF; border-radius: 16px; border: 1px solid #E2E8F0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);">
+      
+      <!-- HEADER -->
+      <tr>
+        <td align="center" style="padding: 36px 36px 20px 36px; text-align: center;">
+          <img
+            src="https://ik.imagekit.io/splitmateapp/notification_large.png"
+            alt="SplitMate"
+            width="64"
+            height="64"
+            style="
+              display:block;
+              margin: 0 auto;
+              width:64px !important;
+              height:64px !important;
+              max-width:64px !important;
+              max-height:64px !important;
+              min-width:64px !important;
+              min-height:64px !important;
+              object-fit:contain;
+              border:0;
+              outline:none;
+              text-decoration:none;
+            "
+          />
+        </td>
+      </tr>
+
+      <!-- BODY CONTENT -->
+      <tr>
+        <td style="padding: 0 36px 36px 36px;">
+          <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #0F172A; letter-spacing: -0.5px;">${heading}</h1>
+          
+          <p style="margin: 0 0 8px 0; font-size: 15px; line-height: 24px; color: #334155; font-weight: 500;">
+            ${bodyLine1}
+          </p>
+          <p style="margin: 0 0 28px 0; font-size: 15px; line-height: 24px; color: #475569;">
+            ${bodyLine2}
+          </p>
+
+          <!-- OTP CONTAINER -->
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 12px; margin-bottom: 24px;">
+            <tr>
+              <td style="padding: 24px; text-align: center;">
+                <div style="font-family: 'SF Mono', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #1E40AF; margin: 0; padding-left: 10px;">${options.otp}</div>
+              </td>
+            </tr>
+          </table>
+
+          <p style="margin: 0 0 16px 0; font-size: 14px; color: #475569; font-weight: 600; text-align: center;">
+            This code expires in 10 minutes.
+          </p>
+
+          <div style="background-color: #FEF2F2; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; text-align: center;">
+            <p style="margin: 0; font-size: 13px; color: #991B1B; font-weight: 600;">
+              🔒 Never share this code with anyone.
+            </p>
+          </div>
+
+          <p style="margin: 0; font-size: 13px; line-height: 20px; color: #64748B; border-top: 1px solid #F1F5F9; padding-top: 20px;">
+            ${additionalMessage}
+          </p>
+        </td>
+      </tr>
+
+      <!-- FOOTER -->
+      <tr>
+        <td style="padding: 24px 36px; background-color: #F8FAFC; border-top: 1px solid #E2E8F0; text-align: center;">
+          <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: #334155;">SplitMate</p>
+          <p style="margin: 0 0 14px 0; font-size: 13px; color: #64748B;">Simple expense sharing for everyone.</p>
+          
+          <p style="margin: 0 0 14px 0; font-size: 12px; color: #64748B;">
+            <a href="https://splitmate.app/privacy" style="color: #2563EB; text-decoration: none; font-weight: 500;">Privacy Policy</a> &nbsp;•&nbsp; 
+            <a href="https://splitmate.app/terms" style="color: #2563EB; text-decoration: none; font-weight: 500;">Terms</a> &nbsp;•&nbsp; 
+            <a href="https://splitmate.app/help" style="color: #2563EB; text-decoration: none; font-weight: 500;">Help</a>
+          </p>
+
+          <p style="margin: 0; font-size: 12px; color: #94A3B8;">© 2026 SplitMate</p>
+        </td>
+      </tr>
+    </table>
+    <!--[if mso]>
+    </td>
+    </tr>
+    </table>
+    <![endif]-->
+  </div>
+</body>
+</html>`;
+    return { subject, htmlContent, textContent };
+}
 // ================= SEND OTP (HTTP onRequest) =================
 // Merged logic from sendOTPEmail and sendOTPEmailTest
 exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, async (req, res) => {
@@ -112,11 +246,11 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
         }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         console.log(`[OTP] Generated: ${otp} for ${email}`);
-        // Save to Firestore
+        // Save to Firestore with 10 min expiration
         await db.collection("otp_verifications").doc(email).set({
             email,
             otp,
-            expiresAt: firestore_3.Timestamp.fromMillis(Date.now() + 5 * 60 * 1000), // ✅ FIXED
+            expiresAt: firestore_3.Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
             verified: false,
             createdAt: firestore_2.FieldValue.serverTimestamp(),
         });
@@ -130,9 +264,11 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
         const apiKey = defaultClient.authentications["api-key"];
         apiKey.apiKey = apiKeyVal;
         const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+        const emailData = generateOTPEmailHTML({ mode, otp });
         const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-        sendSmtpEmail.subject = "Your OTP Code";
-        sendSmtpEmail.textContent = `Your OTP is ${otp}`;
+        sendSmtpEmail.subject = emailData.subject;
+        sendSmtpEmail.htmlContent = emailData.htmlContent;
+        sendSmtpEmail.textContent = emailData.textContent;
         sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
         sendSmtpEmail.to = [{ email }];
         await apiInstance.sendTransacEmail(sendSmtpEmail);
@@ -275,6 +411,12 @@ exports.onExpenseCreated = (0, firestore_1.onDocumentCreated)("expenses/{expense
             groupId,
             expenseId: event.params.expenseId,
         },
-        android: { priority: "high" },
+        android: {
+            priority: "high",
+            notification: {
+                icon: "ic_notification_silhouette",
+                color: "#0065F2",
+            },
+        },
     });
 });

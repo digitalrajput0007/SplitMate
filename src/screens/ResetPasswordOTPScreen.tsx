@@ -193,8 +193,8 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
             <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
           </TouchableOpacity>
 
-          <View style={styles.card}>
-            <View style={styles.iconContainer}>
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={[styles.iconContainer, { backgroundColor: colors.primaryContainer }]}>
               <MaterialIcons name="security" size={48} color={colors.primary} />
             </View>
             <Text style={[styles.title, { color: colors.onSurface }]}>Password Reset</Text>
@@ -226,7 +226,7 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
               onPress={handleVerify}
               disabled={loading || otp.length !== 6}
             >
-              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.verifyBtnText}>Verify</Text>}
+              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.verifyBtnText, { color: colors.onPrimary }]}>Verify</Text>}
             </TouchableOpacity>
 
             <View style={styles.resendContainer}>
@@ -249,19 +249,16 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: Spacing.lg, justifyContent: 'center' },
   backBtn: { position: 'absolute', top: 20, left: 20, zIndex: 10 },
   card: {
-    backgroundColor: '#fff',
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: '#F0F0F0'
   },
   iconContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg

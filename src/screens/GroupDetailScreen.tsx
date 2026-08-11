@@ -106,12 +106,14 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
     return [...activeMembers].sort((a, b) => {
       if (a.uid === currentUid) return -1;
       if (b.uid === currentUid) return 1;
-      return a.name.localeCompare(b.name);
+      const nameA = a.name || '';
+      const nameB = b.name || '';
+      return nameA.localeCompare(nameB);
     });
   }, [activeMembers, currentUid]);
 
   const memberNamesMap = activeMembers.reduce((acc, m) => {
-    acc[m.uid] = m.uid === currentUid ? 'You' : m.name;
+    acc[m.uid] = m.uid === currentUid ? 'You' : (m.name || 'Member');
     return acc;
   }, {} as Record<string, string>);
 
@@ -309,7 +311,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                   style={styles.avatarImage}
                 />
                 <Text style={[styles.memberNameText, { color: colors.onSurface }]} numberOfLines={1}>
-                  {m.uid === currentUid ? 'You' : m.name.split(' ')[0]}
+                  {m.uid === currentUid ? 'You' : (m.name || 'Member').split(' ')[0]}
                 </Text>
               </View>
             ))}
@@ -335,7 +337,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                     style={styles.avatarImage}
                   />
                   <Text style={[styles.memberNameText, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
-                    {m.name.split(' ')[0]}
+                    {(m.name || 'Member').split(' ')[0]}
                   </Text>
                 </View>
               ))}

@@ -334,7 +334,7 @@ export function AddGroupMemberModal({
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
               <Text style={[styles.addSubmitText, { color: colors.onPrimary }]}>
-                {selectedUser ? `Add ${selectedUser.name.split(' ')[0]}` : 'Select a person'}
+                {selectedUser ? `Add ${(selectedUser.name || 'Member').split(' ')[0]}` : 'Select a person'}
               </Text>
             )}
           </TouchableOpacity>

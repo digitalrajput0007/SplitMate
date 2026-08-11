@@ -140,7 +140,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const simplifiedDebts = useMemo(() => {
     const raw = simplifyDebts(expenses, settlements, memberProfiles, group?.memberExistingExpensesPreference);
     const activeMemberIds = group?.memberIds || [];
-    if (activeMemberIds.length === 0) return raw;
+    if (activeMemberIds.length === 0) return [];
     return raw.filter(
       (d) => activeMemberIds.includes(d.fromUserId) && activeMemberIds.includes(d.toUserId)
     );

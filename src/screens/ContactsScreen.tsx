@@ -145,7 +145,11 @@ export default function ContactsScreen() {
   const handleRemove = (contact: Contact) => {
     Alert.alert('Remove Contact', `Are you sure you want to remove ${contact.name}?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => removeContactFromUserFirestore(currentUser!.uid, contact.phone) },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => removeContactFromUserFirestore(currentUser!.uid, contact.phone || contact.name, contact.uid),
+      },
     ]);
   };
 

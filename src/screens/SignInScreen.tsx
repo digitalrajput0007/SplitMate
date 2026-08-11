@@ -16,6 +16,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
+import { useSecurity } from '../context/SecurityContext';
 import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword, sendOTPEmailHTTP } from '../services/authService';
 import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
@@ -27,6 +28,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const { setIsUnlocked } = useSecurity();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -64,6 +66,7 @@ export default function SignInScreen({ navigation }: Props) {
         });
       } else {
         await signInWithEmail(trimmedEmail, password);
+        setIsUnlocked(true);
         setLoading(false);
       }
     } catch (err: any) {
@@ -92,6 +95,7 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
+      setIsUnlocked(true);
       setLoading(false);
 
       // Fire Firestore profile verification sync asynchronously in background without blocking navigation
@@ -402,6 +406,7 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     ...Typography.titleMd,
+    fontWeight: '600',
   },
   divider: {
     flexDirection: 'row',
@@ -431,16 +436,20 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     ...Typography.titleMd,
+    fontWeight: '700',
   },
   toggleRow: {
     alignItems: 'center',
     marginTop: Spacing.md,
+    paddingVertical: 4,
   },
   toggleText: {
     ...Typography.bodyMd,
+    textAlign: 'center',
   },
   toggleLink: {
-    fontWeight: '600',
+    ...Typography.bodyMd,
+    fontWeight: '700',
   },
   legalLink: {
     textDecorationLine: 'underline',
@@ -454,6 +463,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginBottom: Spacing.sm,
     marginTop: -Spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   forgotText: {
     ...Typography.titleSm,

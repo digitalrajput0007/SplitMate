@@ -121,7 +121,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
   };
 
   const getInitials = (userName: string) => {
-    return userName
+    return (userName || '')
       .trim()
       .split(' ')
       .filter(Boolean)

@@ -86,9 +86,14 @@ export default function App() {
   });
 
   React.useEffect(() => {
-    // Hide splash screen instantly on mount
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
+    if (fontsLoaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <ThemeProvider>

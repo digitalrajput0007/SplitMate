@@ -121,19 +121,16 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: Spacing.lg, justifyContent: 'center' },
   backBtn: { position: 'absolute', top: 20, left: 20, zIndex: 10 },
   card: {
-    backgroundColor: '#fff',
     borderRadius: BorderRadius.xl,
     padding: Spacing.xl,
     alignItems: 'center',
     ...Shadows.card,
     borderWidth: 1,
-    borderColor: '#F0F0F0'
   },
   iconContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.lg
