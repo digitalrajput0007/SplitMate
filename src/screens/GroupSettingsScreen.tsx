@@ -564,23 +564,32 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         <View style={styles.photoUploadCenter}>
           <TouchableOpacity
             style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]}
-            onPress={isOwner ? () => setIsPickerVisible(true) : undefined}
-            activeOpacity={isOwner ? 0.8 : 1}
+            onPress={isOwner && !isUploading ? () => setIsPickerVisible(true) : undefined}
+            activeOpacity={isOwner && !isUploading ? 0.8 : 1}
+            disabled={isUploading}
           >
-            <SmartImage
-              uri={groupPhoto || undefined}
-              thumbnailUri={groupPhotoThumbnail || undefined}
-              name={groupName}
-              size={80}
-              fallbackIcon={
-                groupType === 'Trip' ? 'flight' :
-                groupType === 'Family' ? 'home' :
-                groupType === 'Couple' ? 'favorite' :
-                groupType === 'Flatmate' ? 'apartment' : 'groups'
-              }
-            />
+            <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+              <SmartImage
+                uri={groupPhoto || undefined}
+                thumbnailUri={groupPhotoThumbnail || undefined}
+                name={groupName}
+                size={80}
+                fallbackIcon={
+                  groupType === 'Trip' ? 'flight' :
+                  groupType === 'Family' ? 'home' :
+                  groupType === 'Couple' ? 'favorite' :
+                  groupType === 'Flatmate' ? 'apartment' : 'groups'
+                }
+              />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
+            </View>
             {isOwner && (
-              <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+              <View style={[styles.photoAddBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surface }]}>
                 <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
               </View>
             )}
@@ -588,8 +597,8 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
           <View style={styles.photoActions}>
             {isOwner && groupPhoto ? (
-              <TouchableOpacity onPress={handleRemovePhoto}>
-                <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
+              <TouchableOpacity onPress={handleRemovePhoto} disabled={isUploading}>
+                <Text style={[styles.avatarHint, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -739,15 +748,17 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
         {isOwner && (
           <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            style={[styles.saveBtn, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
             onPress={handleUpdateGroup}
             activeOpacity={0.85}
-            disabled={saving}
+            disabled={saving || isUploading}
           >
             {saving ? (
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Update Group</Text>
+              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>
+                {isUploading ? 'Uploading Image...' : 'Update Group'}
+              </Text>
             )}
           </TouchableOpacity>
         )}

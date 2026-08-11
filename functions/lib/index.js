@@ -414,7 +414,7 @@ exports.onExpenseCreated = (0, firestore_1.onDocumentCreated)("expenses/{expense
         android: {
             priority: "high",
             notification: {
-                icon: "ic_notification_silhouette",
+                icon: "notification_icon",
                 color: "#0065F2",
             },
         },

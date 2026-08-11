@@ -637,15 +637,24 @@ export default function CreateGroupModal({ navigation }: Props) {
             style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]}
             onPress={() => setIsPickerVisible(true)}
             activeOpacity={0.8}
+            disabled={isUploading}
           >
-            <SmartImage
-              uri={groupPhoto || undefined}
-              thumbnailUri={groupPhotoThumb || undefined}
-              name={groupName}
-              size={80}
-              fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
-            />
-            <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+              <SmartImage
+                uri={groupPhoto || undefined}
+                thumbnailUri={groupPhotoThumb || undefined}
+                name={groupName}
+                size={80}
+                fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
+              />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
+            </View>
+            <View style={[styles.photoAddBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surface }]}>
               <MaterialIcons name="add" size={12} color={colors.onPrimary} />
             </View>
           </TouchableOpacity>
@@ -907,9 +916,15 @@ export default function CreateGroupModal({ navigation }: Props) {
 
       {/* Bottom Action Area */}
       <View style={[styles.bottomActionArea, { borderTopColor: colors.divider }]}>
-        <TouchableOpacity style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary }]} onPress={handleBasicsNext}>
-          <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>Next</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
+        <TouchableOpacity 
+          style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]} 
+          onPress={handleBasicsNext}
+          disabled={isUploading}
+        >
+          <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>
+            {isUploading ? 'Uploading Image...' : 'Next'}
+          </Text>
+          {!isUploading && <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />}
         </TouchableOpacity>
       </View>
 

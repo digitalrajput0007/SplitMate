@@ -148,28 +148,35 @@ export default function ProfileEditScreen({ navigation }: Props) {
         <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={() => setIsPickerVisible(true)} activeOpacity={0.8} style={{ position: 'relative' }}>
-              <SmartImage
-                uri={photoUrl}
-                thumbnailUri={photoThumbnailUrl}
-                name={name}
-                size={80}
-                fallbackIcon="person"
-              />
-              {isUploading && (
-                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
-                </View>
-              )}
-              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
+            <TouchableOpacity 
+              onPress={() => setIsPickerVisible(true)} 
+              activeOpacity={0.8} 
+              style={{ position: 'relative' }}
+              disabled={isUploading}
+            >
+              <View style={{ borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+                <SmartImage
+                  uri={photoUrl}
+                  thumbnailUri={photoThumbnailUrl}
+                  name={name}
+                  size={80}
+                  fallbackIcon="person"
+                />
+                {isUploading && (
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.cameraBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surfaceContainerLowest }]}>
                 <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
               </View>
             </TouchableOpacity>
 
             {photoUrl ? (
-              <TouchableOpacity onPress={handleRemovePhoto} style={{ marginTop: 8 }}>
-                <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
+              <TouchableOpacity onPress={handleRemovePhoto} style={{ marginTop: 8 }} disabled={isUploading}>
+                <Text style={[styles.avatarHint, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -195,15 +202,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
           />
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            style={[styles.button, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
             onPress={handleSave}
             activeOpacity={0.85}
-            disabled={saving}
+            disabled={saving || isUploading}
           >
             {saving ? (
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>Save Changes</Text>
+              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>
+                {isUploading ? 'Uploading Image...' : 'Save Changes'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>

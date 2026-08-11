@@ -205,8 +205,13 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
           {/* Avatar Section matching initials placeholder & camera badge */}
           <View style={styles.avatarContainer}>
-            <TouchableOpacity style={styles.avatarWrapper} onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
-              <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHigh }]}>
+            <TouchableOpacity 
+              style={styles.avatarWrapper} 
+              onPress={() => setIsPickerVisible(true)} 
+              activeOpacity={0.8}
+              disabled={isUploading}
+            >
+              <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHigh, opacity: isUploading ? 0.7 : 1 }]}>
                 <SmartImage
                   uri={photoUrl || undefined}
                   thumbnailUri={photoThumbnailUrl || undefined}
@@ -221,14 +226,18 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
                   </View>
                 )}
               </View>
-              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.background }]}>
+              <View style={[styles.cameraBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.background }]}>
                 <MaterialIcons name="camera-alt" size={18} color={colors.onPrimary} />
               </View>
             </TouchableOpacity>
 
             {photoUrl ? (
-              <TouchableOpacity onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} style={styles.removePhotoBtn}>
-                <Text style={[styles.removePhotoText, { color: colors.error }]}>Remove Photo</Text>
+              <TouchableOpacity 
+                onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} 
+                style={styles.removePhotoBtn}
+                disabled={isUploading}
+              >
+                <Text style={[styles.removePhotoText, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -335,15 +344,17 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
             {/* Primary Continue Button */}
             <TouchableOpacity
-              style={[styles.continueButton, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+              style={[styles.continueButton, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
               onPress={handleCompleteProfile}
               activeOpacity={0.85}
-              disabled={saving}
+              disabled={saving || isUploading}
             >
               {saving ? (
                 <ActivityIndicator color={colors.onPrimary} size="small" />
               ) : (
-                <Text style={[styles.continueButtonText, { color: colors.onPrimary }]}>Continue</Text>
+                <Text style={[styles.continueButtonText, { color: colors.onPrimary }]}>
+                  {isUploading ? 'Uploading Image...' : 'Continue'}
+                </Text>
               )}
             </TouchableOpacity>
           </View>

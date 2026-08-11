@@ -500,14 +500,16 @@ export const getAllUsersFromFirestore = async (): Promise<UserProfile[]> => {
 
 export const addContactToUserFirestore = async (currentUid: string, contact: Contact): Promise<void> => {
   try {
-    // Generate a stable ID based on phone number to avoid duplicates
-    const contactId = contact.phone.replace(/[^0-9]/g, '');
-    const contactRef = doc(db, 'users', currentUid, 'contacts', contactId);
+    const contactId = contact.phone ? contact.phone.replace(/[^0-9]/g, '') : contact.uid || contact.name;
+    if (!contactId) return;
 
-    await setDoc(contactRef, {
+    const contactRef = doc(db, 'users', currentUid, 'contacts', contactId);
+    const sanitizedPayload = sanitizeData({
       ...contact,
       addedAt: serverTimestamp(),
-    }, { merge: true });
+    });
+
+    await setDoc(contactRef, sanitizedPayload, { merge: true });
   } catch (error) {
     console.error('Error adding contact:', error);
   }
@@ -724,7 +726,7 @@ export const createGroupInFirestore = async (
         await NotificationService.notifyUser(invitedUid, {
           type: 'GROUP_INVITE',
           title: 'Group Invitation',
-          message: `${currentUser.displayName || 'Someone'} added you to the group "${name.trim()}"`,
+          message: `${name.trim()} created.`,
           data: { groupId: groupRef.id, groupName: name.trim() }
         });
       } catch (invErr: any) {
@@ -778,7 +780,7 @@ export const inviteUserToGroupInFirestore = async (
       await NotificationService.notifyUser(newMemberUid, {
         type: 'GROUP_INVITE',
         title: 'Group Invitation',
-        message: `${currentUser.displayName || 'Someone'} added you to the group "${groupData.name || 'Group'}"`,
+        message: `${groupData.name || 'Group'} created.`,
         data: { groupId, groupName: groupData.name || 'Group' }
       });
     } catch (invErr: any) {
@@ -1896,16 +1898,35 @@ export const addSettlementToFirestore = async (settlement: Omit<SettlementData, 
     };
     await setDoc(settlementRef, settlementData);
 
-    // Notify recipient (the ower/receiver) to confirm
+    // Notify recipient
     (async () => {
       try {
+        const isCompleted = settlementData.status === 'completed';
         const recipientId = settlement.toUserId === user.uid ? settlement.fromUserId : settlement.toUserId;
-        await NotificationService.notifyUser(recipientId, {
-          type: 'SETTLEMENT',
-          title: 'Settlement Confirmation Required',
-          message: `${settlement.fromName || user.displayName || 'Someone'} paid ₹${settlement.amount}. Tap to confirm receipt.`,
-          data: { groupId: settlement.groupId, settlementId: settlementRef.id, amount: settlement.amount }
-        });
+
+        if (isCompleted) {
+          // If receiver marked as settled, notify the payer that balance is cleared
+          // If payer marked as settled (and it was auto-completed somehow), notify receiver
+          const notifyTitle = 'Balance Settled';
+          const notifyMsg = settlement.toUserId === user.uid
+            ? `${user.displayName || 'Someone'} marked your debt of ₹${settlement.amount} as settled.`
+            : `${user.displayName || 'Someone'} settled ₹${settlement.amount} with you.`;
+
+          await NotificationService.notifyUser(recipientId, {
+            type: 'SETTLEMENT',
+            title: notifyTitle,
+            message: notifyMsg,
+            data: { groupId: settlement.groupId, settlementId: settlementRef.id, amount: settlement.amount, status: 'completed' }
+          });
+        } else {
+          // Normal pending settlement flow
+          await NotificationService.notifyUser(recipientId, {
+            type: 'SETTLEMENT',
+            title: 'Settlement Confirmation Required',
+            message: `${settlement.fromName || user.displayName || 'Someone'} paid ₹${settlement.amount}. Tap to confirm receipt.`,
+            data: { groupId: settlement.groupId, settlementId: settlementRef.id, amount: settlement.amount }
+          });
+        }
       } catch (e) {
         console.error('Settlement notif error:', e);
       }

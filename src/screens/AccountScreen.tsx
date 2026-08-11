@@ -23,7 +23,9 @@ import { signOutUser } from '../services/authService';
 import {
   getUserProfileFromFirestore,
   getAllUsersFromFirestore,
-  subscribeToUserProfile
+  subscribeToUserProfile,
+  addContactToUserFirestore,
+  Contact,
 } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
@@ -116,9 +118,8 @@ export default function AccountScreen() {
       const allUsers = await getAllUsersFromFirestore();
 
       const matchedUser = allUsers.find((u) => {
-        if (!u.mobile) return false;
-        const normalized = u.mobile.replace(/[^0-9]/g, '').slice(-10);
-        return normalized === extractedMobile || u.uid === cleanedData;
+        const normalized = u.mobile ? u.mobile.replace(/[^0-9]/g, '').slice(-10) : '';
+        return (normalized && normalized === extractedMobile) || u.uid === cleanedData;
       });
 
       if (matchedUser) {
@@ -133,15 +134,30 @@ export default function AccountScreen() {
   };
 
   const handleAddScannedContact = async () => {
-    if (!scannedUser) return;
+    if (!scannedUser || !currentUser?.uid) return;
     setAddingContact(true);
-    setTimeout(() => {
+
+    try {
+      const contactData: Contact = {
+        name: scannedUser.name,
+        phone: scannedUser.mobile || '',
+        email: scannedUser.email,
+        uid: scannedUser.uid,
+        photoUrl: scannedUser.photoUrl,
+      };
+
+      await addContactToUserFirestore(currentUser.uid, contactData);
+
       setAddingContact(false);
       Alert.alert('Contact Added', `${scannedUser.name} has been added to your SplitMate contacts!`);
       setScannedUser(null);
       setScannedLock(false);
       setQrModalVisible(false);
-    }, 600);
+    } catch (e) {
+      console.error('Error adding scanned contact:', e);
+      setAddingContact(false);
+      Alert.alert('Error', 'Failed to add contact. Please try again.');
+    }
   };
 
   const confirmLogout = async () => {

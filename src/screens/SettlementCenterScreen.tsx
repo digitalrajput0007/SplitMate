@@ -166,6 +166,8 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   const youAreOwed = useMemo(() => allDebts.filter(d => d.toUserId === currentUid), [allDebts]);
 
   const handleRecordSettlement = async (debt: GroupDebt) => {
+    const isOtherOwesMe = debt.toUserId === currentUid;
+
     Alert.alert(
       'Mark as Settled',
       `Confirm that ${formatCurrency(debt.amount)} was paid between ${debt.fromName} and ${debt.toName}?`,
@@ -182,15 +184,23 @@ export default function SettlementCenterScreen({ navigation }: Props) {
                 toUserId: debt.toUserId,
                 toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
                 amount: debt.amount,
-                status: 'pending',
+                status: isOtherOwesMe ? 'completed' : 'pending',
               });
-              Alert.alert(
-                'Settlement Request Sent',
-                `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
-              );
+
+              if (isOtherOwesMe) {
+                Alert.alert(
+                  'Settled Successfully',
+                  `Balance with ${debt.fromName} in ${debt.groupName} has been marked as settled.`
+                );
+              } else {
+                Alert.alert(
+                  'Settlement Request Sent',
+                  `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
+                );
+              }
               loadData();
             } catch (e) {
-              Alert.alert('Error', 'Failed to send settlement request.');
+              Alert.alert('Error', 'Failed to record settlement.');
             }
           },
         },

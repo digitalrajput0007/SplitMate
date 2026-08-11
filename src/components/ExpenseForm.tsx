@@ -548,7 +548,7 @@ export default function ExpenseForm({
       <View style={styles.field}>
         <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Receipt (Optional)</Text>
         {isUploading ? (
-          <View style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary, borderWidth: 1.5 }]}>
+          <View style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary, borderWidth: 1.5, opacity: 0.85 }]}>
             <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 6 }} />
             <Text style={{ color: colors.primary, fontWeight: '600', ...Typography.labelMd }}>
               Uploading Receipt... {progress}%
@@ -575,11 +575,20 @@ export default function ExpenseForm({
           </View>
         ) : (
           <TouchableOpacity
-            style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderStyle: 'dashed' }]}
+            style={[
+              styles.receiptPlaceholder, 
+              { 
+                backgroundColor: colors.surfaceContainerLow, 
+                borderColor: colors.outlineVariant, 
+                borderStyle: 'dashed',
+                opacity: isUploading ? 0.6 : 1
+              }
+            ]}
             onPress={onPickReceipt}
+            disabled={isUploading}
           >
-            <MaterialIcons name="photo-camera" size={24} color={colors.primary} />
-            <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, ...Typography.labelMd }}>Add Receipt Image</Text>
+            <MaterialIcons name="photo-camera" size={24} color={isUploading ? colors.outline : colors.primary} />
+            <Text style={{ color: isUploading ? colors.outline : colors.onSurfaceVariant, marginTop: 4, ...Typography.labelMd }}>Add Receipt Image</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -711,15 +720,17 @@ export default function ExpenseForm({
 
       {/* Submit Button */}
       <TouchableOpacity
-        style={[styles.submitBtn, { backgroundColor: colors.primary }, submitting && { opacity: 0.6 }]}
+        style={[styles.submitBtn, { backgroundColor: colors.primary }, (submitting || isUploading) && { opacity: 0.6 }]}
         onPress={handlePressSubmit}
         activeOpacity={0.85}
-        disabled={submitting}
+        disabled={submitting || isUploading}
       >
         {submitting ? (
           <ActivityIndicator color={colors.onPrimary} size="small" />
         ) : (
-          <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>{submitLabel}</Text>
+          <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>
+            {isUploading ? 'Uploading Receipt...' : submitLabel}
+          </Text>
         )}
       </TouchableOpacity>
 

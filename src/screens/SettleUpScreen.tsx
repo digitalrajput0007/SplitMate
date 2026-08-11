@@ -186,6 +186,8 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   };
 
   const handleRecordSettlement = async (debt: SimplifiedDebt) => {
+    const isOtherOwesMe = debt.toUserId === currentUid;
+
     setSettlingId(debt.id);
     try {
       await addSettlementToFirestore({
@@ -195,16 +197,23 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         toUserId: debt.toUserId,
         toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
         amount: debt.amount,
-        status: 'pending',
+        status: isOtherOwesMe ? 'completed' : 'pending',
       });
       
-      Alert.alert(
-        'Settlement Request Sent',
-        `A settlement request has been sent to ${debt.toName}. The balance will be marked settled once they confirm receipt.`
-      );
+      if (isOtherOwesMe) {
+        Alert.alert(
+          'Settled Successfully',
+          `Balance with ${debt.fromName} has been marked as settled.`
+        );
+      } else {
+        Alert.alert(
+          'Settlement Request Sent',
+          `A settlement request has been sent to ${debt.toName}. The balance will be marked settled once they confirm receipt.`
+        );
+      }
       showSettleUpInterstitial();
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to send settlement request.');
+      Alert.alert('Error', 'Failed to record settlement.');
     } finally {
       setSettlingId(null);
     }

@@ -42,11 +42,11 @@ export default function HelpSupportScreen({ navigation }: Props) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
 
   const handleContactSupport = () => {
-    const emailUrl = 'mailto:support@splitmate.app?subject=SplitMate%20Support%20Inquiry';
+    const emailUrl = 'mailto:support@fyndralabs.com?subject=SplitMate%20Support%20Inquiry';
     Linking.openURL(emailUrl).catch(() => {
       Alert.alert(
         'Contact Support',
-        'Please send your feedback or support inquiry to:\n\nsupport@splitmate.app'
+        'Please send your feedback or support inquiry to:\n\nsupport@fyndralabs.com'
       );
     });
   };

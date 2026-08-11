@@ -429,7 +429,7 @@ export const onExpenseCreated = onDocumentCreated(
       android: {
         priority: "high",
         notification: {
-          icon: "ic_notification_silhouette",
+          icon: "notification_icon",
           color: "#0065F2",
         },
       },
