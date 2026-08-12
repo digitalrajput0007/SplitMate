@@ -6,19 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/lib/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/functions/lib/index.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/functions/src/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/functions/src/index.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/ExpenseForm.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/AccountScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/AccountScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ContactUsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactUsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/HelpSupportScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/HelpSupportScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ProfileEditScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ProfileEditScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettleUpScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/SettlementCenterScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettlementCenterScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/firestoreService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/firestoreService.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
