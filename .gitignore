@@ -5,4 +5,3 @@ android/build/
 android/.gradle/
 *.log
 .env
-google-services.json
