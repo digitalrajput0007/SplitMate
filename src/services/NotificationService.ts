@@ -17,6 +17,8 @@ import {
   orderBy,
   onSnapshot
 } from 'firebase/firestore';
+import { captureError } from '../config/sentry';
+import { TelemetryService } from './telemetryService';
 
 export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT' | 'payment_reminder' | 'group_invitation' | 'general';
 
@@ -111,8 +113,12 @@ export const NotificationService = {
         token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
       } catch (expoPushErr: any) {
         console.warn('Expo Push Token error, falling back to Native Device Token:', expoPushErr?.message);
-        const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
-        token = deviceTokenObj.data;
+        try {
+          const deviceTokenObj = await Notifications.getDevicePushTokenAsync();
+          token = deviceTokenObj.data;
+        } catch (nativeErr: any) {
+          captureError(nativeErr, { tags: { location: 'NotificationService', action: 'getDevicePushToken' } });
+        }
       }
 
       // Sync token to Firestore only if token has changed or not yet cached
@@ -129,6 +135,7 @@ export const NotificationService = {
       return token;
     } catch (e) {
       console.error('Error getting push token:', e);
+      captureError(e, { tags: { location: 'NotificationService', action: 'requestUserPermission' } });
       return null;
     }
   },
@@ -140,14 +147,19 @@ export const NotificationService = {
     // Listener for foreground notifications
     const foregroundSubscription = Notifications.addNotificationReceivedListener(notification => {
       console.log('📩 Foreground Notification:', notification);
-      // Optionally show custom alert or badge
+      const notifType = notification.request.content.data?.type || 'general';
+      TelemetryService.trackNotificationReceived(notifType);
     });
 
     // Listener for notification taps (App was in background/quit)
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      console.log('👆 Notification Tapped:', data);
-      this.handleNotificationNavigation(data, navigation);
+      try {
+        const data = response.notification.request.content.data;
+        console.log('👆 Notification Tapped:', data);
+        this.handleNotificationNavigation(data, navigation);
+      } catch (err) {
+        captureError(err, { tags: { location: 'NotificationService', action: 'responseSubscription' } });
+      }
     });
 
     return () => {

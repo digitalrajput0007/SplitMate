@@ -1,5 +1,14 @@
 {
   "projects": {
     "default": "splitmate-d2d66"
+  },
+  "targets": {
+    "splitmate-d2d66": {
+      "storage": {
+        "rules": [
+          "splitmate-d2d66.appspot.com"
+        ]
+      }
+    }
   }
 }

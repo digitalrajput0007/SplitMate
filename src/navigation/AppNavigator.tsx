@@ -9,6 +9,7 @@ import { auth } from '../config/firebase';
 import { getUserProfileFromFirestore } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
+import { addSentryBreadcrumb, routingInstrumentation } from '../config/sentry';
 
 // Screens
 import SplashScreen from '../screens/SplashScreen';
@@ -270,7 +271,23 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
 
   return (
     <View style={{ flex: 1 }}>
-      <NavigationContainer ref={navigationRef} theme={navTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navTheme}
+        onReady={() => {
+          routingInstrumentation.registerNavigationContainer(navigationRef);
+        }}
+        onStateChange={(state) => {
+          try {
+            const route = navigationRef.current?.getCurrentRoute();
+            if (route) {
+              addSentryBreadcrumb('navigation', `Navigated to ${route.name}`, { screen: route.name, params: route.params });
+            }
+          } catch (e) {
+            // Ignore navigation tracking errors
+          }
+        }}
+      >
         <Stack.Navigator
           initialRouteName={getInitialRouteName()}
           screenOptions={{

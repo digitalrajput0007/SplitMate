@@ -21,7 +21,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { checkBiometricHardware, checkBiometricEnrolled, authenticateBiometric } from '../services/biometricService';
 import { deletePinHash } from '../services/secureStorageService';
-import { changeUserPassword, deleteUserAccount } from '../services/authService';
+import { changeUserPassword, deleteUserAccount, reauthenticateEmailUser, reauthenticateGoogleUser } from '../services/authService';
 import { auth } from '../config/firebase';
 
 export default function PrivacySecurityScreen() {
@@ -43,6 +43,62 @@ export default function PrivacySecurityScreen() {
   const [modalErrorMessage, setModalErrorMessage] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
 
+  // Account Deletion Re-authentication State
+  const [reauthModalVisible, setReauthModalVisible] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState('');
+  const [showReauthPassword, setShowReauthPassword] = useState(false);
+  const [reauthLoading, setReauthLoading] = useState(false);
+  const [reauthError, setReauthError] = useState('');
+
+  const performAccountDeletion = async () => {
+    setDeletingAccount(true);
+    try {
+      await deleteUserAccount();
+      setDeletingAccount(false);
+      Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+    } catch (err: any) {
+      setDeletingAccount(false);
+      if (err.code === 'auth/requires-recent-login') {
+        const currentUser = auth.currentUser;
+        const isGoogleUser = currentUser?.providerData.some(p => p.providerId === 'google.com');
+
+        if (isGoogleUser) {
+          Alert.alert(
+            'Security Re-verification Required',
+            'Deleting your account is a sensitive action. Please re-authenticate with your Google account to proceed.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Re-authenticate with Google',
+                onPress: async () => {
+                  setDeletingAccount(true);
+                  try {
+                    await reauthenticateGoogleUser();
+                    await deleteUserAccount();
+                    setDeletingAccount(false);
+                    Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+                  } catch (gErr: any) {
+                    setDeletingAccount(false);
+                    Alert.alert(
+                      'Re-authentication Failed',
+                      gErr.message || 'Could not verify your identity. Please try again.'
+                    );
+                  }
+                },
+              },
+            ]
+          );
+        } else {
+          setReauthPassword('');
+          setReauthError('');
+          setReauthModalVisible(true);
+        }
+      } else {
+        Alert.alert('Error Deleting Account', err.message || 'Failed to delete account. Please try again later.');
+      }
+    }
+  };
+
   const handleDeleteAccount = () => {
     if (deletingAccount) return;
 
@@ -54,29 +110,36 @@ export default function PrivacySecurityScreen() {
         {
           text: 'Delete Permanently',
           style: 'destructive',
-          onPress: async () => {
-            setDeletingAccount(true);
-            try {
-              await deleteUserAccount();
-              Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
-            } catch (err: any) {
-              setDeletingAccount(false);
-              if (err.code === 'auth/requires-recent-login') {
-                Alert.alert(
-                  'Re-authentication Required',
-                  'This action is sensitive and requires a recent sign-in. Please log out and sign back in before deleting your account.'
-                );
-              } else {
-                Alert.alert(
-                  'Error Deleting Account',
-                  err.message || 'Failed to delete account. Please try again later.'
-                );
-              }
-            }
-          },
+          onPress: performAccountDeletion,
         },
       ]
     );
+  };
+
+  const handleReauthEmailDeletion = async () => {
+    if (!reauthPassword) {
+      setReauthError('Please enter your current password.');
+      return;
+    }
+
+    setReauthLoading(true);
+    setReauthError('');
+
+    try {
+      await reauthenticateEmailUser(reauthPassword);
+      await deleteUserAccount();
+      setReauthLoading(false);
+      setReauthModalVisible(false);
+      setReauthPassword('');
+      Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+    } catch (err: any) {
+      setReauthLoading(false);
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setReauthError('Incorrect password. Please try again.');
+      } else {
+        setReauthError(err.message || 'Re-authentication failed. Please try again.');
+      }
+    }
   };
 
   const handleBiometricToggle = async (val: boolean) => {
@@ -424,6 +487,90 @@ export default function PrivacySecurityScreen() {
                   <ActivityIndicator size="small" color={colors.onPrimary} />
                 ) : (
                   <Text style={[styles.modalSubmitText, { color: colors.onPrimary }]}>Update</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Re-authentication Modal for Account Deletion */}
+      <Modal
+        visible={reauthModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!reauthLoading) setReauthModalVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Confirm Your Identity</Text>
+              <TouchableOpacity
+                onPress={() => !reauthLoading && setReauthModalVisible(false)}
+                style={styles.modalCloseBtn}
+                disabled={reauthLoading}
+              >
+                <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.rowSub, { color: colors.onSurfaceVariant, marginBottom: Spacing.md }]}>
+              Deleting your account requires recent sign-in verification. Please enter your current password to confirm permanent deletion.
+            </Text>
+
+            {!!reauthError && (
+              <View style={[styles.errorBanner, { backgroundColor: colors.errorContainer, marginBottom: Spacing.md }]}>
+                <MaterialIcons name="error-outline" size={16} color={colors.error} />
+                <Text style={[styles.errorBannerText, { color: colors.onErrorContainer }]}>{reauthError}</Text>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Current Password</Text>
+              <View style={[styles.modalInputWrapper, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant }]}>
+                <TextInput
+                  style={[styles.modalTextInputInner, { color: colors.onSurface }]}
+                  value={reauthPassword}
+                  onChangeText={setReauthPassword}
+                  placeholder="Enter current password"
+                  placeholderTextColor={colors.outline}
+                  secureTextEntry={!showReauthPassword}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={styles.eyeBtn}
+                  onPress={() => setShowReauthPassword(!showReauthPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <MaterialIcons
+                    name={showReauthPassword ? 'visibility-off' : 'visibility'}
+                    size={20}
+                    color={colors.outline}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.outlineVariant }]}
+                onPress={() => setReauthModalVisible(false)}
+                disabled={reauthLoading}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.onSurface }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: colors.error }, reauthLoading && { opacity: 0.6 }]}
+                onPress={handleReauthEmailDeletion}
+                disabled={reauthLoading}
+              >
+                {reauthLoading ? (
+                  <ActivityIndicator size="small" color={colors.onError} />
+                ) : (
+                  <Text style={[styles.modalSubmitText, { color: colors.onError }]}>Delete Account</Text>
                 )}
               </TouchableOpacity>
             </View>

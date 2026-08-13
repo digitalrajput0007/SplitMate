@@ -75,7 +75,7 @@ function MainAppContent() {
   );
 }
 
-export default function App() {
+function App() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -101,6 +101,10 @@ export default function App() {
     </ThemeProvider>
   );
 }
+
+import * as Sentry from '@sentry/react-native';
+
+export default Sentry.wrap(App);
 
 const webStyles = StyleSheet.create({
   outerContainer: {

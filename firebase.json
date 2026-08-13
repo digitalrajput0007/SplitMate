@@ -1,4 +1,13 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": [
+    {
+      "target": "rules",
+      "rules": "storage.rules"
+    }
+  ],
   "functions": [
     {
       "codebase": "default",

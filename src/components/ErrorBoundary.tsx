@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { captureError } from '../config/sentry';
 
 interface Props {
   children: ReactNode;
@@ -22,6 +23,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[CRITICAL] Uncaught error in Boundary:', error, errorInfo);
+    captureError(error, {
+      extra: {
+        componentStack: errorInfo.componentStack,
+      },
+      tags: {
+        location: 'ErrorBoundary',
+      },
+    });
   }
 
   public render() {

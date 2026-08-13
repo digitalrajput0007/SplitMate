@@ -10,6 +10,8 @@ import {
   GoogleAuthProvider,
   signInWithCredential,
   deleteUser,
+  sendPasswordResetEmail,
+  sendEmailVerification,
 } from "firebase/auth";
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth, db, app, WEB_CLIENT_ID } from "../config/firebase";
@@ -25,6 +27,8 @@ import { Platform } from "react-native";
 import { NotificationService } from "./NotificationService";
 import { deletePinHash } from "./secureStorageService";
 import { cleanupUserFromFirestore } from "./firestoreService";
+import { setSentryUserContext, clearSentryUserContext, captureError } from "../config/sentry";
+import { TelemetryService } from "./telemetryService";
 
 // Initialize Google Signin exactly once
 if (Platform.OS !== 'web') {
@@ -80,6 +84,9 @@ export const signInWithGoogle = async () => {
     const userCredential = await signInWithCredential(auth, credential);
     const user = userCredential.user;
 
+    setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
+    TelemetryService.trackLogin('google');
+
     const data = (userInfo as any).data || userInfo;
     return {
       user,
@@ -93,6 +100,7 @@ export const signInWithGoogle = async () => {
       console.error("[Auth] DEVELOPER_ERROR: This usually means SHA-1 mismatch or wrong Web Client ID.");
     }
     console.error("[Auth] Google Sign-in Error Details:", JSON.stringify(error, null, 2));
+    captureError(error, { tags: { location: 'authService', action: 'signInWithGoogle' } });
     throw error;
   }
 };
@@ -256,32 +264,72 @@ export const warmUpOTPService = () => {
 };
 
 /* =========================================================
+   📧 PASSWORD RESET & EMAIL VERIFICATION
+========================================================= */
+export const resetPassword = async (email: string): Promise<void> => {
+  console.log(`[Auth] Sending password reset email to: ${email}`);
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+};
+
+export const resendVerificationEmail = async (): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No authenticated user found.");
+  console.log(`[Auth] Resending verification email to: ${user.email}`);
+  await sendEmailVerification(user);
+};
+
+export const checkEmailVerified = async (): Promise<boolean> => {
+  const user = auth.currentUser;
+  if (!user) return false;
+  await user.reload();
+  return user.emailVerified;
+};
+
+/* =========================================================
    🚀 SIGNUP
 ========================================================= */
 export const signUpWithEmail = async (email: string, pass: string): Promise<User> => {
-  const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-  const user = userCredential.user;
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+    const user = userCredential.user;
 
-  // Run Firestore document write asynchronously in background without blocking Auth completion
-  setDoc(
-    doc(db, "users", user.uid),
-    {
-      email: email.toLowerCase(),
-      isVerified: true,
-      createdAt: serverTimestamp(),
-    },
-    { merge: true }
-  ).catch((e) => console.warn("[Auth] Background setDoc error:", e));
+    setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
+    TelemetryService.trackSignup('email');
 
-  return user;
+    // Run Firestore document write asynchronously in background without blocking Auth completion
+    setDoc(
+      doc(db, "users", user.uid),
+      {
+        email: email.toLowerCase(),
+        isVerified: true,
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    ).catch((e) => console.warn("[Auth] Background setDoc error:", e));
+
+    return user;
+  } catch (error: any) {
+    captureError(error, { tags: { location: 'authService', action: 'signUpWithEmail' } });
+    throw error;
+  }
 };
 
 /* =========================================================
    🔐 LOGIN
 ========================================================= */
 export const signInWithEmail = async (email: string, pass: string): Promise<User> => {
-  const userCredential = await signInWithEmailAndPassword(auth, email, pass);
-  return userCredential.user;
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+    const user = userCredential.user;
+
+    setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
+    TelemetryService.trackLogin('email');
+
+    return user;
+  } catch (error: any) {
+    captureError(error, { tags: { location: 'authService', action: 'signInWithEmail' } });
+    throw error;
+  }
 };
 
 /* =========================================================
@@ -291,11 +339,22 @@ export const updateUserProfile = async (
   displayName: string,
   photoURL?: string
 ): Promise<void> => {
-  if (auth.currentUser) {
-    await updateProfile(auth.currentUser, {
-      displayName,
-      photoURL: photoURL || null,
-    });
+  try {
+    if (auth.currentUser) {
+      await updateProfile(auth.currentUser, {
+        displayName,
+        photoURL: photoURL || null,
+      });
+      setSentryUserContext({
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email,
+        displayName,
+      });
+      TelemetryService.trackProfileUpdated();
+    }
+  } catch (error: any) {
+    captureError(error, { tags: { location: 'authService', action: 'updateUserProfile' } });
+    throw error;
   }
 };
 
@@ -308,6 +367,7 @@ export const signOutUser = async (): Promise<void> => {
   } catch (e) {
     console.warn('[Auth] Error unregistering push token on sign out:', e);
   }
+  clearSentryUserContext();
   await signOut(auth);
 };
 
@@ -368,4 +428,42 @@ export const deleteUserAccount = async (): Promise<void> => {
 
   // 4. Delete user from Firebase Auth
   await deleteUser(user);
+};
+
+/* =========================================================
+   🔑 RE-AUTHENTICATION HELPERS FOR SENSITIVE ACTIONS
+========================================================= */
+export const reauthenticateEmailUser = async (password: string): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user || !user.email) throw new Error('No authenticated user email found.');
+  const credential = EmailAuthProvider.credential(user.email, password);
+  await reauthenticateWithCredential(user, credential);
+};
+
+export const reauthenticateGoogleUser = async (): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user found.');
+
+  if (Platform.OS === 'web') {
+    throw new Error('Google re-authentication is not supported on web.');
+  }
+
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  try {
+    await GoogleSignin.signOut();
+  } catch (e) {}
+
+  const userInfo = await GoogleSignin.signIn();
+  const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
+
+  let finalIdToken = idToken;
+  if (!finalIdToken) {
+    const tokens = await GoogleSignin.getTokens();
+    finalIdToken = tokens.idToken;
+  }
+
+  if (!finalIdToken) throw new Error('Could not retrieve ID Token from Google.');
+
+  const credential = GoogleAuthProvider.credential(finalIdToken);
+  await reauthenticateWithCredential(user, credential);
 };

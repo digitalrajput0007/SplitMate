@@ -12,12 +12,16 @@ import {
   onSnapshot, 
   serverTimestamp, 
   orderBy,
-  runTransaction
+  runTransaction,
+  writeBatch,
+  arrayUnion
 } from 'firebase/firestore';
 import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
 import { db, auth } from '../config/firebase';
 import { NotificationService } from './NotificationService';
+import { captureError } from '../config/sentry';
+import { TelemetryService } from './telemetryService';
 
 // In-memory profile cache for reducing Firestore calls
 const userProfileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
@@ -2093,9 +2097,10 @@ export const subscribeUserActivityFeed = (
     return () => {};
   }
 
-  const expensesQuery = query(collection(db, 'expenses'));
-  const settlementsQuery = query(collection(db, 'settlements'));
-  const groupsQuery = query(collection(db, 'groups'));
+  const targetGroupIds = groupIds.slice(0, 30);
+  const expensesQuery = query(collection(db, 'expenses'), where('groupId', 'in', targetGroupIds));
+  const settlementsQuery = query(collection(db, 'settlements'), where('groupId', 'in', targetGroupIds));
+  const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', auth.currentUser?.uid || ''));
   const notificationsQuery = query(collection(db, 'notifications'), where('type', '==', 'payment_reminder'));
 
   let currentExpenses: ExpenseData[] = [];
@@ -2685,6 +2690,7 @@ export const transferGroupOwnership = async (groupId: string, newOwnerUid: strin
     const groupRef = doc(db, 'groups', groupId);
     await updateDoc(groupRef, {
       createdBy: newOwnerUid,
+      adminIds: arrayUnion(newOwnerUid),
       updatedAt: serverTimestamp(),
     });
     return true;

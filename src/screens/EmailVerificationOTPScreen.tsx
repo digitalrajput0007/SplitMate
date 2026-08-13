@@ -230,7 +230,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
 
             <TouchableOpacity
               style={[styles.verifyBtn, { backgroundColor: colors.primary }, (otp.length !== 6 || loading) && { opacity: 0.6 }]}
-              onPress={handleVerify}
+              onPress={() => handleVerify()}
               disabled={loading || otp.length !== 6}
             >
               {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.verifyBtnText, { color: colors.onPrimary }]}>Verify</Text>}

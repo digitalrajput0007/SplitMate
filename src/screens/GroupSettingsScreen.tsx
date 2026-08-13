@@ -110,6 +110,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const [userSettlements, setUserSettlements] = useState<SettlementData[]>([]);
   const isDeletingRef = useRef(false);
 
+  // Transfer Admin & Leave Group State
+  const [transferAdminModalVisible, setTransferAdminModalVisible] = useState(false);
+  const [selectedNewAdminUid, setSelectedNewAdminUid] = useState<string | null>(null);
+  const [transferringAdmin, setTransferringAdmin] = useState(false);
+
   const isOwner = group?.createdBy === currentUser?.uid;
 
   useEffect(() => {
@@ -434,14 +439,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     );
   };
 
-  const handleLeaveGroup = async () => {
-    if (!groupId || !currentUser?.uid) return;
+  const handleLeaveGroup = () => {
+    if (!groupId || !currentUser) return;
 
-    if (isOwner) {
-      Alert.alert('Cannot Leave', 'As the owner, you must delete the group or transfer ownership before leaving.');
-      return;
-    }
-
+    // 1. Check Outstanding Balance
     const currentBalance = calculateUserBalance();
     if (Math.abs(currentBalance) > 0.05) {
       Alert.alert(
@@ -451,6 +452,48 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       return;
     }
 
+    const otherMembers = acceptedUsers.filter((u) => u.uid !== currentUser.uid);
+
+    // 2. Sole Member Case: Delete group directly
+    if (otherMembers.length === 0) {
+      Alert.alert(
+        'Delete Group',
+        'You are the only member in this group. Leaving will permanently delete this group and all its records.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete Group',
+            style: 'destructive',
+            onPress: async () => {
+              isDeletingRef.current = true;
+              try {
+                await deleteGroupFromFirestore(groupId);
+                navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+              } catch (e) {
+                isDeletingRef.current = false;
+                Alert.alert('Error', 'Failed to delete group.');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    // 3. Evaluate Sole Admin Status
+    const isOwner = group?.createdBy === currentUser.uid;
+    const adminList = group?.adminIds && group.adminIds.length > 0 ? group.adminIds : (group?.createdBy ? [group.createdBy] : []);
+    const otherAdmins = adminList.filter((id) => id !== currentUser.uid && otherMembers.some((m) => m.uid === id));
+    const isSoleAdmin = (isOwner || adminList.includes(currentUser.uid)) && otherAdmins.length === 0;
+
+    // 4. Sole Admin Case: Require admin rights transfer
+    if (isSoleAdmin) {
+      setSelectedNewAdminUid(otherMembers[0]?.uid || null);
+      setTransferAdminModalVisible(true);
+      return;
+    }
+
+    // 5. Standard Leave Confirmation
     Alert.alert(
       'Leave Group',
       'Are you sure you want to leave this group? You will no longer be able to see expenses or contribute.',
@@ -462,7 +505,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           onPress: async () => {
             try {
               await leaveGroupInFirestore(groupId, currentUser.uid);
-              navigation.navigate('MainTabs');
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
             } catch (e) {
               Alert.alert('Error', 'Failed to leave group.');
             }
@@ -470,6 +513,29 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         },
       ]
     );
+  };
+
+  const handleConfirmTransferAndLeave = async () => {
+    if (!groupId || !currentUser || !selectedNewAdminUid) {
+      Alert.alert('Selection Required', 'Please select a member to promote to Admin.');
+      return;
+    }
+
+    setTransferringAdmin(true);
+    try {
+      // Promote selected member to admin
+      await transferGroupOwnership(groupId, selectedNewAdminUid);
+
+      // Now leave the group
+      await leaveGroupInFirestore(groupId, currentUser.uid);
+
+      setTransferringAdmin(false);
+      setTransferAdminModalVisible(false);
+      navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+    } catch (e: any) {
+      setTransferringAdmin(false);
+      Alert.alert('Error', e.message || 'Failed to transfer admin rights and leave group.');
+    }
   };
 
   const handleCancelInvite = (u: UserProfile) => {
@@ -964,6 +1030,96 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         onFiles={browseFiles}
         onRemove={groupPhoto ? removeMedia : undefined}
       />
+
+      {/* Transfer Admin Rights & Leave Group Modal */}
+      <Modal
+        visible={transferAdminModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!transferringAdmin) setTransferAdminModalVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Assign New Admin</Text>
+              <TouchableOpacity
+                onPress={() => !transferringAdmin && setTransferAdminModalVisible(false)}
+                style={styles.modalCloseBtn}
+                disabled={transferringAdmin}
+              >
+                <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.rowSub, { color: colors.onSurfaceVariant, marginBottom: Spacing.md }]}>
+              You are currently the sole admin of this group. Please select a member to promote as Admin before leaving.
+            </Text>
+
+            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+              {acceptedUsers
+                .filter((u) => u.uid !== currentUser?.uid)
+                .map((user) => {
+                  const isSelected = selectedNewAdminUid === user.uid;
+                  return (
+                    <TouchableOpacity
+                      key={user.uid}
+                      style={[
+                        styles.memberPickerRow,
+                        { borderColor: isSelected ? colors.primary : colors.divider, backgroundColor: isSelected ? colors.primaryContainer : colors.surfaceContainerLow }
+                      ]}
+                      onPress={() => setSelectedNewAdminUid(user.uid)}
+                      disabled={transferringAdmin}
+                    >
+                      <SmartImage
+                        uri={user.photoThumbnailUrl || user.photoUrl}
+                        name={user.name}
+                        size={36}
+                        style={{ borderRadius: 18 }}
+                      />
+                      <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                        <Text style={[styles.rowTitle, { color: isSelected ? colors.onPrimaryContainer : colors.onSurface }]}>
+                          {user.name || 'Group Member'}
+                        </Text>
+                        <Text style={[styles.rowSub, { color: isSelected ? colors.onPrimaryContainer : colors.onSurfaceVariant }]}>
+                          {user.email || user.mobile || ''}
+                        </Text>
+                      </View>
+                      <MaterialIcons
+                        name={isSelected ? 'radio-button-checked' : 'radio-button-unchecked'}
+                        size={22}
+                        color={isSelected ? colors.primary : colors.outline}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+            </ScrollView>
+
+            <View style={[styles.modalActions, { marginTop: Spacing.md }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.outlineVariant }]}
+                onPress={() => setTransferAdminModalVisible(false)}
+                disabled={transferringAdmin}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.onSurface }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: colors.primary }, transferringAdmin && { opacity: 0.6 }]}
+                onPress={handleConfirmTransferAndLeave}
+                disabled={transferringAdmin || !selectedNewAdminUid}
+              >
+                {transferringAdmin ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={[styles.modalSubmitText, { color: colors.onPrimary }]}>Promote & Leave</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1237,5 +1393,75 @@ const styles = StyleSheet.create({
   deleteGroupText: {
     ...Typography.titleMd,
     fontWeight: '700',
+  },
+  memberPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.xs,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    ...Shadows.card,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  modalTitle: {
+    ...Typography.titleLg,
+    fontWeight: '700',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  modalSubmitBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  rowTitle: {
+    ...Typography.bodyMd,
+    fontWeight: '600',
+  },
+  rowSub: {
+    ...Typography.bodySm,
   },
 });
