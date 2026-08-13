@@ -1,4 +1,4 @@
-const { withAndroidManifest, withDangerousMod } = require('@expo/config-plugins');
+const { withAndroidManifest, withDangerousMod, withAppBuildGradle } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -9,6 +9,16 @@ const path = require('path');
  * 3. Correctly maps metadata to @drawable/notification_icon instead of the colored launcher icon.
  */
 const withLargeNotificationIcon = (config) => {
+  config = withAppBuildGradle(config, (config) => {
+    if (config.modResults.language === 'groovy') {
+      let contents = config.modResults.contents;
+      contents = contents.replace(/project\.ext\.shouldSentryAutoUploadGeneral = \{ -> false \}\n?/g, '');
+      contents += `\nproject.ext.shouldSentryAutoUploadGeneral = { -> false }\n`;
+      config.modResults.contents = contents;
+    }
+    return config;
+  });
+
   config = withDangerousMod(config, [
     'android',
     async (config) => {
@@ -58,18 +68,21 @@ const withLargeNotificationIcon = (config) => {
         console.log('[withLargeNotificationIcon] Deployed notification_icon.png (PNG stencil) to all res folders');
       }
 
-      // 4. Cleanup duplicate webp launcher files (Expo artifact cleanup)
-      const mipmapFolders = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
-      mipmapFolders.forEach(folder => {
-        const folderPath = path.join(resDir, folder);
-        if (fs.existsSync(folderPath)) {
-          fs.readdirSync(folderPath).forEach(file => {
-            if (file.endsWith('.webp')) {
-              fs.unlinkSync(path.join(folderPath, file));
-            }
-          });
+      // 4. Ensure res/values/colors.xml contains notification_icon_color
+      const valuesDir = path.join(resDir, 'values');
+      if (!fs.existsSync(valuesDir)) fs.mkdirSync(valuesDir, { recursive: true });
+      const colorsXmlPath = path.join(valuesDir, 'colors.xml');
+      if (fs.existsSync(colorsXmlPath)) {
+        let content = fs.readFileSync(colorsXmlPath, 'utf8');
+        if (!content.includes('notification_icon_color')) {
+          content = content.replace('</resources>', '    <color name="notification_icon_color">#0065F2</color>\n</resources>');
+          fs.writeFileSync(colorsXmlPath, content);
         }
-      });
+      } else {
+        const colorsXml = '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="notification_icon_color">#0065F2</color>\n</resources>';
+        fs.writeFileSync(colorsXmlPath, colorsXml);
+      }
+      console.log('[withLargeNotificationIcon] Ensured notification_icon_color in colors.xml');
 
       return config;
     },
