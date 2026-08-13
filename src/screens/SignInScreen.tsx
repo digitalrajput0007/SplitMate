@@ -18,7 +18,7 @@ import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword, sendOTPEmailHTTP } from '../services/authService';
-import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
+import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
@@ -57,13 +57,20 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       if (isSignUp) {
-        // Send OTP first - mode 'signup' checks if email is already taken
-        await sendOTPEmailHTTP(trimmedEmail, 'signup');
+        if (ENABLE_OTP) {
+          await sendOTPEmailHTTP(trimmedEmail, 'signup');
+          setLoading(false);
+          navigation.navigate('EmailVerificationOTP', {
+            email: trimmedEmail,
+            password: password
+          });
+          return;
+        }
+
+        // Direct Firebase Sign-up Fallback (If ENABLE_OTP is false)
+        await signUpWithEmail(trimmedEmail, password);
+        setIsUnlocked(true);
         setLoading(false);
-        navigation.navigate('EmailVerificationOTP', {
-          email: trimmedEmail,
-          password: password
-        });
       } else {
         await signInWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
@@ -99,9 +106,26 @@ export default function SignInScreen({ navigation }: Props) {
       setLoading(false);
 
       // Fire Firestore profile verification sync asynchronously in background without blocking navigation
-      setUserEmailVerifiedInFirestore(result.user.uid).catch(e => 
-        console.warn('Background Google user verification sync error:', e)
-      );
+      (async () => {
+        try {
+          await setUserEmailVerifiedInFirestore(result.user.uid);
+
+          // Check if user already has a profile. If not, create one with Google data.
+          const existingProfile = await getUserProfileFromFirestore(result.user.uid);
+          if (!existingProfile && result.googleName) {
+            await saveUserProfileToFirestore({
+              uid: result.user.uid,
+              name: result.googleName,
+              email: result.user.email || '',
+              photoUrl: result.googlePhoto || '',
+              emailVerified: true,
+            });
+            console.log('[Auth] Created initial profile for Google user');
+          }
+        } catch (e) {
+          console.warn('Background Google user verification/profile sync error:', e);
+        }
+      })();
     } catch (err: any) {
       setLoading(false);
       console.log('Google Auth Error:', err);
@@ -114,210 +138,210 @@ export default function SignInScreen({ navigation }: Props) {
         style={{ flex: 1, backgroundColor: colors.background }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Card */}
-        <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-          {/* Brand Section */}
-          <View style={styles.brandSection}>
-            <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
-              <AppLogo size={44} />
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Card */}
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            {/* Brand Section */}
+            <View style={styles.brandSection}>
+              <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
+                <AppLogo size={44} />
+              </View>
+              <Text style={[styles.heading, { color: colors.onSurface }]}>
+                {isSignUp ? 'Create account' : 'Welcome back'}
+              </Text>
+              <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
+                {isSignUp
+                  ? 'Start splitting smarter today.'
+                  : 'Sign in to manage your group expenses.'}
+              </Text>
             </View>
-            <Text style={[styles.heading, { color: colors.onSurface }]}>
-              {isSignUp ? 'Create account' : 'Welcome back'}
-            </Text>
-            <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
-              {isSignUp
-                ? 'Start splitting smarter today.'
-                : 'Sign in to manage your group expenses.'}
-            </Text>
-          </View>
 
-          {/* Error Banner */}
-          {!!errorMessage && (
-            <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
-              <MaterialIcons name="error-outline" size={18} color={colors.error} />
-              <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
-            </View>
-          )}
+            {/* Error Banner */}
+            {!!errorMessage && (
+              <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+                <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
+              </View>
+            )}
 
-          {/* Google Sign-In Button */}
-          <TouchableOpacity
-            style={[styles.googleButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
-            onPress={handleGoogleSignIn}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            <View style={styles.googleIconBox}>
-              <Text style={styles.googleIconText}>G</Text>
-            </View>
-            <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
-            <Text style={[styles.dividerText, { color: colors.outline }]}>or</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
-          </View>
-
-          {/* Inputs */}
-          <OutlinedInput
-            label="Email Address"
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <OutlinedInput
-            label="Password"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="••••••••"
-            secureTextEntry
-          />
-
-          {!isSignUp && (
+            {/* Google Sign-In Button */}
             <TouchableOpacity
-              style={styles.forgotBtn}
-              onPress={() => {
-                if (ENABLE_OTP) {
-                  navigation.navigate('ForgotPassword', { email });
-                } else {
-                  setResetEmail(email);
-                  setResetSuccessMessage('');
-                  setResetModalVisible(true);
-                }
-              }}
+              style={[styles.googleButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
+              onPress={handleGoogleSignIn}
+              activeOpacity={0.85}
+              disabled={loading}
             >
-              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
+              <View style={styles.googleIconBox}>
+                <Text style={styles.googleIconText}>G</Text>
+              </View>
+              <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
             </TouchableOpacity>
-          )}
 
-          {isSignUp && (
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+              <Text style={[styles.dividerText, { color: colors.outline }]}>or</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+            </View>
+
+            {/* Inputs */}
             <OutlinedInput
-              label="Confirm Password"
-              value={confirmPassword}
+              label="Email Address"
+              value={email}
               onChangeText={(text) => {
-                setConfirmPassword(text);
+                setEmail(text);
+                if (errorMessage) setErrorMessage('');
+              }}
+              placeholder="name@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <OutlinedInput
+              label="Password"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
                 if (errorMessage) setErrorMessage('');
               }}
               placeholder="••••••••"
               secureTextEntry
             />
-          )}
 
-          {/* Primary Action Button */}
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
-            onPress={handleContinueWithEmail}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.onPrimary} size="small" />
-            ) : (
-              <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
-                {isSignUp ? 'Create Account' : 'Continue with Email'}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Toggle Sign-In / Sign-Up */}
-          <TouchableOpacity
-            style={styles.toggleRow}
-            onPress={() => {
-              setIsSignUp(!isSignUp);
-              setPassword('');
-              setConfirmPassword('');
-              setErrorMessage('');
-            }}
-          >
-            <Text style={[styles.toggleText, { color: colors.onSurfaceVariant }]}>
-              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <Text style={[styles.toggleLink, { color: colors.primary }]}>
-                {isSignUp ? 'Sign In' : 'Sign Up'}
-              </Text>
-            </Text>
-          </TouchableOpacity>
-
-          {/* Legal Footnote */}
-          <Text style={[styles.legal, { color: colors.outline }]}>
-            By continuing, you agree to our{' '}
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Terms</Text>
-            {' & '}
-            <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
-          </Text>
-        </View>
-      </ScrollView>
-
-      {/* Forgot Password Modal */}
-      <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
-            <Text style={[styles.resetTitle, { color: colors.onSurface }]}>Reset Password</Text>
-            <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>Enter your registered email address to receive a password reset link.</Text>
-
-            {!!resetSuccessMessage && (
-              <View style={[styles.resetSuccessBox, { backgroundColor: colors.positiveContainer, borderColor: colors.positive }]}>
-                <Text style={[styles.resetSuccessText, { color: colors.positiveText }]}>{resetSuccessMessage}</Text>
-              </View>
-            )}
-
-            <OutlinedInput
-              label="Email Address"
-              value={resetEmail}
-              onChangeText={setResetEmail}
-              placeholder="name@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
-                <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
-              </TouchableOpacity>
+            {!isSignUp && (
               <TouchableOpacity
-                style={[styles.sendBtn, { backgroundColor: colors.primary }, resetLoading && styles.disabledButton]}
-                disabled={resetLoading}
-                onPress={async () => {
-                  if (!resetEmail.trim()) {
-                    Alert.alert('Email Required', 'Please enter your email address.');
-                    return;
-                  }
-                  setResetLoading(true);
-                  try {
-                    await resetPassword(resetEmail.trim());
-                    setResetSuccessMessage('Password reset email sent! Please check your inbox.');
-                  } catch (e: any) {
-                    Alert.alert('Reset Failed', e.message || 'Unable to send reset link.');
-                  } finally {
-                    setResetLoading(false);
+                style={styles.forgotBtn}
+                onPress={() => {
+                  if (ENABLE_OTP) {
+                    navigation.navigate('ForgotPassword', { email });
+                  } else {
+                    setResetEmail(email);
+                    setResetSuccessMessage('');
+                    setResetModalVisible(true);
                   }
                 }}
               >
-                {resetLoading ? (
-                  <ActivityIndicator color={colors.onPrimary} size="small" />
-                ) : (
-                  <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
-                )}
+                <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
               </TouchableOpacity>
-            </View>
+            )}
+
+            {isSignUp && (
+              <OutlinedInput
+                label="Confirm Password"
+                value={confirmPassword}
+                onChangeText={(text) => {
+                  setConfirmPassword(text);
+                  if (errorMessage) setErrorMessage('');
+                }}
+                placeholder="••••••••"
+                secureTextEntry
+              />
+            )}
+
+            {/* Primary Action Button */}
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
+              onPress={handleContinueWithEmail}
+              activeOpacity={0.85}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
+                  {isSignUp ? 'Create Account' : 'Continue with Email'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Toggle Sign-In / Sign-Up */}
+            <TouchableOpacity
+              style={styles.toggleRow}
+              onPress={() => {
+                setIsSignUp(!isSignUp);
+                setPassword('');
+                setConfirmPassword('');
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.toggleText, { color: colors.onSurfaceVariant }]}>
+                {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+                <Text style={[styles.toggleLink, { color: colors.primary }]}>
+                  {isSignUp ? 'Sign In' : 'Sign Up'}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+
+            {/* Legal Footnote */}
+            <Text style={[styles.legal, { color: colors.outline }]}>
+              By continuing, you agree to our{' '}
+              <Text style={[styles.legalLink, { color: colors.primary }]}>Terms</Text>
+              {' & '}
+              <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* Forgot Password Modal */}
+        <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+              <Text style={[styles.resetTitle, { color: colors.onSurface }]}>Reset Password</Text>
+              <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>Enter your registered email address to receive a password reset link.</Text>
+
+              {!!resetSuccessMessage && (
+                <View style={[styles.resetSuccessBox, { backgroundColor: colors.positiveContainer, borderColor: colors.positive }]}>
+                  <Text style={[styles.resetSuccessText, { color: colors.positiveText }]}>{resetSuccessMessage}</Text>
+                </View>
+              )}
+
+              <OutlinedInput
+                label="Email Address"
+                value={resetEmail}
+                onChangeText={setResetEmail}
+                placeholder="name@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
+                  <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.sendBtn, { backgroundColor: colors.primary }, resetLoading && styles.disabledButton]}
+                  disabled={resetLoading}
+                  onPress={async () => {
+                    if (!resetEmail.trim()) {
+                      Alert.alert('Email Required', 'Please enter your email address.');
+                      return;
+                    }
+                    setResetLoading(true);
+                    try {
+                      await resetPassword(resetEmail.trim());
+                      setResetSuccessMessage('Password reset email sent! Please check your inbox.');
+                    } catch (e: any) {
+                      Alert.alert('Reset Failed', e.message || 'Unable to send reset link.');
+                    } finally {
+                      setResetLoading(false);
+                    }
+                  }}
+                >
+                  {resetLoading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

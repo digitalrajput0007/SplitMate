@@ -24,21 +24,21 @@ const BREVO_API_KEY = defineSecret("BREVO_API_KEY");
 // ================= REUSABLE OTP EMAIL TEMPLATE GENERATOR =================
 export function generateOTPEmailHTML(options: { mode: 'signup' | 'reset' | string; otp: string }) {
   const isSignup = options.mode === 'signup';
-  
-  const subject = isSignup 
-    ? "Your SplitMate verification code" 
+
+  const subject = isSignup
+    ? "Your SplitMate verification code"
     : "Your SplitMate password reset code";
 
-  const heading = isSignup 
-    ? "Verify your email" 
+  const heading = isSignup
+    ? "Verify your email"
     : "Reset your password";
 
-  const bodyLine1 = isSignup 
-    ? "Welcome to SplitMate!" 
+  const bodyLine1 = isSignup
+    ? "Welcome to SplitMate!"
     : "We received a request to reset your SplitMate account password.";
 
-  const bodyLine2 = isSignup 
-    ? "Use the verification code below to complete your account setup." 
+  const bodyLine2 = isSignup
+    ? "Use the verification code below to complete your account setup."
     : "Use the verification code below to continue.";
 
   const additionalMessage = isSignup
@@ -258,13 +258,19 @@ export const sendOTPEmailTest = onRequest({ secrets: [BREVO_API_KEY] }, async (r
     sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
     sendSmtpEmail.to = [{ email }];
 
-    await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log(`[OTP] Email sent successfully to ${email}`);
-
-    res.json({ success: true });
+    try {
+      await apiInstance.sendTransacEmail(sendSmtpEmail);
+      console.log(`[OTP] Email sent successfully to ${email}`);
+      res.json({ success: true });
+    } catch (emailErr: any) {
+      console.error("[OTP] Brevo API Error:", emailErr?.response?.body || emailErr?.response?.text || emailErr?.message || emailErr);
+      const detail = emailErr?.response?.body?.message || emailErr?.response?.text || emailErr?.message || "Failed to send OTP email";
+      res.status(500).json({ error: typeof detail === 'string' ? detail : JSON.stringify(detail) });
+      return;
+    }
   } catch (error: any) {
     console.error("[OTP] sendOTPEmailTest error:", error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message || "Failed to send OTP" });
   }
 });
 
@@ -304,7 +310,7 @@ export const verifyOTP = onRequest({ cors: true }, async (req, res) => {
     // Check expiration using Timestamp.toMillis() with a 10s grace period for clock drift
     if (nowMs > (expiryMs + 10000)) {
       console.log(`[OTP] EXPIRED: ${email}. Now: ${nowMs}, Expiry: ${expiryMs}`);
-      otpRef.delete().catch(() => {});
+      otpRef.delete().catch(() => { });
       res.status(400).json({ error: "OTP expired. Please request a new one." });
       return;
     }

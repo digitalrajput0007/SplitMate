@@ -187,7 +187,7 @@ function generateOTPEmailHTML(options) {
 // ================= SEND OTP (HTTP onRequest) =================
 // Merged logic from sendOTPEmail and sendOTPEmailTest
 exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, async (req, res) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     try {
         const email = (_b = (_a = req.body) === null || _a === void 0 ? void 0 : _a.email) === null || _b === void 0 ? void 0 : _b.toString().trim().toLowerCase();
         const mode = ((_c = req.body) === null || _c === void 0 ? void 0 : _c.mode) || 'none'; // 'signup' | 'reset' | 'none'
@@ -271,13 +271,21 @@ exports.sendOTPEmailTest = (0, https_1.onRequest)({ secrets: [BREVO_API_KEY] }, 
         sendSmtpEmail.textContent = emailData.textContent;
         sendSmtpEmail.sender = { name: "SplitMate", email: "splitmate@fyndralabs.com" };
         sendSmtpEmail.to = [{ email }];
-        await apiInstance.sendTransacEmail(sendSmtpEmail);
-        console.log(`[OTP] Email sent successfully to ${email}`);
-        res.json({ success: true });
+        try {
+            await apiInstance.sendTransacEmail(sendSmtpEmail);
+            console.log(`[OTP] Email sent successfully to ${email}`);
+            res.json({ success: true });
+        }
+        catch (emailErr) {
+            console.error("[OTP] Brevo API Error:", ((_d = emailErr === null || emailErr === void 0 ? void 0 : emailErr.response) === null || _d === void 0 ? void 0 : _d.body) || ((_e = emailErr === null || emailErr === void 0 ? void 0 : emailErr.response) === null || _e === void 0 ? void 0 : _e.text) || (emailErr === null || emailErr === void 0 ? void 0 : emailErr.message) || emailErr);
+            const detail = ((_g = (_f = emailErr === null || emailErr === void 0 ? void 0 : emailErr.response) === null || _f === void 0 ? void 0 : _f.body) === null || _g === void 0 ? void 0 : _g.message) || ((_h = emailErr === null || emailErr === void 0 ? void 0 : emailErr.response) === null || _h === void 0 ? void 0 : _h.text) || (emailErr === null || emailErr === void 0 ? void 0 : emailErr.message) || "Failed to send OTP email";
+            res.status(500).json({ error: typeof detail === 'string' ? detail : JSON.stringify(detail) });
+            return;
+        }
     }
     catch (error) {
         console.error("[OTP] sendOTPEmailTest error:", error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: error.message || "Failed to send OTP" });
     }
 });
 // ================= VERIFY OTP (HTTP onRequest) =================

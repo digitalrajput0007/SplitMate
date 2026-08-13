@@ -109,12 +109,16 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
       }
 
       // Direct smooth navigation transition without intermediate state flicker
-      if (needsProfileSetup) {
-        console.log('[Auth] Redirecting to Profile Setup screen...');
-        navigation.navigate('ProfileSetup');
-      } else {
-        console.log('[Auth] Profile exists, redirecting to Main Tabs...');
-        navigation.navigate('MainTabs');
+      try {
+        if (needsProfileSetup) {
+          console.log('[Auth] Redirecting to Profile Setup screen...');
+          (navigation as any).navigate('ProfileSetup');
+        } else {
+          console.log('[Auth] Profile exists, redirecting to Main Tabs...');
+          (navigation as any).navigate('MainTabs');
+        }
+      } catch (navErr) {
+        console.log('[Auth] Navigation state transition handled automatically by AppNavigator');
       }
     } catch (error: any) {
       isVerifyingRef.current = false;

@@ -54,8 +54,8 @@ export const signInWithGoogle = async () => {
 
     // 2. Clear any existing session to force account picker
     try {
-        await GoogleSignin.signOut();
-    } catch (e) {}
+      await GoogleSignin.signOut();
+    } catch (e) { }
 
     // 3. Start Google Sign-in flow
     const userInfo = await GoogleSignin.signIn();
@@ -66,9 +66,9 @@ export const signInWithGoogle = async () => {
 
     let finalIdToken = idToken;
     if (!finalIdToken) {
-        console.warn("[Auth] No ID Token found in response, trying getTokens()...");
-        const tokens = await GoogleSignin.getTokens();
-        finalIdToken = tokens.idToken;
+      console.warn("[Auth] No ID Token found in response, trying getTokens()...");
+      const tokens = await GoogleSignin.getTokens();
+      finalIdToken = tokens.idToken;
     }
 
     if (!finalIdToken) throw new Error("Could not retrieve ID Token from Google");
@@ -88,9 +88,9 @@ export const signInWithGoogle = async () => {
     };
   } catch (error: any) {
     if (error.code === '7') {
-        console.error("[Auth] Google Sign-in Network Error. Check internet connection.");
+      console.error("[Auth] Google Sign-in Network Error. Check internet connection.");
     } else if (error.code === '10') {
-        console.error("[Auth] DEVELOPER_ERROR: This usually means SHA-1 mismatch or wrong Web Client ID.");
+      console.error("[Auth] DEVELOPER_ERROR: This usually means SHA-1 mismatch or wrong Web Client ID.");
     }
     console.error("[Auth] Google Sign-in Error Details:", JSON.stringify(error, null, 2));
     throw error;
@@ -117,23 +117,47 @@ export const sendOTPEmailHTTP = async (email: string, mode: 'signup' | 'reset' |
       body: JSON.stringify({ email: trimmedEmail, mode }),
     });
 
-    const result = await response.json();
-    console.log('[HTTP] response:', result);
+    const responseText = await response.text();
+    console.log('[HTTP] response raw:', responseText.slice(0, 150));
 
     if (!response.ok) {
+      if (response.status === 500 || response.status === 503 || responseText.includes('<html')) {
+        throw new Error('OTP service is temporarily unavailable.');
+      }
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText && responseText.length < 200) {
+          let plain = responseText.trim();
+          if (plain.toLowerCase().includes('rate') || plain.toLowerCase().includes('exceeded') || plain.toLowerCase().includes('too many')) {
+            throw new Error('Too many requests / Rate limit exceeded. Please try after some time.');
+          }
+          throw new Error(plain);
+        }
+        throw new Error('Server returned an invalid response format.');
+      }
+
       let errMsg = result?.error || result?.message || 'Failed to send OTP';
       if (typeof errMsg !== 'string') errMsg = 'Failed to send OTP';
 
       if (errMsg.toLowerCase().includes('already exists') || errMsg.toLowerCase().includes('already registered')) {
         errMsg = 'An account with this email already exists. Please sign in instead.';
-      } else if (response.status === 429 || errMsg.includes('30 minutes') || errMsg.toLowerCase().includes('too many')) {
+      } else if (response.status === 429 || errMsg.includes('30 minutes') || errMsg.toLowerCase().includes('too many') || errMsg.toLowerCase().includes('rate')) {
         errMsg = 'Too many requests. Please try after some time.';
-      } else if (response.status === 400) {
-        errMsg = 'An account with this email already exists. Please sign in instead.';
       }
       throw new Error(errMsg);
     }
 
+    let result: any;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error('Server returned an invalid response format.');
+    }
+
+    console.log('[HTTP] response:', result);
     return result;
   } catch (error: any) {
     console.error('[HTTP] error:', error);
@@ -170,14 +194,34 @@ export const verifyOTP = async (email: string, otp: string) => {
       }
     );
 
-    const result = await response.json();
-    console.log("[OTP] verify response status:", response.status, result);
+    const responseText = await response.text();
 
     if (!response.ok) {
+      if (response.status === 500 || response.status === 503 || responseText.includes('<html')) {
+        throw new Error('Verification service is temporarily unavailable.');
+      }
+
+      let result: any;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        if (responseText && responseText.length < 200) {
+          throw new Error(responseText.trim());
+        }
+        throw new Error('Verification server returned an invalid response.');
+      }
       console.warn("[OTP] Verification rejected by server:", result.error);
       throw new Error(result.error || "Invalid or expired OTP");
     }
 
+    let result: any;
+    try {
+      result = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error('Verification server returned an invalid response.');
+    }
+
+    console.log("[OTP] verify response status:", response.status, result);
     return result;
 
   } catch (error: any) {
@@ -208,7 +252,7 @@ export const resetPasswordWithOTP = async (email: string, newPassword: string) =
 export const warmUpOTPService = () => {
   fetch("https://us-central1-splitmate-d2d66.cloudfunctions.net/verifyOTP", {
     method: "OPTIONS",
-  }).catch(() => {});
+  }).catch(() => { });
 };
 
 /* =========================================================

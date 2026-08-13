@@ -288,6 +288,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
               <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
               <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
               <Stack.Screen name="EmailScreen" component={EmailScreen} />
+              <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
             </>
           ) : !userStatus?.hasProfile ? (
             <>
