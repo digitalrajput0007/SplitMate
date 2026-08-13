@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -279,9 +280,19 @@ export default function SignInScreen({ navigation }: Props) {
             {/* Legal Footnote */}
             <Text style={[styles.legal, { color: colors.outline }]}>
               By continuing, you agree to our{' '}
-              <Text style={[styles.legalLink, { color: colors.primary }]}>Terms</Text>
+              <Text
+                style={[styles.legalLink, { color: colors.primary }]}
+                onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms')}
+              >
+                Terms
+              </Text>
               {' & '}
-              <Text style={[styles.legalLink, { color: colors.primary }]}>Privacy Policy</Text>
+              <Text
+                style={[styles.legalLink, { color: colors.primary }]}
+                onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/privacy')}
+              >
+                Privacy Policy
+              </Text>
             </Text>
           </View>
         </ScrollView>

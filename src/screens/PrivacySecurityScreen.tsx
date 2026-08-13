@@ -11,6 +11,7 @@ import {
   TextInput,
   ActivityIndicator,
   StatusBar as RNStatusBar,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -275,6 +276,34 @@ export default function PrivacySecurityScreen() {
             ) : (
               <MaterialIcons name="chevron-right" size={24} color={colors.error} />
             )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Legal Policies */}
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Legal & Policies</Text>
+        <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <TouchableOpacity
+            style={styles.rowClickable}
+            onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/privacy')}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Privacy Policy</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Read our data & privacy policy</Text>
+            </View>
+            <MaterialIcons name="open-in-new" size={20} color={colors.onSurfaceVariant} />
+          </TouchableOpacity>
+
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+          <TouchableOpacity
+            style={styles.rowClickable}
+            onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms')}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Terms of Service</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Read our terms and conditions</Text>
+            </View>
+            <MaterialIcons name="open-in-new" size={20} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
         </View>
       </ScrollView>

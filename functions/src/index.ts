@@ -142,9 +142,8 @@ export function generateOTPEmailHTML(options: { mode: 'signup' | 'reset' | strin
           <p style="margin: 0 0 14px 0; font-size: 13px; color: #64748B;">Simple expense sharing for everyone.</p>
           
           <p style="margin: 0 0 14px 0; font-size: 12px; color: #64748B;">
-            <a href="https://splitmate.app/privacy" style="color: #2563EB; text-decoration: none; font-weight: 500;">Privacy Policy</a> &nbsp;•&nbsp; 
-            <a href="https://splitmate.app/terms" style="color: #2563EB; text-decoration: none; font-weight: 500;">Terms</a> &nbsp;•&nbsp; 
-            <a href="https://splitmate.app/help" style="color: #2563EB; text-decoration: none; font-weight: 500;">Help</a>
+            <a href="https://www.fyndralabs.com/products/splitmate/privacy" style="color: #2563EB; text-decoration: none; font-weight: 500;">Privacy Policy</a> &nbsp;•&nbsp; 
+            <a href="https://www.fyndralabs.com/products/splitmate/terms" style="color: #2563EB; text-decoration: none; font-weight: 500;">Terms</a>
           </p>
 
           <p style="margin: 0; font-size: 12px; color: #94A3B8;">© 2026 SplitMate</p>
