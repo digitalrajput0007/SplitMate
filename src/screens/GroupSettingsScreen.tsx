@@ -12,6 +12,7 @@ import {
   Image,
   TextInput,
   Switch,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -483,7 +484,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     // 3. Evaluate Sole Admin Status
     const isOwner = group?.createdBy === currentUser.uid;
     const adminList = group?.adminIds && group.adminIds.length > 0 ? group.adminIds : (group?.createdBy ? [group.createdBy] : []);
-    const otherAdmins = adminList.filter((id) => id !== currentUser.uid && otherMembers.some((m) => m.uid === id));
+    const otherAdmins = adminList.filter((id: string) => id !== currentUser.uid && otherMembers.some((m) => m.uid === id));
     const isSoleAdmin = (isOwner || adminList.includes(currentUser.uid)) && otherAdmins.length === 0;
 
     // 4. Sole Admin Case: Require admin rights transfer

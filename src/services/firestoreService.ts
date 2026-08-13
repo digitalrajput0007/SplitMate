@@ -176,6 +176,7 @@ export interface GroupData {
   enableFlatmateSettleReminder?: boolean;
   flatmateReminderDate?: string;
   memberIds: string[];
+  adminIds?: string[];
   members?: Array<{ name: string; email?: string }>;
   membersDetails?: GroupMemberDetail[];
   memberProfiles?: Record<string, GroupMemberDetail>;
