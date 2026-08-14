@@ -10,7 +10,7 @@ export interface MediaPickerSheetProps {
   onDismiss: () => void;
   onCamera: () => void;
   onGallery: () => void;
-  onFiles: () => void;
+  onFiles?: () => void;
   onRemove?: () => void;
   title?: string;
 }
@@ -41,12 +41,14 @@ export function MediaPickerSheet({
           onPress={() => { onGallery(); onDismiss(); }}
           colors={colors}
         />
-        <OptionItem
-          icon="folder-open"
-          label="Browse Files"
-          onPress={() => { onFiles(); onDismiss(); }}
-          colors={colors}
-        />
+        {onFiles && (
+          <OptionItem
+            icon="folder-open"
+            label="Browse Files"
+            onPress={() => { onFiles(); onDismiss(); }}
+            colors={colors}
+          />
+        )}
         {onRemove && (
           <OptionItem
             icon="delete-outline"

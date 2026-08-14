@@ -150,13 +150,6 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
     }
   };
 
-  const browseFiles = async () => {
-    Alert.alert(
-      'Feature Unavailable',
-      'The File Browser requires a native rebuild to enable document picking.'
-    );
-  };
-
   return {
     isUploading,
     progress,
@@ -164,7 +157,6 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
     setIsPickerVisible,
     takePhoto,
     pickFromGallery,
-    browseFiles,
     removeMedia,
   };
 }
