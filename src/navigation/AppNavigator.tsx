@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -109,8 +109,15 @@ function AccountSvgIcon({ color, size = 22 }: { color: string; size?: number }) 
   );
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 function MainTabNavigator() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  // Dynamically compute bottom padding and total tab bar height to clear Android navigation bar & iOS home indicator
+  const bottomInset = insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 16 : 10);
+  const tabHeight = 60 + bottomInset;
 
   return (
     <Tab.Navigator
@@ -122,9 +129,14 @@ function MainTabNavigator() {
         tabBarStyle: {
           backgroundColor: colors.surfaceContainerLowest,
           borderTopColor: colors.divider,
-          height: 60,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: bottomInset,
           paddingTop: 8,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
         },
         tabBarIcon: ({ color, size }) => {
           if (route.name === 'HomeTab') return <HomeSvgIcon color={color} size={size} />;

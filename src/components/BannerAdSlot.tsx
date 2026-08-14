@@ -5,25 +5,8 @@ import { BorderRadius, Typography } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
 export function BannerAdSlot() {
-  const { colors } = useTheme();
-
-  return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: colors.surfaceContainerLow,
-          borderColor: colors.outlineVariant,
-        },
-      ]}
-    >
-      <View style={styles.adBadgeRow}>
-        <Text style={[styles.adBadge, { backgroundColor: colors.primary, color: colors.onPrimary }]}>AD</Text>
-        <Text style={[styles.adTitle, { color: colors.onSurface }]}>Google AdMob Banner Slot</Text>
-      </View>
-      <Text style={[styles.adUnitText, { color: colors.onSurfaceVariant }]}>Test Unit ID: {ADMOB_TEST_BANNER_ID}</Text>
-    </View>
-  );
+  // Ads disabled as per user request
+  return null;
 }
 
 const styles = StyleSheet.create({

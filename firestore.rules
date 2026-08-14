@@ -85,7 +85,10 @@ service cloud.firestore {
     // 💸 EXPENSES & COMMENTS
     // =========================================================
     match /expenses/{expenseId} {
-      allow read: if isGroupMember(resource.data.groupId);
+      allow read: if isSignedIn() && (
+        resource == null || 
+        isGroupMember(resource.data.groupId)
+      );
       allow create: if isGroupMember(request.resource.data.groupId) &&
         request.resource.data.createdBy == request.auth.uid;
       // SAFE EXPENSE UPDATES: Only expense creator OR Group Admin can edit/delete expenses
@@ -106,7 +109,10 @@ service cloud.firestore {
     // 🤝 SETTLEMENTS (Financial Ledger Protection)
     // =========================================================
     match /settlements/{settlementId} {
-      allow read: if isGroupMember(resource.data.groupId);
+      allow read: if isSignedIn() && (
+        resource == null || 
+        isGroupMember(resource.data.groupId)
+      );
       allow create: if isGroupMember(request.resource.data.groupId) && (
         request.resource.data.fromUserId == request.auth.uid ||
         request.resource.data.toUserId == request.auth.uid ||
@@ -131,7 +137,7 @@ service cloud.firestore {
     // 📊 ACTIVITIES
     // =========================================================
     match /activities/{activityId} {
-      allow read: if isGroupMember(resource.data.groupId);
+      allow read: if isSignedIn() && (resource == null || isGroupMember(resource.data.groupId));
       allow create: if isGroupMember(request.resource.data.groupId);
       allow update, delete: if false; // Audit logs are strictly immutable
     }
@@ -140,16 +146,16 @@ service cloud.firestore {
     // 🔔 NOTIFICATIONS
     // =========================================================
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || resource.data.recipientUid == request.auth.uid);
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.recipientUid == request.auth.uid);
     }
 
     // =========================================================
     // 🔄 RECURRING EXPENSES
     // =========================================================
     match /recurringExpenses/{id} {
-      allow read: if isGroupMember(resource.data.groupId);
+      allow read: if isSignedIn() && (resource == null || isGroupMember(resource.data.groupId));
       allow create: if isGroupMember(request.resource.data.groupId);
       allow update, delete: if isGroupMember(resource.data.groupId);
     }
