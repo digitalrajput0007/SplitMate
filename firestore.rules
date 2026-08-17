@@ -30,7 +30,10 @@ service cloud.firestore {
     function isGroupAdmin(groupId) {
       return isSignedIn() && 
         groupExists(groupId) && 
-        request.auth.uid in getGroupData(groupId).adminIds;
+        (
+          getGroupData(groupId).createdBy == request.auth.uid ||
+          (('adminIds' in getGroupData(groupId)) && request.auth.uid in getGroupData(groupId).adminIds)
+        );
     }
 
     // =========================================================
@@ -49,18 +52,30 @@ service cloud.firestore {
     // 👥 GROUPS (Privilege Escalation Protection)
     // =========================================================
     match /groups/{groupId} {
-      allow read: if isSignedIn() && request.auth.uid in resource.data.memberIds;
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && 
         request.resource.data.createdBy == request.auth.uid &&
         request.auth.uid in request.resource.data.memberIds;
       
-      // Members can update group metadata, but ONLY Group Admins can alter memberIds or adminIds
-      allow update: if isGroupMember(groupId) && (
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminIds', 'memberIds']) ||
-        isGroupAdmin(groupId)
+      // Group Admins (createdBy or adminIds) can update anything.
+      // Group Members can update metadata, or remove members / leave group.
+      // Invited users can accept invitations by adding themselves to memberIds.
+      allow update: if isSignedIn() && (
+        isGroupAdmin(groupId) ||
+        (isGroupMember(groupId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminIds', 'memberIds'])) ||
+        (isGroupMember(groupId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminIds']) && !(request.auth.uid in request.resource.data.memberIds)) ||
+        (
+          request.auth.uid in request.resource.data.memberIds &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adminIds']) &&
+          request.resource.data.memberIds.hasAll(resource.data.memberIds)
+        )
       );
 
       allow delete: if isGroupAdmin(groupId);
+
+      match /expenses/{expenseId} {
+        allow read, create, update, delete: if isGroupMember(groupId);
+      }
     }
 
     // =========================================================
@@ -68,16 +83,20 @@ service cloud.firestore {
     // =========================================================
     match /groupInvitations/{invitationId} {
       allow read: if isSignedIn() && (
+        resource == null ||
         resource.data.toUserId == request.auth.uid || 
         resource.data.fromUserId == request.auth.uid ||
-        (resource.data.toMobile != null && request.auth.token.phone_number == resource.data.toMobile)
+        (resource.data.toMobile != null && request.auth.token.phone_number == resource.data.toMobile) ||
+        isGroupMember(resource.data.groupId)
       );
       allow create: if isSignedIn() && 
         request.resource.data.fromUserId == request.auth.uid &&
         isGroupMember(request.resource.data.groupId);
       allow update, delete: if isSignedIn() && (
+        resource == null ||
         resource.data.toUserId == request.auth.uid || 
-        resource.data.fromUserId == request.auth.uid
+        resource.data.fromUserId == request.auth.uid ||
+        isGroupMember(resource.data.groupId)
       );
     }
 
@@ -91,8 +110,9 @@ service cloud.firestore {
       );
       allow create: if isGroupMember(request.resource.data.groupId) &&
         request.resource.data.createdBy == request.auth.uid;
-      // SAFE EXPENSE UPDATES: Only expense creator OR Group Admin can edit/delete expenses
-      allow update, delete: if isGroupMember(resource.data.groupId) && (
+      // Expense updates allowed for group members (e.g., editing expense or redistributing splits)
+      allow update: if isGroupMember(resource.data.groupId);
+      allow delete: if isGroupMember(resource.data.groupId) && (
         resource.data.createdBy == request.auth.uid || 
         isGroupAdmin(resource.data.groupId)
       );
@@ -146,18 +166,30 @@ service cloud.firestore {
     // 🔔 NOTIFICATIONS
     // =========================================================
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid || resource.data.recipientUid == request.auth.uid);
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.recipientUid == request.auth.uid);
+      allow update, delete: if isSignedIn() && (
+        resource == null ||
+        resource.data.userId == request.auth.uid || 
+        resource.data.recipientUid == request.auth.uid ||
+        isGroupMember(resource.data.groupId)
+      );
     }
 
     // =========================================================
     // 🔄 RECURRING EXPENSES
     // =========================================================
     match /recurringExpenses/{id} {
-      allow read: if isSignedIn() && (resource == null || isGroupMember(resource.data.groupId));
+      allow read: if isSignedIn() && (
+        resource == null || 
+        isGroupMember(resource.data.groupId)
+      );
       allow create: if isGroupMember(request.resource.data.groupId);
-      allow update, delete: if isGroupMember(resource.data.groupId);
+      allow update, delete: if isSignedIn() && (
+        resource == null || 
+        isGroupMember(resource.data.groupId) ||
+        (request.resource != null && isGroupMember(request.resource.data.groupId))
+      );
     }
   }
 }

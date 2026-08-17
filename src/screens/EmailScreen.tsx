@@ -71,7 +71,7 @@ export default function EmailScreen({ navigation }: Props) {
               label="Email Address"
               value={email}
               onChangeText={setEmail}
-              placeholder="name@example.com"
+              placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
               editable={!loading}

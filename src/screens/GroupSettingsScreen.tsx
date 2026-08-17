@@ -40,6 +40,7 @@ import {
   subscribeToAcceptedMembers,
   reinviteUserToGroupInFirestore,
   removeMemberFromGroup,
+  redistributeGroupExpensesOnMemberRemoval,
   addSettlementToFirestore,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
@@ -376,33 +377,17 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 Alert.alert('Error', 'No remaining members to redistribute balance to.');
                 return;
               }
-              const perPersonShare = Math.round((absVal / remainingMembers.length) * 100) / 100;
+              const remainingMemberUids = remainingMembers.map(x => x.uid);
 
-              for (const rem of remainingMembers) {
-                if (isOwed) {
-                  await addSettlementToFirestore({
-                    groupId,
-                    fromUserId: rem.uid,
-                    toUserId: u.uid,
-                    amount: perPersonShare,
-                    notes: `Balance redistributed upon removing ${u.name}`,
-                    status: 'completed',
-                  });
-                } else {
-                  await addSettlementToFirestore({
-                    groupId,
-                    fromUserId: u.uid,
-                    toUserId: rem.uid,
-                    amount: perPersonShare,
-                    notes: `Balance redistributed upon removing ${u.name}`,
-                    status: 'completed',
-                  });
-                }
-              }
+              // 1. Redistribute existing expenses among remaining members so updated owes are calculated correctly
+              await redistributeGroupExpensesOnMemberRemoval(groupId, u.uid, remainingMemberUids);
 
+              // 2. Remove member from group
               await removeMemberFromGroup(groupId, u.uid);
-              Alert.alert('Success', `Redistributed ${formattedVal} among remaining members and removed ${u.name}.`);
+
+              Alert.alert('Success', `Redistributed balance among remaining members and removed ${u.name}. Updated owes are now calculated for remaining members.`);
             } catch (e) {
+              console.error('Error redistributing balance on member removal:', e);
               Alert.alert('Error', 'Failed to redistribute balance and remove member.');
             }
           },

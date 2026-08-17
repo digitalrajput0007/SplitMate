@@ -23,7 +23,31 @@ import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore, saveUserP
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { ENABLE_OTP } from '../config/appConfig';
+
+function GoogleLogoSvg({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        fill="#4285F4"
+        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+      />
+      <Path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.25 21.3 7.31 24 12 24z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.17 0 9.99 0 12s.46 3.83 1.26 5.42l4.02-3.15z"
+      />
+      <Path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.7 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+      />
+    </Svg>
+  );
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
@@ -42,6 +66,24 @@ export default function SignInScreen({ navigation }: Props) {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
 
+  const isPasswordValid = (pass: string) => {
+    return (
+      pass.length >= 8 &&
+      /[0-9]/.test(pass) &&
+      /[A-Za-z]/.test(pass) &&
+      /[^A-Za-z0-9]/.test(pass)
+    );
+  };
+
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[A-Za-z]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score; // 0 to 4
+  };
+
   const handleContinueWithEmail = async () => {
     setErrorMessage('');
     const trimmedEmail = email.trim();
@@ -50,9 +92,18 @@ export default function SignInScreen({ navigation }: Props) {
       return;
     }
 
-    if (isSignUp && password !== confirmPassword) {
-      setErrorMessage('Passwords do not match.');
-      return;
+    if (isSignUp) {
+      if (!isPasswordValid(password)) {
+        setErrorMessage(
+          'Password must be at least 8 characters long and include numbers, letters, and special characters.'
+        );
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setErrorMessage('Passwords do not match.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -177,9 +228,7 @@ export default function SignInScreen({ navigation }: Props) {
               activeOpacity={0.85}
               disabled={loading}
             >
-              <View style={styles.googleIconBox}>
-                <Text style={styles.googleIconText}>G</Text>
-              </View>
+              <GoogleLogoSvg size={20} />
               <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
             </TouchableOpacity>
 
@@ -198,7 +247,7 @@ export default function SignInScreen({ navigation }: Props) {
                 setEmail(text);
                 if (errorMessage) setErrorMessage('');
               }}
-              placeholder="name@example.com"
+              placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
             />
@@ -212,6 +261,53 @@ export default function SignInScreen({ navigation }: Props) {
               placeholder="••••••••"
               secureTextEntry
             />
+
+            {isSignUp && password.length > 0 && (() => {
+              const score = getPasswordStrength(password);
+              const hasMinLen = password.length >= 8;
+              const hasNum = /[0-9]/.test(password);
+              const hasAlpha = /[A-Za-z]/.test(password);
+              const hasSpec = /[^A-Za-z0-9]/.test(password);
+
+              const getBarColor = () => {
+                if (score <= 1) return colors.error || '#EF4444';
+                if (score <= 3) return colors.tertiary || '#F59E0B';
+                return colors.primary || '#10B981';
+              };
+
+              return (
+                <View style={styles.passwordStrengthContainer}>
+                  {/* Progress Bar */}
+                  <View style={[styles.progressBarTrack, { backgroundColor: colors.surfaceContainerHigh || '#E5E7EB' }]}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${(score / 4) * 100}%`,
+                          backgroundColor: getBarColor(),
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  {/* Requirements checklist */}
+                  <View style={styles.requirementsContainer}>
+                    <Text style={[styles.reqText, { color: hasMinLen ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasMinLen ? '✓' : '•'} At least 8 characters
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasAlpha ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasAlpha ? '✓' : '•'} Contains a letter
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasNum ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasNum ? '✓' : '•'} Contains a number
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasSpec ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasSpec ? '✓' : '•'} Contains a special character
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
 
             {!isSignUp && (
               <TouchableOpacity
@@ -244,20 +340,29 @@ export default function SignInScreen({ navigation }: Props) {
             )}
 
             {/* Primary Action Button */}
-            <TouchableOpacity
-              style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
-              onPress={handleContinueWithEmail}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
-              ) : (
-                <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
-                  {isSignUp ? 'Create Account' : 'Continue with Email'}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {(() => {
+              const isSubmitDisabled = loading || !email.trim() || !password || (isSignUp && (!confirmPassword || !isPasswordValid(password) || password !== confirmPassword));
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary },
+                    isSubmitDisabled && styles.disabledButton,
+                  ]}
+                  onPress={handleContinueWithEmail}
+                  activeOpacity={0.85}
+                  disabled={isSubmitDisabled}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
+                      {isSignUp ? 'Create Account' : 'Login'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })()}
 
             {/* Toggle Sign-In / Sign-Up */}
             <TouchableOpacity
@@ -314,7 +419,7 @@ export default function SignInScreen({ navigation }: Props) {
                 label="Email Address"
                 value={resetEmail}
                 onChangeText={setResetEmail}
-                placeholder="name@example.com"
+                placeholder="Enter your email"
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -324,8 +429,12 @@ export default function SignInScreen({ navigation }: Props) {
                   <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.sendBtn, { backgroundColor: colors.primary }, resetLoading && styles.disabledButton]}
-                  disabled={resetLoading}
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: colors.primary },
+                    (resetLoading || !resetEmail.trim() || !resetEmail.includes('@')) && styles.disabledButton,
+                  ]}
+                  disabled={resetLoading || !resetEmail.trim() || !resetEmail.includes('@')}
                   onPress={async () => {
                     if (!resetEmail.trim()) {
                       Alert.alert('Email Required', 'Please enter your email address.');
@@ -563,5 +672,30 @@ const styles = StyleSheet.create({
   sendText: {
     ...Typography.titleSm,
     fontWeight: '600',
+  },
+  passwordStrengthContainer: {
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.md,
+    width: '100%',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    width: '100%',
+    overflow: 'hidden',
+    marginBottom: Spacing.xs,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  requirementsContainer: {
+    flexDirection: 'column',
+    gap: 2,
+    marginTop: 4,
+  },
+  reqText: {
+    ...Typography.labelMd,
+    fontSize: 12,
   },
 });

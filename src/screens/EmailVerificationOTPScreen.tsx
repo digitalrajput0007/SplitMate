@@ -133,7 +133,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
       } else if (error.code === 'auth/user-not-found') {
         userFriendlyMessage = 'No account found with this email address.';
       } else if (error.code === 'auth/weak-password') {
-        userFriendlyMessage = 'Password must be at least 6 characters.';
+        userFriendlyMessage = 'Password must be at least 8 characters long and include numbers, letters, and special characters.';
       } else if (error.message) {
         userFriendlyMessage = error.message.replace(/^Firebase:\s*Error\s*\(auth\/[^)]+\)\.?\s*/i, '');
       }

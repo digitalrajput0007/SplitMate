@@ -13,7 +13,7 @@ import {
   Platform,
   Switch,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -59,6 +59,7 @@ const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeo
 export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const AVATAR_COLORS = React.useMemo(() => [
     { bg: colors.primaryContainer, text: colors.onPrimaryContainer },
@@ -492,7 +493,7 @@ export default function CreateGroupModal({ navigation }: Props) {
         </View>
 
         {/* Main Content */}
-        <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md }}>
+        <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md, paddingBottom: 130 + Math.max(insets.bottom, 16) }}>
           {/* Search Field */}
           <View style={[styles.searchBox, { borderColor: colors.outline, backgroundColor: colors.surfaceContainerLow }]}>
             <MaterialIcons name="search" size={20} color={colors.outline} style={{ marginRight: 8 }} />
@@ -596,7 +597,7 @@ export default function CreateGroupModal({ navigation }: Props) {
         </View>
 
         {/* Bottom Action Area with Pill Badge + Full-width Create Group Button */}
-        <View style={styles.bottomActionAreaCenter}>
+        <View style={[styles.bottomActionAreaCenter, { backgroundColor: colors.background, paddingBottom: Math.max(insets.bottom, 16) + Spacing.sm }]}>
           <View style={[styles.countPillBadge, { backgroundColor: colors.primaryFixed }]}>
             <Text style={[styles.countPillText, { color: colors.onPrimaryFixed }]}>
               {selectedIds.size} {selectedIds.size === 1 ? 'member' : 'members'} selected
@@ -630,7 +631,7 @@ export default function CreateGroupModal({ navigation }: Props) {
       </View>
 
       {/* Main Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.basicsMainContent}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.basicsMainContent, { paddingBottom: 120 + Math.max(insets.bottom, 16) }]}>
         {/* Photo Upload */}
         <View style={styles.photoUploadCenter}>
           <TouchableOpacity
@@ -915,7 +916,7 @@ export default function CreateGroupModal({ navigation }: Props) {
       </ScrollView>
 
       {/* Bottom Action Area */}
-      <View style={[styles.bottomActionArea, { borderTopColor: colors.divider }]}>
+      <View style={[styles.bottomActionArea, { backgroundColor: colors.background, borderTopColor: colors.divider, paddingBottom: Math.max(insets.bottom, 16) + Spacing.sm }]}>
         <TouchableOpacity 
           style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]} 
           onPress={handleBasicsNext}

@@ -105,12 +105,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         console.log('Firestore offline / cache read mode');
       }
 
-      if (!resolvedName && activeUser.email) {
-        resolvedName = activeUser.email.split('@')[0];
-        resolvedName = resolvedName.charAt(0).toUpperCase() + resolvedName.slice(1);
-      }
-
-      setName(resolvedName);
+      setName(resolvedName || '');
       setPhotoUrl(resolvedPhoto);
       setPhotoThumbnailUrl(resolvedThumb);
       setDobDate(resolvedDob ? new Date(resolvedDob) : null);
@@ -126,9 +121,23 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
     loadInitialData();
   }, [route.params]);
 
+  const isValidName = (val: string) => {
+    // Only letters (A-Z, a-z) and single spaces between names allowed
+    return /^[A-Za-z]+(?:\s[A-Za-z]+)*$/.test(val.trim());
+  };
+
   const handleCompleteProfile = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       Alert.alert('Required Field', 'Please enter your Full Name.');
+      return;
+    }
+
+    if (!isValidName(trimmedName)) {
+      Alert.alert(
+        'Invalid Name',
+        'Name can only contain letters and spaces. Numbers, dots, and special characters are not allowed.'
+      );
       return;
     }
 
@@ -253,7 +262,10 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
                 <TextInput
                   style={[styles.inputText, { color: colors.onSurface }]}
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(val) => {
+                    const cleaned = val.replace(/[^A-Za-z\s]/g, '');
+                    setName(cleaned);
+                  }}
                   placeholder="e.g. Rahul Sharma"
                   placeholderTextColor={colors.outline}
                 />

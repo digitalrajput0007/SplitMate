@@ -19,9 +19,11 @@ import {
 import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
 import { db, auth } from '../config/firebase';
+import { parseFirestoreDate, formatFirestoreDate } from '../utils/dateUtils';
 import { NotificationService } from './NotificationService';
 import { captureError } from '../config/sentry';
 import { TelemetryService } from './telemetryService';
+import { simplifyDebts } from './debtSimplifier';
 
 // In-memory profile cache for reducing Firestore calls
 const userProfileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
@@ -1124,6 +1126,72 @@ export const redistributeExistingGroupExpenses = async (
   }
 };
 
+export const redistributeGroupExpensesOnMemberRemoval = async (
+  groupId: string,
+  removedMemberUid: string,
+  remainingMemberIds: string[]
+) => {
+  try {
+    if (!remainingMemberIds || remainingMemberIds.length === 0) return;
+
+    console.log(`[Firestore] Redistributing group ${groupId} expenses after removing member ${removedMemberUid}`);
+
+    const groupRef = doc(db, 'groups', groupId);
+    const groupSnap = await getDoc(groupRef);
+    const groupCreator = groupSnap.exists() ? (groupSnap.data() as GroupData).createdBy : remainingMemberIds[0];
+    const newDefaultPayer = remainingMemberIds.includes(groupCreator) ? groupCreator : remainingMemberIds[0];
+
+    const expQuery = query(collection(db, 'expenses'), where('groupId', '==', groupId));
+    const expSnap = await getDocs(expQuery);
+
+    const updateOps = expSnap.docs.map(async (expDoc) => {
+      const expData = expDoc.data() as ExpenseData;
+      const totalAmount = expData.amount || 0;
+
+      let updatedPaidBy = expData.paidBy;
+      if (updatedPaidBy === removedMemberUid) {
+        updatedPaidBy = newDefaultPayer;
+      }
+
+      let updatedCreatedBy = expData.createdBy;
+      if (updatedCreatedBy === removedMemberUid) {
+        updatedCreatedBy = newDefaultPayer;
+      }
+
+      const equalShare = Math.round((totalAmount / remainingMemberIds.length) * 100) / 100;
+      const newSplitDetails: Record<string, number> = {};
+      let runningSum = 0;
+
+      remainingMemberIds.forEach((uid, idx) => {
+        if (idx === remainingMemberIds.length - 1) {
+          newSplitDetails[uid] = Math.round((totalAmount - runningSum) * 100) / 100;
+        } else {
+          newSplitDetails[uid] = equalShare;
+          runningSum += equalShare;
+        }
+      });
+
+      const updatePayload = {
+        paidBy: updatedPaidBy,
+        createdBy: updatedCreatedBy,
+        splitDetails: newSplitDetails,
+        updatedAt: serverTimestamp(),
+      };
+
+      await updateDoc(expDoc.ref, updatePayload);
+
+      const subcollRef = doc(db, 'groups', groupId, 'expenses', expDoc.id);
+      await updateDoc(subcollRef, updatePayload).catch(() => {});
+    });
+
+    await Promise.all(updateOps);
+    console.log(`✓ Group ${groupId} expenses successfully redistributed among remaining members.`);
+  } catch (error) {
+    console.error('Error redistributing group expenses on member removal:', error);
+    throw error;
+  }
+};
+
 export const declineGroupInvitation = async (invitationId: string, groupId: string) => {
   try {
     const currentUser = auth.currentUser;
@@ -1623,13 +1691,17 @@ export const processDueRecurringExpenses = async (): Promise<void> => {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // Single-field query for active recurring expenses (avoids needing a Firestore composite index)
-    const q = query(
-      collection(db, 'recurringExpenses'),
-      where('active', '==', true)
-    );
+    // 1. Fetch user's active groups first
+    const groupsSnap = await getDocs(query(collection(db, 'groups'), where('memberIds', 'array-contains', user.uid)));
+    if (groupsSnap.empty) return;
+    const userGroupIds = groupsSnap.docs.map(d => d.id);
 
-    const snap = await getDocs(q);
+    // 2. Fetch active recurring expenses for user's groups (limited to batches of 30)
+    const snap = await getDocs(query(
+      collection(db, 'recurringExpenses'),
+      where('active', '==', true),
+      where('groupId', 'in', userGroupIds.slice(0, 30))
+    ));
     if (snap.empty) return;
 
     // Filter in-memory for expenses due on or before today
@@ -1657,7 +1729,6 @@ export const processDueRecurringExpenses = async (): Promise<void> => {
       // Idempotency check with deterministic ID
       const deterministicId = `rec_${rec.recurringExpenseId}_${runDate}`;
       const expenseRef = doc(db, 'expenses', deterministicId);
-      const subcollRef = doc(db, 'groups', rec.groupId, 'expenses', deterministicId);
 
       try {
         await runTransaction(db, async (transaction) => {
@@ -1679,7 +1750,6 @@ export const processDueRecurringExpenses = async (): Promise<void> => {
             };
 
             transaction.set(expenseRef, expenseData);
-            transaction.set(subcollRef, expenseData);
           }
 
           const nextRunDate = calculateNextRunDate(runDate, rec.frequency);
@@ -2114,7 +2184,8 @@ export const subscribeUserActivityFeed = (
 
     currentExpenses.forEach((exp) => {
       if (groupIds.includes(exp.groupId)) {
-        const rawTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+        const dObj = parseFirestoreDate(exp.createdAt, exp.date);
+        const rawTime = dObj.getTime();
         items.push({
           id: exp.expenseId || Math.random().toString(),
           type: 'expense',
@@ -2123,7 +2194,7 @@ export const subscribeUserActivityFeed = (
           amount: exp.amount,
           category: exp.category,
           groupName: exp.groupName,
-          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          date: dObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
           actorUid: exp.paidBy,
         });
@@ -2132,7 +2203,8 @@ export const subscribeUserActivityFeed = (
 
     currentSettlements.forEach((set) => {
       if (groupIds.includes(set.groupId)) {
-        const rawTime = set.createdAt?.seconds ? set.createdAt.seconds * 1000 : Date.now();
+        const dObj = parseFirestoreDate(set.createdAt);
+        const rawTime = dObj.getTime();
         items.push({
           id: set.settlementId || Math.random().toString(),
           type: 'settlement',
@@ -2140,7 +2212,7 @@ export const subscribeUserActivityFeed = (
           subtitle: `Recorded in ${set.groupName || 'Group'}`,
           amount: set.amount,
           category: '💸',
-          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          date: dObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
           actorUid: set.fromUserId,
         });
@@ -2149,7 +2221,8 @@ export const subscribeUserActivityFeed = (
 
     currentGroups.forEach((g) => {
       if (groupIds.includes(g.groupId)) {
-        const rawTime = g.createdAt?.seconds ? g.createdAt.seconds * 1000 : Date.now();
+        const dObj = parseFirestoreDate(g.createdAt);
+        const rawTime = dObj.getTime();
         items.push({
           id: g.groupId,
           type: 'group',
@@ -2157,7 +2230,7 @@ export const subscribeUserActivityFeed = (
           subtitle: `New group started!`,
           amount: 0,
           category: '👥',
-          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          date: dObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
           actorUid: g.createdBy,
         });
@@ -2165,19 +2238,20 @@ export const subscribeUserActivityFeed = (
     });
 
     currentReminders.forEach((rem) => {
-      if (groupIds.includes(rem.groupId)) {
-        const rawTime = rem.createdAt?.seconds ? rem.createdAt.seconds * 1000 : Date.now();
+      if (rem.groupId && groupIds.includes(rem.groupId)) {
+        const dObj = parseFirestoreDate(rem.createdAt);
+        const rawTime = dObj.getTime();
         items.push({
-          id: rem.notificationId,
+          id: rem.id || rem.notificationId || Math.random().toString(),
           type: 'reminder',
           title: `Payment Reminder`,
-          subtitle: `Sent in ${rem.groupName}`,
+          subtitle: `Sent in ${rem.groupName || 'Group'}`,
           amount: rem.amount || 0,
           category: '🔔',
           groupName: rem.groupName,
-          date: new Date(rawTime).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+          date: dObj.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
           rawTimestamp: rawTime,
-          actorUid: rem.senderUid,
+          actorUid: rem.senderUid || rem.userId || '',
           targetUid: rem.recipientUid,
         });
       }
@@ -2363,91 +2437,111 @@ export const subscribeUserBalanceSummary = (
     return () => {};
   }
 
-  const expensesQuery = query(collection(db, 'expenses'));
-  const settlementsQuery = query(collection(db, 'settlements'));
   const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
 
-  let allExpenses: ExpenseData[] = [];
-  let allSettlements: SettlementData[] = [];
+  let expenseUnsubscribers: (() => void)[] = [];
+  let settlementUnsubscribers: (() => void)[] = [];
   let userGroupsMap = new Map<string, GroupData>();
+  let groupExpensesMap = new Map<string, ExpenseData[]>();
+  let groupSettlementsMap = new Map<string, SettlementData[]>();
 
   const recalculateBalances = () => {
     let owedSum = 0;
     let oweSum = 0;
 
-    allExpenses.forEach((exp) => {
-      const groupData = userGroupsMap.get(exp.groupId);
-      if (!groupData) return;
+    userGroupsMap.forEach((group, groupId) => {
+      const groupExps = groupExpensesMap.get(groupId) || [];
+      const groupSets = groupSettlementsMap.get(groupId) || [];
 
-      const joinedAt = groupData?.membersJoinedAt?.[uid];
-      const includeExisting = groupData?.memberExistingExpensesPreference?.[uid] ?? true;
+      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string }> = {};
+      (group.memberIds || []).forEach((mId) => {
+        profiles[mId] = { name: mId === uid ? 'You' : 'Member' };
+      });
 
-      const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+      const groupDebts = simplifyDebts(groupExps, groupSets, profiles, group.memberExistingExpensesPreference);
 
-      // If user chose "new only" (includeExisting = false), skip expenses created before they joined
-      if (!includeExisting && joinedAt && expTime < joinedAt) {
-        return;
-      }
-
-      const effectiveSplits = getEffectiveSplitDetails(exp, groupData);
-      const isPayer = exp.paidBy === uid;
-      const userShare = effectiveSplits[uid] || 0;
-
-      if (isPayer) {
-        // Amount others owe me for this expense
-        const othersShare = exp.amount - userShare;
-        if (othersShare > 0) {
-          owedSum += othersShare;
+      groupDebts.forEach((debt) => {
+        if (debt.fromUserId === uid) {
+          oweSum += debt.amount;
+        } else if (debt.toUserId === uid) {
+          owedSum += debt.amount;
         }
-      } else if (userShare > 0) {
-        // Amount I owe the payer for this expense
-        oweSum += userShare;
-      }
+      });
     });
 
-    allSettlements.forEach((settlement) => {
-      if (settlement.status === 'completed' || !settlement.status) {
-        if (settlement.fromUserId === uid) {
-          // I paid off a debt
-          oweSum = Math.max(0, oweSum - settlement.amount);
-        } else if (settlement.toUserId === uid) {
-          // Someone paid me
-          owedSum = Math.max(0, owedSum - settlement.amount);
-        }
-      }
-    });
-
+    owedSum = Math.round(owedSum * 100) / 100;
+    oweSum = Math.round(oweSum * 100) / 100;
     const netBalance = Math.round((owedSum - oweSum) * 100) / 100;
 
     onSummaryUpdate({
       totalBalance: netBalance,
-      youAreOwed: Math.round(owedSum * 100) / 100,
-      youOwe: Math.round(oweSum * 100) / 100,
+      youAreOwed: owedSum,
+      youOwe: oweSum,
     });
   };
 
-  const unsub1 = onSnapshot(expensesQuery, (snap) => {
-    allExpenses = snap.docs.map((d) => d.data() as ExpenseData);
-    recalculateBalances();
-  });
+  const setupGroupListeners = (groupIds: string[]) => {
+    // Clear old group listeners
+    expenseUnsubscribers.forEach(u => u());
+    settlementUnsubscribers.forEach(u => u());
+    expenseUnsubscribers = [];
+    settlementUnsubscribers = [];
+    groupExpensesMap.clear();
+    groupSettlementsMap.clear();
 
-  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
-    allSettlements = snap.docs.map((d) => d.data() as SettlementData);
-    recalculateBalances();
-  });
+    if (groupIds.length === 0) {
+      recalculateBalances();
+      return;
+    }
 
-  const unsub3 = onSnapshot(groupsQuery, (snap) => {
-    userGroupsMap.clear();
-    snap.docs.forEach((docSnap) => {
-      userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+    // Batch group IDs in chunks of 30 for Firestore 'in' queries
+    const chunks: string[][] = [];
+    for (let i = 0; i < groupIds.length; i += 30) {
+      chunks.push(groupIds.slice(i, i + 30));
+    }
+
+    chunks.forEach((chunk) => {
+      const expQ = query(collection(db, 'expenses'), where('groupId', 'in', chunk));
+      const setQ = query(collection(db, 'settlements'), where('groupId', 'in', chunk));
+
+      const unsubExp = onSnapshot(expQ, (snap) => {
+        const exps = snap.docs.map(d => d.data() as ExpenseData);
+        chunk.forEach(gId => {
+          groupExpensesMap.set(gId, exps.filter(e => e.groupId === gId));
+        });
+        recalculateBalances();
+      }, (err) => console.warn('[BalanceSummary] Expenses listener error:', err));
+
+      const unsubSet = onSnapshot(setQ, (snap) => {
+        const sets = snap.docs.map(d => d.data() as SettlementData);
+        chunk.forEach(gId => {
+          groupSettlementsMap.set(gId, sets.filter(s => s.groupId === gId));
+        });
+        recalculateBalances();
+      }, (err) => console.warn('[BalanceSummary] Settlements listener error:', err));
+
+      expenseUnsubscribers.push(unsubExp);
+      settlementUnsubscribers.push(unsubSet);
     });
-    recalculateBalances();
-  });
+  };
+
+  const unsubGroups = onSnapshot(groupsQuery, (snap) => {
+    userGroupsMap.clear();
+    const gIds: string[] = [];
+    snap.docs.forEach((docSnap) => {
+      const gData = docSnap.data() as GroupData;
+      if (!gData.isArchived) {
+        userGroupsMap.set(docSnap.id, gData);
+        gIds.push(docSnap.id);
+      }
+    });
+    setupGroupListeners(gIds);
+  }, (err) => console.warn('[BalanceSummary] Groups listener error:', err));
 
   return () => {
-    unsub1();
-    unsub2();
-    unsub3();
+    unsubGroups();
+    expenseUnsubscribers.forEach(u => u());
+    settlementUnsubscribers.forEach(u => u());
   };
 };
 
@@ -2510,7 +2604,7 @@ export const subscribeUserMonthlyInsights = (
     let largestExp = { title: 'None', amount: 0 };
 
     allExpenses.forEach((exp) => {
-      const expDate = exp.createdAt?.seconds ? new Date(exp.createdAt.seconds * 1000) : new Date();
+      const expDate = parseFirestoreDate(exp.createdAt, exp.date);
       if (expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear) {
         // User paid for an expense
         if (exp.paidBy === uid) {
@@ -2523,7 +2617,7 @@ export const subscribeUserMonthlyInsights = (
     });
 
     allSettlements.forEach((s) => {
-      const sDate = s.createdAt?.seconds ? new Date(s.createdAt.seconds * 1000) : new Date();
+      const sDate = parseFirestoreDate(s.createdAt);
       if (sDate.getMonth() === currentMonth && sDate.getFullYear() === currentYear) {
         if (s.status === 'completed' || !s.status) {
           if (s.toUserId === uid) {

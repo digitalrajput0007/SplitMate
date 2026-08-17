@@ -104,8 +104,16 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
 
   const handleResetPassword = async () => {
     setErrorMessage('');
-    if (newPassword.length < 6) {
-      setErrorMessage('Password must be at least 6 characters.');
+    const isValid =
+      newPassword.length >= 8 &&
+      /[0-9]/.test(newPassword) &&
+      /[A-Za-z]/.test(newPassword) &&
+      /[^A-Za-z0-9]/.test(newPassword);
+
+    if (!isValid) {
+      setErrorMessage(
+        'Password must be at least 8 characters long and include numbers, letters, and special characters.'
+      );
       return;
     }
     if (newPassword !== confirmPassword) {

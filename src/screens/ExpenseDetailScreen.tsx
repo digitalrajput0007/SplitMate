@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { formatCurrency } from '../services/currencyService';
+import { parseFirestoreDate } from '../utils/dateUtils';
 import { auth } from '../config/firebase';
 import {
   updateExpenseInFirestore,
@@ -200,8 +201,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   };
 
   const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Recent';
-    const date = new Date(timestamp.seconds * 1000);
+    const date = parseFirestoreDate(timestamp, expense?.date);
     return date.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'long',
@@ -210,8 +210,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   };
 
   const formatDateTime = (timestamp: any) => {
-    if (!timestamp) return 'Just now';
-    const date = new Date(timestamp.seconds * 1000);
+    const date = parseFirestoreDate(timestamp, expense?.date);
     return date.toLocaleString('en-IN', {
       day: 'numeric',
       month: 'short',
@@ -379,7 +378,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
                       <View style={styles.commentHeader}>
                         <Text style={[styles.commentUser, { color: colors.primary }]}>{c.userName}</Text>
                         <Text style={[styles.commentTime, { color: colors.onSurfaceVariant }]}>
-                          {c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                          {parseFirestoreDate(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Text>
                       </View>
                       <Text style={[styles.commentText, { color: colors.onSurface, marginTop: 4 }]}>{c.text}</Text>

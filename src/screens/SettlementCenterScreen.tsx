@@ -55,23 +55,33 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
   // Listen to needed profiles for global settlements
   useEffect(() => {
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
+
+    // Trigger initial data fetch immediately
+    loadData();
+
     const unsubGroups = subscribeToUserGroups(currentUid, (groups) => {
+      if (groups.length === 0) {
+        setAllDebts([]);
+        setLoading(false);
+        return;
+      }
+
       const uidsToFetch = new Set<string>();
       groups.forEach(g => {
         if (g.memberIds) g.memberIds.forEach((uid: string) => uidsToFetch.add(uid));
       });
 
       uidsToFetch.forEach(uid => {
-        if (!memberProfiles[uid]) {
-          subscribeToUserProfile(uid, (profile) => {
-            if (profile) {
-              setMemberProfiles(prev => ({
-                ...prev,
-                [uid]: profile
-              }));
-            }
-          });
-        }
+        subscribeToUserProfile(uid, (profile) => {
+          setMemberProfiles(prev => ({
+            ...prev,
+            [uid]: profile || { uid, name: 'User', email: '' }
+          }));
+        });
       });
     });
 
@@ -79,7 +89,10 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   }, [currentUid]);
 
   const loadData = async () => {
-    if (!currentUid) return;
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
 
     try {
       // 1. Fetch active groups
@@ -152,9 +165,7 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   };
 
   useEffect(() => {
-    if (Object.keys(memberProfiles).length > 0) {
-      loadData();
-    }
+    loadData();
   }, [memberProfiles]);
 
   const onRefresh = () => {

@@ -5,8 +5,27 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/firestore.rules" beforeDir="false" afterPath="$PROJECT_DIR$/firestore.rules" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/components/OTPInputBlocks.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/OTPInputBlocks.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/hooks/useHomeActions.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useHomeActions.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/navigation/AppNavigator.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/EmailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EmailScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/EmailVerificationOTPScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/EmailVerificationOTPScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ExpenseDetailScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ForgotPasswordScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ForgotPasswordScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupDetailScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/GroupsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ProfileEditScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ProfileEditScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ProfileSetupScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ResetPasswordOTPScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ResetPasswordOTPScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/ResetPasswordScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ResetPasswordScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/SettlementCenterScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SettlementCenterScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/screens/SignInScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/SignInScreen.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/firestoreService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/firestoreService.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

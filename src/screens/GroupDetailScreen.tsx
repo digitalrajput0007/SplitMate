@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { SmartImage } from '../components/SmartImage';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
+import { formatFirestoreDate } from '../utils/dateUtils';
 import {
   subscribeToGroupExpenses,
   subscribeToGroupDetail,
@@ -247,12 +248,10 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                 const payerProfile = memberProfilesMap.get(item.paidBy);
                 const payerName = item.paidBy === currentUid ? 'You' : (payerProfile?.name || 'Member');
                 const isLast = index === expenses.length - 1;
-                const dateStr = item.createdAt
-                  ? new Date((item.createdAt as any).seconds * 1000).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                    })
-                  : 'Recent';
+                const dateStr = formatFirestoreDate(item.createdAt, item.date, {
+                  day: 'numeric',
+                  month: 'short',
+                });
 
                 return (
                   <TouchableOpacity

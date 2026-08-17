@@ -15,6 +15,7 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
+import { parseFirestoreDate } from '../utils/dateUtils';
 import {
   subscribeToNotifications,
   markNotificationAsRead,
@@ -113,7 +114,7 @@ export default function NotificationsScreen({ navigation }: Props) {
                     <Text style={[styles.title, { color: colors.onBackground }, isUnread && { fontWeight: '700' }]}>{item.title}</Text>
                     <Text style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>{item.message}</Text>
                     <Text style={[styles.date, { color: colors.outline }]}>
-                      {item.createdAt ? new Date(item.createdAt.seconds * 1000).toLocaleString() : 'Just now'}
+                      {parseFirestoreDate(item.createdAt).toLocaleString()}
                     </Text>
                   </View>
                   {isUnread && <View style={[styles.unreadDot, { backgroundColor: colors.primary }]} />}

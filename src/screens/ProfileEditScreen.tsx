@@ -84,8 +84,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
   }, []);
 
   const handleSave = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       Alert.alert('Validation Error', 'Full Name cannot be empty');
+      return;
+    }
+
+    if (!/^[A-Za-z]+(?:\s[A-Za-z]+)*$/.test(trimmedName)) {
+      Alert.alert(
+        'Invalid Name',
+        'Name can only contain letters and spaces. Numbers, dots, and special characters are not allowed.'
+      );
       return;
     }
 

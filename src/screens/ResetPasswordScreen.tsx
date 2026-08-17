@@ -98,13 +98,18 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
               />
             </View>
 
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.primary }, loading && { opacity: 0.7 }]}
-              onPress={handleReset}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.btnText, { color: colors.onPrimary }]}>Reset Password</Text>}
-            </TouchableOpacity>
+            {(() => {
+              const isSubmitDisabled = loading || !password || !confirmPassword || password.length < 8 || password !== confirmPassword || !/[0-9]/.test(password) || !/[A-Za-z]/.test(password) || !/[^A-Za-z0-9]/.test(password);
+              return (
+                <TouchableOpacity
+                  style={[styles.btn, { backgroundColor: colors.primary }, isSubmitDisabled && { opacity: 0.5 }]}
+                  onPress={handleReset}
+                  disabled={isSubmitDisabled}
+                >
+                  {loading ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={[styles.btnText, { color: colors.onPrimary }]}>Reset Password</Text>}
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

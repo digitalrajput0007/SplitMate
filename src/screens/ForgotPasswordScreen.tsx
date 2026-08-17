@@ -91,24 +91,33 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 setEmail(text);
                 if (successMessage) setSuccessMessage('');
               }}
-              placeholder="name@example.com"
+              placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
             />
 
-            <TouchableOpacity
-              style={[styles.btn, { backgroundColor: colors.primary }, loading && { opacity: 0.7 }]}
-              onPress={handleResetRequest}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
-              ) : (
-                <Text style={[styles.btnText, { color: colors.onPrimary }]}>
-                  {ENABLE_OTP ? 'Send Code' : 'Send Reset Link'}
-                </Text>
-              )}
-            </TouchableOpacity>
+            {(() => {
+              const isSubmitDisabled = loading || !email.trim() || !email.includes('@');
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.btn,
+                    { backgroundColor: colors.primary },
+                    isSubmitDisabled && { opacity: 0.5 },
+                  ]}
+                  onPress={handleResetRequest}
+                  disabled={isSubmitDisabled}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.btnText, { color: colors.onPrimary }]}>
+                      {ENABLE_OTP ? 'Send Code' : 'Send Reset Link'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })()}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

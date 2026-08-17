@@ -321,6 +321,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
             </>
           ) : !userStatus?.hasProfile ? (
             <>
+              <Stack.Screen name="SignIn" component={SignInScreen} />
               <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
               <Stack.Screen name="MainTabs" component={MainTabNavigator} />
             </>

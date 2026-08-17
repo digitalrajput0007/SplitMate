@@ -18,6 +18,7 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { GroupCard } from '../components/GroupCard';
+import { parseFirestoreDate } from '../utils/dateUtils';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
 import { M3BottomSheet } from '../components/M3BottomSheet';
@@ -154,8 +155,8 @@ export default function GroupsScreen() {
       };
     });
 
-    const lastActivityText = item.createdAt
-      ? `Updated ${new Date(item.createdAt.seconds * 1000).toLocaleDateString()}`
+    const lastActivityText = (item.updatedAt || item.createdAt)
+      ? `Updated ${parseFirestoreDate(item.updatedAt || item.createdAt).toLocaleDateString()}`
       : undefined;
 
     return (
