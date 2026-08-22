@@ -76,7 +76,17 @@ export function useHomeActions(groupCount: number) {
       };
     }
 
-    // 3. User Owes Money
+    // 3. Pending Settlement Confirmation
+    if (pendingConfirmations.length > 0) {
+      return {
+        priority: 'CONFIRMATION',
+        message: 'Payment Awaiting Confirmation',
+        subMessage: 'A friend recorded a payment to you.',
+        cta: 'Review'
+      };
+    }
+
+    // 4. User Owes Money
     if (balance.youOwe > 0.05) {
       return {
         priority: 'OWE',
@@ -86,23 +96,13 @@ export function useHomeActions(groupCount: number) {
       };
     }
 
-    // 4. User Is Owed Money
+    // 5. User Is Owed Money
     if (balance.youAreOwed > 0.05) {
       return {
         priority: 'OWED',
         message: 'You are Owed',
         subMessage: `Friends owe you ${balance.youAreOwed.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}`,
         cta: 'View Settlements'
-      };
-    }
-
-    // 5. Pending Settlement Confirmation
-    if (pendingConfirmations.length > 0) {
-      return {
-        priority: 'CONFIRMATION',
-        message: 'Payment Awaiting Confirmation',
-        subMessage: 'A friend recorded a payment to you.',
-        cta: 'Review'
       };
     }
 

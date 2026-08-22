@@ -2557,17 +2557,44 @@ export const subscribeToUserPendingSettlements = (
     return () => {};
   }
 
-  // Find settlements where user is either 'from' or 'to' and status is 'pending'
-  const q = query(
+  // Use two separate queries to satisfy security rules (which require explicit fromUserId or toUserId equality checks)
+  const qTo = query(
     collection(db, 'settlements'),
+    where('toUserId', '==', uid),
     where('status', '==', 'pending')
   );
 
-  return onSnapshot(q, (snap) => {
-    const allPending = snap.docs.map((d) => ({ ...d.data(), settlementId: d.id } as SettlementData));
-    const userPending = allPending.filter(s => s.fromUserId === uid || s.toUserId === uid);
-    onUpdate(userPending);
+  const qFrom = query(
+    collection(db, 'settlements'),
+    where('fromUserId', '==', uid),
+    where('status', '==', 'pending')
+  );
+
+  let toSettlements: SettlementData[] = [];
+  let fromSettlements: SettlementData[] = [];
+
+  const updateCombined = () => {
+    // Combine and deduplicate
+    const combinedMap = new Map<string, SettlementData>();
+    toSettlements.forEach(s => { if (s.settlementId) combinedMap.set(s.settlementId, s); });
+    fromSettlements.forEach(s => { if (s.settlementId) combinedMap.set(s.settlementId, s); });
+    onUpdate(Array.from(combinedMap.values()));
+  };
+
+  const unsubTo = onSnapshot(qTo, (snap) => {
+    toSettlements = snap.docs.map((d) => ({ ...d.data(), settlementId: d.id } as SettlementData));
+    updateCombined();
   });
+
+  const unsubFrom = onSnapshot(qFrom, (snap) => {
+    fromSettlements = snap.docs.map((d) => ({ ...d.data(), settlementId: d.id } as SettlementData));
+    updateCombined();
+  });
+
+  return () => {
+    unsubTo();
+    unsubFrom();
+  };
 };
 
 // -------------------------------------------------------------

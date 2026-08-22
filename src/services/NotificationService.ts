@@ -176,16 +176,16 @@ export const NotificationService = {
       try {
         const type = data.type || data.notificationType;
 
-        if (type === 'GROUP_INVITE' || type === 'group_invitation') {
-          navigation.navigate('Notifications');
-        } else if (type === 'SETTLEMENT' || type === 'REMINDER' || type === 'payment_reminder') {
+        if (type.toUpperCase() === 'GROUP_INVITE' || type.toUpperCase() === 'GROUP_INVITATION') {
+          navigation.navigate('MainTabs');
+        } else if (type.toUpperCase() === 'SETTLEMENT' || type.toUpperCase() === 'REMINDER' || type.toUpperCase() === 'PAYMENT_REMINDER') {
           if (data.groupId) {
             navigation.navigate('GroupDetail', {
               groupId: data.groupId,
               groupName: data.groupName || 'Group'
             });
           } else {
-            navigation.navigate('SettlementCenter');
+            navigation.navigate('MainTabs');
           }
         } else if (data.groupId) {
           navigation.navigate('GroupDetail', {

@@ -20,6 +20,7 @@ import {
   findUserByPhone,
   getAllUsersFromFirestore,
   getSavedUserContactsFromFirestore,
+  UserProfile,
 } from '../services/firestoreService';
 import { ContactService, normalizePhoneNumber } from '../services/ContactService';
 import { SmartImage } from '../components/SmartImage';
@@ -44,26 +45,53 @@ export default function ContactSyncScreen() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [deviceContacts, setDeviceContacts] = useState<SyncContact[]>([]);
+  const [platformUsers, setPlatformUsers] = useState<UserProfile[]>([]);
   const [matchedProfiles, setMatchedProfiles] = useState<Record<string, UserProfile>>({});
+  const [existingPhoneSet, setExistingPhoneSet] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<'phonebook' | 'splitmate'>('phonebook');
 
   useEffect(() => {
-    init();
+    // Always load platform users for instant searching
+    loadPlatformUsers();
   }, []);
 
-  const init = async () => {
-    try {
-      // 1. Fetch device contacts
-      const rawContacts = await ContactService.getDeviceContacts();
+  useEffect(() => {
+    // Only load phonebook if on Phonebook tab and not already loaded
+    if (activeTab === 'phonebook' && deviceContacts.length === 0) {
+      loadPhonebook();
+    }
+  }, [activeTab]);
 
-      // 2. Fetch all platform users & user's existing contacts
+  const loadPlatformUsers = async () => {
+    try {
       const [allUsers, existingContacts] = await Promise.all([
         getAllUsersFromFirestore(),
         currentUser?.uid ? getSavedUserContactsFromFirestore(currentUser.uid) : Promise.resolve([]),
       ]);
 
       const existingPhoneSet = new Set(existingContacts.map(c => c.phone));
+      
+      const platformMap: Record<string, UserProfile> = {};
+      allUsers.forEach(u => {
+        if (u.mobile) {
+          const clean = normalizePhoneNumber(u.mobile);
+          if (clean) platformMap[clean] = u;
+        }
+      });
 
-      // 3. Deduplicate by phone number and mark if already added
+      setMatchedProfiles(platformMap);
+      setPlatformUsers(allUsers);
+      setExistingPhoneSet(existingPhoneSet);
+    } catch (e) {
+      console.error('Error loading platform users', e);
+    }
+  };
+
+  const loadPhonebook = async () => {
+    setLoading(true);
+    try {
+      const rawContacts = await ContactService.getDeviceContacts();
+      
       const uniqueMap = new Map<string, SyncContact>();
       rawContacts.forEach(c => {
         if (!uniqueMap.has(c.phone)) {
@@ -74,17 +102,6 @@ export default function ContactSyncScreen() {
         }
       });
       const contacts = Array.from(uniqueMap.values());
-
-      // 4. Create platform map for instant matching
-      const platformMap: Record<string, UserProfile> = {};
-      allUsers.forEach(u => {
-        if (u.mobile) {
-          const clean = normalizePhoneNumber(u.mobile);
-          if (clean) platformMap[clean] = u;
-        }
-      });
-
-      setMatchedProfiles(platformMap);
       setDeviceContacts(contacts);
     } catch (e: any) {
       if (e.message === 'Permission denied') {
@@ -115,37 +132,62 @@ export default function ContactSyncScreen() {
   const filteredContacts = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
 
-    // Initial filtering by search query
-    let list = query
-      ? deviceContacts.filter(c =>
-          c.name.toLowerCase().includes(query) ||
-          c.phone.includes(query)
-        )
-      : [...deviceContacts];
+    if (activeTab === 'phonebook') {
+      let list = query
+        ? deviceContacts.filter(c =>
+            c.name.toLowerCase().includes(query) ||
+            c.phone.includes(query)
+          )
+        : [...deviceContacts];
 
-    // Sort:
-    // 1. Already Added (Green Check)
-    // 2. On Platform but not added (+Add)
-    // 3. Not on platform (Invite)
-    // 4. Alphabetical within tiers
-    return list.sort((a, b) => {
-      const getPriority = (contact: SyncContact) => {
-        if (contact.isAdded) return 2;
-        if (matchedProfiles[contact.phone]) return 1;
-        return 0;
-      };
+      return list.sort((a, b) => {
+        const getPriority = (contact: SyncContact) => {
+          if (contact.isAdded) return 2;
+          if (matchedProfiles[contact.phone]) return 1;
+          return 0;
+        };
 
-      const pA = getPriority(a);
-      const pB = getPriority(b);
+        const pA = getPriority(a);
+        const pB = getPriority(b);
 
-      if (pA !== pB) return pB - pA; // Higher priority first
-      return (a.name || '').localeCompare(b.name || '');
-    });
-  }, [deviceContacts, searchQuery, matchedProfiles]);
+        if (pA !== pB) return pB - pA;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+    } else {
+      if (!query) return []; // Do not show users by default
 
-  const renderItem = useCallback(({ item }: { item: SyncContact }) => {
+      let list = platformUsers.filter(u => {
+        const queryPhone = normalizePhoneNumber(query);
+        const isFullPhone = queryPhone.length >= 10;
+        const isEmailSearch = query.includes('@');
+
+        if (!isFullPhone && !isEmailSearch) return false;
+
+        const phoneMatch = isFullPhone && u.mobile ? normalizePhoneNumber(u.mobile) === queryPhone : false;
+        const emailMatch = isEmailSearch && u.email ? u.email.toLowerCase() === query : false;
+        
+        return phoneMatch || emailMatch;
+      });
+
+      return list.map(u => {
+        const phoneClean = u.mobile ? normalizePhoneNumber(u.mobile) : '';
+        return {
+          name: u.name,
+          phone: phoneClean || (u.email || ''),
+          email: u.email,
+          uid: u.uid,
+          photoUrl: u.photoUrl,
+          photoThumbnailUrl: u.photoThumbnailUrl,
+          isAdded: phoneClean ? existingPhoneSet.has(phoneClean) : false,
+          isSplitmateUser: true
+        } as SyncContact;
+      }).filter(u => u.uid !== currentUser?.uid).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+  }, [deviceContacts, searchQuery, matchedProfiles, activeTab, platformUsers, existingPhoneSet]);
+
+  const renderItem = useCallback(({ item }: { item: SyncContact & { isSplitmateUser?: boolean } }) => {
     const platformUser = matchedProfiles[item.phone];
-    const isOnPlatform = !!platformUser;
+    const isOnPlatform = item.isSplitmateUser ? true : !!platformUser;
 
     // Priority Logic:
     // 1. Platform Photo (from Firestore profile)
@@ -211,19 +253,34 @@ export default function ContactSyncScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color={colors.onBackground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Add Friends</Text>
+        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Add Contacts</Text>
         <View style={{ width: 44 }} />
+      </View>
+
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'phonebook' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+          onPress={() => { setSearchQuery(''); setActiveTab('phonebook'); }}
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'phonebook' ? colors.primary : colors.onSurfaceVariant }]}>Phonebook</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'splitmate' && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+          onPress={() => { setSearchQuery(''); setActiveTab('splitmate'); }}
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'splitmate' ? colors.primary : colors.onSurfaceVariant }]}>Splitmate</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.searchContainer}>
         <M3SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search name or phone..."
+          placeholder={activeTab === 'splitmate' ? "Search email or phone..." : "Search name or phone..."}
         />
       </View>
 
-      {loading ? (
+      {loading && activeTab === 'phonebook' ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing phonebook...</Text>
@@ -231,7 +288,7 @@ export default function ContactSyncScreen() {
       ) : (
         <FlatList
           data={filteredContacts}
-          keyExtractor={(item) => `sync_${item.phone}`}
+          keyExtractor={(item) => `sync_${item.phone}_${item.uid || ''}`}
           renderItem={renderItem}
           initialNumToRender={15}
           maxToRenderPerBatch={10}
@@ -241,7 +298,9 @@ export default function ContactSyncScreen() {
             <View style={styles.empty}>
               <MaterialIcons name="person-search" size={64} color={colors.outlineVariant} />
               <Text style={[styles.emptyText, { color: colors.onSurfaceVariant }]}>
-                {searchQuery ? 'No contacts match your search' : 'No contacts found in phonebook'}
+                {activeTab === 'splitmate' 
+                  ? (searchQuery ? 'No users found with that email or phone' : 'Search by email or phone to find Splitmate users') 
+                  : (searchQuery ? 'No contacts match your search' : 'No contacts found in phonebook')}
               </Text>
             </View>
           }
@@ -256,6 +315,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md },
   backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { ...Typography.titleLg, fontWeight: '700' },
+  tabContainer: { flexDirection: 'row', paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
+  tabBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabText: { ...Typography.labelLg, fontWeight: '700' },
   searchContainer: { paddingHorizontal: Spacing.md, marginBottom: Spacing.sm },
   list: { padding: Spacing.md, paddingBottom: 40 },
   contactCard: {

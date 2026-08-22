@@ -554,7 +554,7 @@ export default function CreateGroupModal({ navigation }: Props) {
                   {/* Integrated Invite row */}
                   <TouchableOpacity
                     style={styles.integratedInviteRow}
-                    onPress={() => navigation.navigate('MainTabs', { screen: 'ContactsTab' })}
+                    onPress={() => navigation.navigate('ContactSync')}
                     activeOpacity={0.8}
                   >
                     <View style={[styles.dottedPhoneCircle, { borderColor: colors.primary }]}>

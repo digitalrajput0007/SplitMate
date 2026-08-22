@@ -97,11 +97,18 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   };
 
   // Conditional Fields
+  const [enableTripDates, setEnableTripDates] = useState(false);
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [endDate, setEndDate] = useState<Date>(new Date());
-  const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
+  const [pickerMode, setPickerMode] = useState<'start' | 'end' | 'family' | 'flatmate' | null>(null);
   const [familyName, setFamilyName] = useState('');
   const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
+  const [enableFamilyReminder, setEnableFamilyReminder] = useState(false);
+  const [familyReminderDate, setFamilyReminderDate] = useState<Date>(new Date());
+  const [enableBalanceAlert, setEnableBalanceAlert] = useState(false);
+  const [balanceAlertThreshold, setBalanceAlertThreshold] = useState('2000');
+  const [enableFlatmateSettleReminder, setEnableFlatmateSettleReminder] = useState(false);
+  const [flatmateReminderDate, setFlatmateReminderDate] = useState<Date>(new Date());
 
   const [acceptedUsers, setAcceptedUsers] = useState<UserProfile[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
@@ -130,8 +137,15 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           if (data.photoThumbnailUrl !== undefined) setGroupPhotoThumbnail(data.photoThumbnailUrl);
           if (data.startDate) setStartDate(new Date(data.startDate));
           if (data.endDate) setEndDate(new Date(data.endDate));
+          if (data.enableDates !== undefined) setEnableTripDates(data.enableDates);
           if (data.familyName) setFamilyName(data.familyName);
           if (data.setupMonthlySplit !== undefined) setSetupMonthlySplit(data.setupMonthlySplit);
+          if (data.enableSettleReminder !== undefined) setEnableFamilyReminder(data.enableSettleReminder);
+          if (data.settleReminderDate) setFamilyReminderDate(new Date(data.settleReminderDate));
+          if (data.enableBalanceAlert !== undefined) setEnableBalanceAlert(data.enableBalanceAlert);
+          if (data.balanceAlertThreshold !== undefined) setBalanceAlertThreshold(data.balanceAlertThreshold.toString());
+          if (data.enableFlatmateSettleReminder !== undefined) setEnableFlatmateSettleReminder(data.enableFlatmateSettleReminder);
+          if (data.flatmateReminderDate) setFlatmateReminderDate(new Date(data.flatmateReminderDate));
         } else if (!isDeletingRef.current) {
           Alert.alert(
             'Group Deleted',
@@ -214,8 +228,11 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
     setSaving(true);
     try {
-      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
-      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
+      const formattedStart = (groupType === 'Trip' && enableTripDates) ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = (groupType === 'Trip' && enableTripDates) ? endDate.toISOString().split('T')[0] : undefined;
+      const formattedFamilyReminder = (groupType === 'Family' && enableFamilyReminder) ? familyReminderDate.toISOString().split('T')[0] : undefined;
+      const formattedFlatmateReminder = (groupType === 'Flatmate' && enableFlatmateSettleReminder) ? flatmateReminderDate.toISOString().split('T')[0] : undefined;
+      const alertThresholdNum = (groupType === 'Couple' && enableBalanceAlert) ? parseFloat(balanceAlertThreshold) || 2000 : undefined;
 
       const updateData: any = {
         name: groupName.trim(),
@@ -223,11 +240,23 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         photoUrl: groupPhoto || '',
         photoThumbnailUrl: groupPhotoThumbnail || '',
         photoMetadata: groupPhotoMetadata,
-        enableDates: groupType === 'Trip',
+        enableDates: groupType === 'Trip' && enableTripDates,
       };
 
-      if (groupType === 'Family') updateData.familyName = familyName.trim();
-      if (groupType === 'Flatmate') updateData.setupMonthlySplit = setupMonthlySplit;
+      if (groupType === 'Family') {
+        updateData.familyName = familyName.trim();
+        updateData.enableSettleReminder = enableFamilyReminder;
+        updateData.settleReminderDate = formattedFamilyReminder;
+      }
+      if (groupType === 'Couple') {
+        updateData.enableBalanceAlert = enableBalanceAlert;
+        updateData.balanceAlertThreshold = alertThresholdNum;
+      }
+      if (groupType === 'Flatmate') {
+        updateData.setupMonthlySplit = setupMonthlySplit;
+        updateData.enableFlatmateSettleReminder = enableFlatmateSettleReminder;
+        updateData.flatmateReminderDate = formattedFlatmateReminder;
+      }
       if (groupType === 'Trip') {
         updateData.startDate = formattedStart;
         updateData.endDate = formattedEnd;
@@ -708,62 +737,46 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Conditional Fields */}
         {groupType === 'Trip' && (
           <View style={styles.inputGroup}>
-            <View style={styles.datesRow}>
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
-                  onPress={isOwner ? () => setPickerMode('start') : undefined}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableTripDates ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Add trip dates?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Set start and end dates for your trip</Text>
               </View>
-
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
-                  onPress={isOwner ? () => setPickerMode('end') : undefined}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-              </View>
+              <Switch
+                value={enableTripDates}
+                onValueChange={isOwner ? setEnableTripDates : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableTripDates ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
             </View>
 
-            {isOwner && pickerMode && (
-              <DateTimePicker
-                value={pickerMode === 'start' ? startDate : endDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={(event, selected) => {
-                  if (Platform.OS === 'android') {
-                    setPickerMode(null);
-                  }
+            {enableTripDates && (
+              <View style={styles.datesRow}>
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                    onPress={isOwner ? () => setPickerMode('start') : undefined}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
 
-                  if (selected && event.type !== 'dismissed') {
-                    if (pickerMode === 'start') {
-                      setStartDate(selected);
-                      if (selected > endDate) {
-                        setEndDate(selected);
-                      }
-                    } else {
-                      if (selected < startDate) {
-                        setEndDate(startDate);
-                      } else {
-                        setEndDate(selected);
-                      }
-                    }
-                  }
-
-                  if (Platform.OS === 'ios') {
-                    setPickerMode(null);
-                  }
-                }}
-              />
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                    onPress={isOwner ? () => setPickerMode('end') : undefined}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
           </View>
         )}
@@ -772,30 +785,152 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
             <TextInput
-              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }, !isOwner && { opacity: 0.7 }]}
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface, marginBottom: 12 }, !isOwner && { opacity: 0.7 }]}
               placeholder="e.g., The Sharma Household"
               placeholderTextColor={colors.outline}
               value={familyName}
               onChangeText={setFamilyName}
               editable={isOwner}
             />
+
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFamilyReminder ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Enable Settle Up Reminder?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Send reminder notification to all family members on a date</Text>
+              </View>
+              <Switch
+                value={enableFamilyReminder}
+                onValueChange={isOwner ? setEnableFamilyReminder : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableFamilyReminder ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
+            </View>
+
+            {enableFamilyReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('family') : undefined}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(familyReminderDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {groupType === 'Couple' && (
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableBalanceAlert ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Set balance alert?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Alert the group when someone's balance reaches a set amount</Text>
+              </View>
+              <Switch
+                value={enableBalanceAlert}
+                onValueChange={isOwner ? setEnableBalanceAlert : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableBalanceAlert ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
+            </View>
+
+            {enableBalanceAlert && (
+              <View style={{ gap: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Alert threshold amount (₹)</Text>
+                <TextInput
+                  style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  placeholder="e.g., 2000"
+                  placeholderTextColor={colors.outline}
+                  keyboardType="numeric"
+                  value={balanceAlertThreshold}
+                  onChangeText={setBalanceAlertThreshold}
+                  editable={isOwner}
+                />
+              </View>
+            )}
           </View>
         )}
 
         {groupType === 'Flatmate' && (
-          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
-              <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: 12 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
+              </View>
+              <Switch
+                value={setupMonthlySplit}
+                onValueChange={isOwner ? setSetupMonthlySplit : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
             </View>
-            <Switch
-              value={setupMonthlySplit}
-              onValueChange={isOwner ? setSetupMonthlySplit : undefined}
-              trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
-              thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
-              disabled={!isOwner}
-            />
+
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFlatmateSettleReminder ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Remind to settle up?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Trigger monthly notification to members who owe balance</Text>
+              </View>
+              <Switch
+                value={enableFlatmateSettleReminder}
+                onValueChange={isOwner ? setEnableFlatmateSettleReminder : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableFlatmateSettleReminder ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
+            </View>
+
+            {enableFlatmateSettleReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('flatmate') : undefined}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(flatmateReminderDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
+        )}
+
+        {isOwner && pickerMode && (
+          <DateTimePicker
+            value={pickerMode === 'start' ? startDate : pickerMode === 'end' ? endDate : pickerMode === 'family' ? familyReminderDate : flatmateReminderDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            onChange={(event, selected) => {
+              if (Platform.OS === 'android') {
+                setPickerMode(null);
+              }
+
+              if (selected && event.type !== 'dismissed') {
+                if (pickerMode === 'start') {
+                  setStartDate(selected);
+                  if (selected > endDate) setEndDate(selected);
+                } else if (pickerMode === 'end') {
+                  if (selected < startDate) setEndDate(startDate);
+                  else setEndDate(selected);
+                } else if (pickerMode === 'family') {
+                  setFamilyReminderDate(selected);
+                } else if (pickerMode === 'flatmate') {
+                  setFlatmateReminderDate(selected);
+                }
+              }
+
+              if (Platform.OS === 'ios') {
+                setPickerMode(null);
+              }
+            }}
+          />
         )}
 
         {isOwner && (

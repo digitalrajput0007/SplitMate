@@ -60,10 +60,6 @@ export default function ContactsScreen() {
   // Real-time platform profiles for contacts
   const [platformProfiles, setPlatformProfiles] = useState<Record<string, UserProfile>>({});
 
-  // Platform Search state (Special Case)
-  const [platformResult, setPlatformResult] = useState<UserProfile | null>(null);
-  const [searchingPlatform, setPlatformSearching] = useState(false);
-
   useEffect(() => {
     if (!currentUser?.uid) return;
     const unsub = subscribeToUserContacts(currentUser.uid, (contacts) => {
@@ -97,50 +93,6 @@ export default function ContactsScreen() {
 
     return () => unsubs.forEach(u => u());
   }, [myContacts]);
-
-  // Debounced Search Logic
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const cleanNum = normalizePhoneNumber(searchQuery);
-      if (cleanNum.length === 10) {
-        handlePlatformSearch(cleanNum);
-      } else {
-        setPlatformResult(null);
-      }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const handlePlatformSearch = async (phone: string) => {
-    // If already in contacts, don't show separate result
-    if (myContacts.some(c => c.phone === phone)) return;
-
-    setPlatformSearching(true);
-    try {
-      const user = await findUserByPhone(phone);
-      // Don't show result if the found user is the current user (self)
-      if (user && user.uid === currentUser?.uid) {
-        setPlatformResult(null);
-      } else {
-        setPlatformResult(user);
-      }
-    } catch (e) {
-      console.log('Special search error:', e);
-    } finally {
-      setPlatformSearching(false);
-    }
-  };
-
-  const handleAddFromPlatform = async (user: UserProfile) => {
-    try {
-      await ContactService.addContact(user.name, user.mobile || '');
-      setSearchQuery('');
-      setPlatformResult(null);
-      Alert.alert('Added', `${user.name} added to your contacts.`);
-    } catch (e) {
-      Alert.alert('Error', 'Failed to add contact');
-    }
-  };
 
   const handleRemove = (contact: Contact) => {
     Alert.alert('Remove Contact', `Are you sure you want to remove ${contact.name}?`, [
@@ -261,45 +213,15 @@ export default function ContactsScreen() {
         <View style={[styles.addIconCircle, { backgroundColor: colors.primary }]}>
           <MaterialIcons name="person-add" size={20} color={colors.onPrimary} />
         </View>
-        <Text style={[styles.addFriendsText, { color: colors.onSurface }]}>Add Friends from Phonebook</Text>
+        <Text style={[styles.addFriendsText, { color: colors.onSurface }]}>Add contacts</Text>
         <MaterialIcons name="chevron-right" size={24} color={colors.primary} />
       </TouchableOpacity>
-
-      {/* PLATFORM SEARCH RESULT (SPECIAL CASE) */}
-      {platformResult && (
-        <View style={styles.platformResultBox}>
-          <Text style={[styles.sectionHeader, { color: colors.primary }]}>FOUND ON SPLITMATE</Text>
-          <View style={[styles.contactCard, { backgroundColor: colors.primaryFixed, borderColor: colors.primary }]}>
-            <SmartImage
-              uri={platformResult.photoUrl || (platformResult as any).photoURL}
-              name={platformResult.name}
-              size={48}
-              style={{ borderRadius: 24 }}
-            />
-            <View style={styles.contactInfo}>
-              <Text style={[styles.contactName, { color: colors.onPrimaryFixed }]}>{platformResult.name}</Text>
-              <Text style={[styles.contactSub, { color: colors.onPrimaryFixedVariant }]}>{platformResult.mobile}</Text>
-            </View>
-            <TouchableOpacity
-              style={[styles.platformAddBtn, { backgroundColor: colors.primary }]}
-              onPress={() => handleAddFromPlatform(platformResult)}
-            >
-              <MaterialIcons name="add" size={20} color={colors.onPrimary} />
-              <Text style={[styles.platformAddBtnText, { color: colors.onPrimary }]}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {searchingPlatform && (
-        <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />
-      )}
 
       {!searchQuery && myContacts.length > 0 && (
         <Text style={[styles.sectionHeader, { color: colors.onSurfaceVariant }]}>MY CONTACTS</Text>
       )}
     </View>
-  ), [colors, platformResult, searchingPlatform, searchQuery, myContacts.length]);
+  ), [colors, searchQuery, myContacts.length, navigation]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -314,7 +236,7 @@ export default function ContactsScreen() {
           <M3SearchBar
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search on SplitMate with phone number"
+            placeholder="Search name or phone..."
             onClear={() => setSearchQuery('')}
           />
         </View>
@@ -361,7 +283,7 @@ export default function ContactsScreen() {
             activeOpacity={0.85}
           >
             <MaterialIcons name="person-add" size={22} color={colors.onPrimary} />
-            <Text style={[styles.inviteNowText, { color: colors.onPrimary }]}>Invite Now</Text>
+            <Text style={[styles.inviteNowText, { color: colors.onPrimary }]}>Add contacts</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -379,9 +301,6 @@ export default function ContactsScreen() {
             searchQuery ? (
               <View style={styles.noResults}>
                 <Text style={[styles.emptySubtitle, { color: colors.onSurfaceVariant }]}>No matching contacts found.</Text>
-                {normalizePhoneNumber(searchQuery).length < 10 && (
-                  <Text style={[styles.hintText, { color: colors.outline }]}>Type a 10-digit number to search SplitMate</Text>
-                )}
               </View>
             ) : null
           }

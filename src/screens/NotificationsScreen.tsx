@@ -57,7 +57,13 @@ export default function NotificationsScreen({ navigation }: Props) {
           groupName: item.data.groupName || 'Group'
         });
       }
-    } else if (item.type === 'GROUP_INVITE' || item.type === 'group_invitation') {
+    } else if (
+      item.type === 'GROUP_INVITE' || 
+      item.type === 'group_invitation' || 
+      item.type.toUpperCase() === 'SETTLEMENT' || 
+      item.type.toUpperCase() === 'REMINDER' || 
+      item.type.toUpperCase() === 'PAYMENT_REMINDER'
+    ) {
       navigation.navigate('MainTabs');
     } else if (item.data?.groupId) {
       navigation.navigate('GroupDetail', {

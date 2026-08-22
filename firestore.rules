@@ -131,7 +131,9 @@ service cloud.firestore {
     match /settlements/{settlementId} {
       allow read: if isSignedIn() && (
         resource == null || 
-        isGroupMember(resource.data.groupId)
+        isGroupMember(resource.data.groupId) ||
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
       );
       allow create: if isGroupMember(request.resource.data.groupId) && (
         request.resource.data.fromUserId == request.auth.uid ||
@@ -149,6 +151,8 @@ service cloud.firestore {
 
       allow delete: if isGroupMember(resource.data.groupId) && (
         resource.data.createdBy == request.auth.uid || 
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid ||
         isGroupAdmin(resource.data.groupId)
       );
     }
