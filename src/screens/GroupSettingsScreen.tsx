@@ -858,20 +858,6 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
         {groupType === 'Flatmate' && (
           <View style={styles.inputGroup}>
-            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: 12 }, !isOwner && { opacity: 0.7 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
-                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
-              </View>
-              <Switch
-                value={setupMonthlySplit}
-                onValueChange={isOwner ? setSetupMonthlySplit : undefined}
-                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
-                thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
-                disabled={!isOwner}
-              />
-            </View>
-
             <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFlatmateSettleReminder ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Remind to settle up?</Text>

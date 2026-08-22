@@ -4,24 +4,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/caches/deviceStreaming.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/android/app/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/build.gradle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/android/app/src/main/res/values/strings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/android/app/src/main/res/values/strings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app.json" beforeDir="false" afterPath="$PROJECT_DIR$/app.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/firestore.rules" beforeDir="false" afterPath="$PROJECT_DIR$/firestore.rules" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/hooks/useHomeActions.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/hooks/useHomeActions.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ContactSyncScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactSyncScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/ContactsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/CreateGroupModal.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/GroupSettingsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/screens/NotificationsScreen.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/NotificationService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/NotificationService.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/services/firestoreService.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/firestoreService.ts" afterDir="false" />
-    </list>
+    <list default="true" id="5eab4287-1f7c-484a-800b-465bd632cda8" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
