@@ -30,15 +30,7 @@ import { cleanupUserFromFirestore } from "./firestoreService";
 import { setSentryUserContext, clearSentryUserContext, captureError } from "../config/sentry";
 import { TelemetryService } from "./telemetryService";
 
-// Initialize Google Signin exactly once
-if (Platform.OS !== 'web') {
-  console.log("[Auth] Configuring Google Sign-in with ID:", WEB_CLIENT_ID);
-  GoogleSignin.configure({
-    webClientId: WEB_CLIENT_ID,
-    offlineAccess: true,
-    forceCodeForRefreshToken: true,
-  });
-}
+// Removed module-level GoogleSignin configuration. It is now done inside signInWithGoogle.
 
 const functions = getFunctions(app, 'us-central1');
 
@@ -52,6 +44,13 @@ export const signInWithGoogle = async () => {
     }
 
     console.log("[Auth] Starting Google Sign-in flow...");
+
+    // Configure Google Sign-in right before using it
+    GoogleSignin.configure({
+      webClientId: WEB_CLIENT_ID,
+      offlineAccess: true,
+      forceCodeForRefreshToken: true,
+    });
 
     // 1. Check Play Services
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -447,6 +446,13 @@ export const reauthenticateGoogleUser = async (): Promise<void> => {
   if (Platform.OS === 'web') {
     throw new Error('Google re-authentication is not supported on web.');
   }
+
+  // Configure Google Sign-in right before using it
+  GoogleSignin.configure({
+    webClientId: WEB_CLIENT_ID,
+    offlineAccess: true,
+    forceCodeForRefreshToken: true,
+  });
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   try {

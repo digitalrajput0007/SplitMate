@@ -81,15 +81,32 @@ export default function ExpenseForm({
 }: ExpenseFormProps) {
   const { colors } = useTheme();
 
-  const [description, setDescription] = useState(initialData?.title || '');
-  const [amount, setAmount] = useState(initialData?.amount?.toString() || '');
-  const [displayAmount, setDisplayAmount] = useState('');
-
-  useEffect(() => {
-    if (initialData?.amount) {
-      handleAmountChange(initialData.amount.toString());
+  const formatAmountForDisplay = (text: string) => {
+    if (!text) return '';
+    const cleanText = text.replace(/[^0-9.]/g, '');
+    const parts = cleanText.split('.');
+    if (parts.length > 2) return '';
+    if (parts[1] && parts[1].length > 2) parts[1] = parts[1].slice(0, 2);
+    const rawValue = parts.join('.');
+    if (rawValue === '') return '';
+    
+    let integerPart = parts[0];
+    const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
+    if (integerPart.length > 3) {
+      let lastThree = integerPart.substring(integerPart.length - 3);
+      let otherParts = integerPart.substring(0, integerPart.length - 3);
+      if (otherParts !== '') {
+        otherParts = otherParts.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+        integerPart = otherParts + ',' + lastThree;
+      }
     }
-  }, [initialData?.amount]);
+    return integerPart + decimalPart;
+  };
+
+  const [description, setDescription] = useState(initialData?.title || '');
+  const initialAmountStr = initialData?.amount?.toString() || '';
+  const [amount, setAmount] = useState(initialAmountStr);
+  const [displayAmount, setDisplayAmount] = useState(formatAmountForDisplay(initialAmountStr));
 
   const handleAmountChange = (text: string) => {
     // Remove everything except numbers and one decimal point
@@ -150,9 +167,25 @@ export default function ExpenseForm({
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
 
-  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
-  const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
-  const [manuallyEdited, setManuallyEdited] = useState<Set<string>>(new Set());
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>(() => {
+    if (initialData?.splitType === 'exact' && initialData.splitDetails) {
+      return Object.fromEntries(Object.entries(initialData.splitDetails).map(([k, v]) => [k, v.toString()]));
+    }
+    return {};
+  });
+  
+  const [customPercentages, setCustomPercentages] = useState<Record<string, string>>(() => {
+    if (initialData?.splitType === 'percentage' && initialData.splitDetails && initialData.amount) {
+      return Object.fromEntries(Object.entries(initialData.splitDetails).map(([k, v]) => [k, ((v / initialData.amount!) * 100).toFixed(2).replace(/\.00$/, '')]));
+    }
+    return {};
+  });
+  const [manuallyEdited, setManuallyEdited] = useState<Set<string>>(() => {
+    if (initialData?.splitDetails && initialData.splitType !== 'equal') {
+      return new Set(Object.keys(initialData.splitDetails));
+    }
+    return new Set();
+  });
 
   const handleCustomAmountChange = (uid: string, val: string) => {
     const cleanVal = val.replace(/[^0-9.]/g, '');

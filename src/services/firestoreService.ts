@@ -1948,8 +1948,20 @@ export const subscribeToGroupExpenses = (
   return onSnapshot(q, (snap) => {
     const expenses: ExpenseData[] = snap.docs.map((d) => d.data() as ExpenseData);
     expenses.sort((a, b) => {
-      const timeA = a.createdAt?.seconds || Date.now();
-      const timeB = b.createdAt?.seconds || Date.now();
+      let timeA;
+      if (a.date) {
+        timeA = new Date(a.date).getTime();
+      } else {
+        timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : (a.createdAt?.seconds ? a.createdAt.seconds * 1000 : Date.now());
+      }
+
+      let timeB;
+      if (b.date) {
+        timeB = new Date(b.date).getTime();
+      } else {
+        timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : (b.createdAt?.seconds ? b.createdAt.seconds * 1000 : Date.now());
+      }
+      
       return timeB - timeA;
     });
     onExpensesUpdate(expenses);
