@@ -26,6 +26,7 @@ import {
   formatCurrency,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { shareApp } from '../config/appConfig';
 
 interface AddGroupMemberModalProps {
   visible: boolean;
@@ -163,12 +164,7 @@ export function AddGroupMemberModal({
   };
 
   const handleInvite = async () => {
-    try {
-      const shareMessage = `Join me on SplitMate to split bills & track group expenses! Download here: https://splitmate.app`;
-      await Share.share({ message: shareMessage });
-    } catch (error) {
-      console.log('Error sharing invite:', error);
-    }
+    await shareApp(`Join me on SplitMate to split bills & track group expenses!`);
   };
 
   if (!visible) return null;

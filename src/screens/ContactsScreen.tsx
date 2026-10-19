@@ -34,6 +34,7 @@ import { usePairwiseBalances, PairwiseBalanceSummary } from '../hooks/usePairwis
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { shareApp } from '../config/appConfig';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -108,7 +109,10 @@ export default function ContactsScreen() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'owesYou' | 'youOwe'>('all');
 
   const handleInvite = (phone: string, name?: string) => {
-    ContactService.inviteContact(phone, name);
+    const customMessage = name
+      ? `Hey ${name}! Join me on SplitMate to split expenses & track bills easily.`
+      : undefined;
+    shareApp(customMessage);
   };
 
   const filteredContacts = useMemo(() => {

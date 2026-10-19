@@ -31,6 +31,7 @@ import {
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/types';
+import { shareApp, openPlayStoreRating } from '../config/appConfig';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
 import { SmartImage } from '../components/SmartImage';
@@ -176,14 +177,8 @@ export default function AccountScreen() {
     }
   };
 
-  const handleShareApp = async () => {
-    try {
-      await Share.share({
-        message: 'Hey! Join me on SplitMate to split expenses & settle up seamlessly! Download: https://splitmate.app',
-      });
-    } catch (err) {
-      console.log('Share error:', err);
-    }
+  const handleShareApp = () => {
+    shareApp();
   };
 
   const insets = useSafeAreaInsets();
@@ -355,7 +350,7 @@ export default function AccountScreen() {
               <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
                 <MaterialIcons name="share" size={24} color={colors.primary} />
               </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Invite Friends</Text>
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Share App</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
@@ -363,13 +358,13 @@ export default function AccountScreen() {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('Rate SplitMate', 'Thank you for rating SplitMate 5 stars!')}
+              onPress={openPlayStoreRating}
               activeOpacity={0.7}
             >
               <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
                 <MaterialIcons name="star-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Rate SplitMate</Text>
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Rate My App</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>

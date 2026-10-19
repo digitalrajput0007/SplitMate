@@ -6,6 +6,7 @@ import {
   Contact
 } from './firestoreService';
 import { auth } from '../config/firebase';
+import { shareApp } from '../config/appConfig';
 
 /**
  * Normalizes phone numbers to E.164-ish format (last 10 digits for indexing)
@@ -92,14 +93,7 @@ export const ContactService = {
    * Triggers the native share sheet to invite a contact
    */
   async inviteContact(phone: string, name?: string) {
-    const message = `Hey${name ? ' ' + name : ''}! Join me on SplitMate to split expenses & track bills easily. Download: https://splitmate.app`;
-    try {
-      await Share.share({
-        message,
-        title: 'Invite to SplitMate',
-      });
-    } catch (error) {
-      console.log('Share error:', error);
-    }
+    const message = `Hey${name ? ' ' + name : ''}! Join me on SplitMate to split expenses & track bills easily.`;
+    await shareApp(message);
   }
 };
