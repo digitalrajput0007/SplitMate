@@ -1,44 +1,64 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { ADMOB_TEST_BANNER_ID } from '../services/adMobService';
-import { BorderRadius, Typography } from '../constants/theme';
-import { useTheme } from '../context/ThemeContext';
+import React, { useState } from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
+import {
+  BannerAd,
+  BannerAdSize,
+  TestIds,
+} from 'react-native-google-mobile-ads';
+import {
+  ADS_ENABLED,
+  ADMOB_BANNER_UNIT_ID,
+} from '../config/appConfig';
+import { BorderRadius } from '../constants/theme';
 
-export function BannerAdSlot() {
-  // Ads disabled as per user request
-  return null;
+const BANNER_UNIT_ID = __DEV__
+  ? TestIds.ADAPTIVE_BANNER
+  : ADMOB_BANNER_UNIT_ID;
+
+interface BannerAdSlotProps {
+  size?: BannerAdSize;
+}
+
+export function BannerAdSlot({ size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER }: BannerAdSlotProps) {
+  const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // If ads are disabled or on unsupported platform (web), do not render
+  if (!ADS_ENABLED || Platform.OS === 'web' || hasError) {
+    return null;
+  }
+
+  return (
+    <View style={[styles.container, !isLoaded && styles.hidden]}>
+      <BannerAd
+        unitId={BANNER_UNIT_ID}
+        size={size}
+        requestOptions={{
+          requestNonPersonalizedAdsOnly: false,
+        }}
+        onAdLoaded={() => {
+          setIsLoaded(true);
+          setHasError(false);
+        }}
+        onAdFailedToLoad={(error) => {
+          console.warn('[AdMob] Banner ad failed to load:', error);
+          setHasError(true);
+        }}
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    padding: 12,
-    borderRadius: BorderRadius.DEFAULT,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    marginVertical: 12,
+    marginVertical: 10,
+    borderRadius: BorderRadius.DEFAULT,
+    overflow: 'hidden',
   },
-  adBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  adBadge: {
-    fontSize: 10,
-    fontWeight: '800',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 3,
-  },
-  adTitle: {
-    ...Typography.labelMd,
-    fontWeight: '600',
-  },
-  adUnitText: {
-    ...Typography.labelMd,
-    fontSize: 11,
-    marginTop: 2,
+  hidden: {
+    display: 'none',
   },
 });

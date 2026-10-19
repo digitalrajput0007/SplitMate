@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold } from '@expo-google-fonts/inter';
 import AppNavigator from './src/navigation/AppNavigator';
 import { NotificationService } from './src/services/NotificationService';
+import { initializeInterstitialAd } from './src/services/adMobService';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { SecurityProvider } from './src/context/SecurityContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -50,6 +51,11 @@ function MainAppContent() {
           NotificationService.requestUserPermission();
         } catch (e) {
           console.warn('Push notification permission failed:', e);
+        }
+        try {
+          initializeInterstitialAd();
+        } catch (e) {
+          console.warn('AdMob initialization failed:', e);
         }
       }
     });
