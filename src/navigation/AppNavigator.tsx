@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { getUserProfileFromFirestore, isProfileComplete } from '../services/firestoreService';
+import { getUserProfileFromFirestore, isProfileComplete, getPersistentProfileStatus } from '../services/firestoreService';
 import { resolveAuthenticatedUser } from '../services/authService';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
@@ -205,6 +205,12 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         let isVerified = authUser.emailVerified || isGoogleUser || false;
 
         try {
+          // Fast check persistent storage first so existing profiles load without flashing setup screen
+          const persistentStatus = await getPersistentProfileStatus(authUser.uid);
+          if (persistentStatus === 'complete') {
+            hasCompleteProfile = true;
+          }
+
           const resolveResult = await resolveAuthenticatedUser(authUser, { preventNavigation: true });
           if (resolveResult.status === 'complete') {
             hasCompleteProfile = true;
@@ -227,9 +233,6 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
           isInitialized = true;
           onReady?.();
         }
-
-        // Trigger push token sync for authenticated user
-        NotificationService.requestUserPermission();
 
         if (!unsubProfile) {
           unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {

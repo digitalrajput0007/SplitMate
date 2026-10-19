@@ -1,5 +1,11 @@
 import { User } from 'firebase/auth';
-import { getUserProfileFromFirestore, isProfileComplete, UserProfile } from './firestoreService';
+import {
+  getUserProfileFromFirestore,
+  isProfileComplete,
+  UserProfile,
+  getPersistentProfileStatus,
+  getPersistentProfile,
+} from './firestoreService';
 import { ENABLE_OTP } from '../config/appConfig';
 
 export { isProfileComplete, UserProfile };
@@ -58,9 +64,25 @@ export async function resolveAuthenticatedUser(
     try {
       console.log(`[Resolver] Resolving authenticated user UID: ${uid}`);
 
+      // 0. Instant Persistent Cache Check
+      // If user profile is already known to be complete on this device, resolve immediately
+      try {
+        const persistentStatus = await getPersistentProfileStatus(uid);
+        const persistentProfile = await getPersistentProfile(uid);
+        if (persistentStatus === 'complete' && persistentProfile && isProfileComplete(persistentProfile)) {
+          console.log(`[Resolver] Instant verified profile from persistent storage for UID: ${uid}`);
+          return {
+            status: 'complete',
+            profile: persistentProfile,
+          };
+        }
+      } catch (cacheErr) {
+        // Fall back to network lookup
+      }
+
       // 1. Check Email Verification
       // Google accounts are inherently email-verified by Google
-      const isGoogleUser = firebaseUser.providerData.some((p) => p.providerId === 'google.com');
+      const isGoogleUser = firebaseUser.providerData.some((p: any) => p.providerId === 'google.com');
       const isEmailVerified = firebaseUser.emailVerified || isGoogleUser;
 
       // 2. Fetch Firestore Profile using canonical UID

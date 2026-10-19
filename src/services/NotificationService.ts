@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { captureError } from '../config/sentry';
 import { TelemetryService } from './telemetryService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT' | 'payment_reminder' | 'group_invitation' | 'general' | 'GROUP_DELETED';
 
@@ -61,6 +62,7 @@ export const NotificationService = {
           pushToken: deleteField(),
           fcmToken: deleteField(),
         });
+        await AsyncStorage.removeItem(`@splitmate_synced_token_${user.uid}`).catch(() => {});
         console.log(`[NotificationService] Unregistered push token for user ${user.uid}`);
       }
     } catch (err) {
@@ -123,8 +125,16 @@ export const NotificationService = {
 
       // Sync token to Firestore only if token has changed or not yet cached
       const user = auth.currentUser;
-      if (user && token && cachedSyncedToken !== `${user.uid}_${token}`) {
+      if (user && token) {
+        const tokenKey = `@splitmate_synced_token_${user.uid}`;
+        const storedToken = await AsyncStorage.getItem(tokenKey).catch(() => null);
+        if (storedToken === token && cachedSyncedToken === `${user.uid}_${token}`) {
+          // Token already synced with Firestore, avoid unnecessary mutation
+          return token;
+        }
+
         cachedSyncedToken = `${user.uid}_${token}`;
+        await AsyncStorage.setItem(tokenKey, token).catch(() => {});
         await setDoc(doc(db, 'users', user.uid), {
           pushToken: token,
           fcmToken: token,

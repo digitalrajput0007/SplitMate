@@ -25,6 +25,47 @@ import { NotificationService } from './NotificationService';
 import { captureError } from '../config/sentry';
 import { TelemetryService } from './telemetryService';
 import { simplifyDebts } from './debtSimplifier';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const PROFILE_STATUS_KEY_PREFIX = '@splitmate_profile_status_';
+const PROFILE_DATA_KEY_PREFIX = '@splitmate_cached_profile_';
+
+export async function getPersistentProfileStatus(uid: string): Promise<'complete' | 'needs_setup' | null> {
+  try {
+    const val = await AsyncStorage.getItem(PROFILE_STATUS_KEY_PREFIX + uid);
+    if (val === 'complete' || val === 'needs_setup') {
+      return val;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setPersistentProfileStatus(uid: string, status: 'complete' | 'needs_setup'): Promise<void> {
+  try {
+    await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, status);
+  } catch {}
+}
+
+export async function getPersistentProfile(uid: string): Promise<UserProfile | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY_PREFIX + uid);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export async function setPersistentProfile(uid: string, profile: UserProfile): Promise<void> {
+  try {
+    await AsyncStorage.setItem(PROFILE_DATA_KEY_PREFIX + uid, JSON.stringify(profile));
+    if (isProfileComplete(profile)) {
+      await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, 'complete');
+    }
+  } catch {}
+}
 
 // In-memory profile cache for reducing Firestore calls
 const userProfileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
@@ -92,12 +133,13 @@ export function subscribeToUserProfile(uid: string, onUpdate: (profile: UserProf
         const profile = snap.exists() ? (snap.data() as UserProfile) : null;
         if (profile) {
           // If the snapshot has pending local writes and is missing required profile fields,
-          // don't overwrite an existing complete profile with an uncommitted mutation.
+          // it's an uncommitted partial mutation (e.g. pushToken). Do NOT emit it to UI listeners.
           if (!isProfileComplete(profile) && snap.metadata.hasPendingWrites) {
-            const existing = userProfileCache.get(uid)?.data;
-            if (existing && isProfileComplete(existing)) {
-              return;
-            }
+            return;
+          }
+          if (isProfileComplete(profile)) {
+            setPersistentProfileStatus(uid, 'complete').catch(() => {});
+            setPersistentProfile(uid, profile).catch(() => {});
           }
           userProfileCache.set(uid, { data: profile, timestamp: Date.now() });
           userProfileListeners.get(uid)?.forEach(cb => cb(profile));
@@ -439,6 +481,11 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       }
     }
 
+    if (isProfileComplete(sanitized as UserProfile)) {
+      setPersistentProfileStatus(profile.uid, 'complete').catch(() => {});
+      setPersistentProfile(profile.uid, sanitized as UserProfile).catch(() => {});
+    }
+
     return sanitized;
   } catch (error: any) {
     console.error('Firestore Error in saveUserProfileToFirestore:', error);
@@ -465,6 +512,11 @@ export const getUserProfileFromFirestore = async (
       if (cached?.data && isProfileComplete(cached.data)) {
         return cached.data;
       }
+      const persistentProf = await getPersistentProfile(uid);
+      if (persistentProf && isProfileComplete(persistentProf)) {
+        userProfileCache.set(uid, { data: persistentProf, timestamp: Date.now() });
+        return persistentProf;
+      }
     }
 
     const userRef = doc(db, 'users', uid);
@@ -476,6 +528,10 @@ export const getUserProfileFromFirestore = async (
         if (serverSnap.exists()) {
           const prof = serverSnap.data() as UserProfile;
           userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
+          if (isProfileComplete(prof)) {
+            setPersistentProfileStatus(uid, 'complete').catch(() => {});
+            setPersistentProfile(uid, prof).catch(() => {});
+          }
           return prof;
         }
       } catch (err) {
@@ -487,18 +543,27 @@ export const getUserProfileFromFirestore = async (
     if (snap.exists()) {
       let prof = snap.data() as UserProfile;
       // If the document has pending writes and is incomplete, it's an uncommitted local mutation (e.g. pushToken).
-      // Query the server to get the authoritative profile fields.
+      // Check persistent profile cache first so we never downgrade a known complete user.
       if (!isProfileComplete(prof) && snap.metadata.hasPendingWrites) {
+        const persistentProf = await getPersistentProfile(uid);
+        if (persistentProf && isProfileComplete(persistentProf)) {
+          return persistentProf;
+        }
         try {
           const serverSnap = await getDocFromServer(userRef);
           if (serverSnap.exists()) {
             prof = serverSnap.data() as UserProfile;
           }
         } catch (serverErr) {
-          // If offline, continue with local snapshot
+          // If offline and persistent profile exists, return it
+          if (persistentProf) return persistentProf;
         }
       }
       userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
+      if (isProfileComplete(prof)) {
+        setPersistentProfileStatus(uid, 'complete').catch(() => {});
+        setPersistentProfile(uid, prof).catch(() => {});
+      }
       return prof;
     }
     return null;
