@@ -45,6 +45,24 @@ export const formatFirestoreDate = (
   return d.toLocaleDateString('en-IN', options);
 };
 
+export const formatFirestoreDateTime = (
+  timestamp: any,
+  fallbackDateStr?: string,
+  options?: Intl.DateTimeFormatOptions
+): string => {
+  const d = parseFirestoreDate(timestamp, fallbackDateStr);
+  const isCurrentYear = d.getFullYear() === new Date().getFullYear();
+  const defaultOptions: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'short',
+    ...(isCurrentYear ? {} : { year: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  };
+  return d.toLocaleString('en-IN', options || defaultOptions);
+};
+
 /**
  * Returns current month in 'YYYY-MM' format (e.g. '2026-10').
  */

@@ -2,7 +2,7 @@
   "expo": {
     "name": "SplitMate",
     "slug": "splitmate",
-    "version": "1.0.4",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -15,6 +15,7 @@
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 22,
       "adaptiveIcon": {
         "foregroundImage": "./assets/foreground_layer.png",
         "backgroundColor": "#FFFFFF",
@@ -26,7 +27,8 @@
         "READ_CONTACTS",
         "WRITE_CONTACTS",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "com.google.android.gms.permission.AD_ID"
       ]
     },
     "web": {
@@ -63,7 +65,7 @@
       [
         "react-native-google-mobile-ads",
         {
-          "androidAppId": "ca-app-pub-3940256099942544~3347511713"
+          "androidAppId": "ca-app-pub-1680182248071758~7059703023"
         }
       ]
     ],

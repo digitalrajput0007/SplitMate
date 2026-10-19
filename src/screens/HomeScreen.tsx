@@ -598,13 +598,25 @@ export default function HomeScreen() {
                 else if (item.type === 'group') actionText = 'created';
                 else if (item.type === 'reminder') actionText = `sent a reminder to ${targetName} for`;
 
+                const displayTitle = item.type === 'group' ? item.title.replace(/\s+created$/i, '') : item.title;
+
+                const handleActivityPress = () => {
+                  if (item.type === 'expense' && item.id) {
+                    navigation.navigate('ExpenseDetail', { expenseId: item.id });
+                  } else if (item.type === 'group' && item.id) {
+                    navigation.navigate('GroupDetail', { groupId: item.id, groupName: displayTitle });
+                  }
+                };
+
                 return (
-                  <View
+                  <TouchableOpacity
                     key={item.id}
                     style={[
                       styles.activityRowCard,
                       { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
                     ]}
+                    onPress={handleActivityPress}
+                    activeOpacity={0.7}
                   >
                     <View
                       style={[
@@ -622,7 +634,7 @@ export default function HomeScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
                         <Text style={{ fontWeight: '700' }}>{actorName}</Text> {actionText}{' '}
-                        <Text style={{ fontWeight: '700' }}>{item.title}</Text>
+                        <Text style={{ fontWeight: '700' }}>{displayTitle}</Text>
                       </Text>
                       <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>
                         {item.date} {item.groupName ? `• ${item.groupName}` : ''}
@@ -639,7 +651,7 @@ export default function HomeScreen() {
                         {formatCurrency(item.amount)}
                       </Text>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>

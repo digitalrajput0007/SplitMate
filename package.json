@@ -1,6 +1,6 @@
 {
   "name": "splitmate",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -25,6 +25,7 @@
     "expo-asset": "~11.0.5",
     "expo-auth-session": "~6.0.3",
     "expo-camera": "~16.0.18",
+    "expo-constants": "~17.0.8",
     "expo-contacts": "~14.0.5",
     "expo-crypto": "~14.0.2",
     "expo-device": "~7.0.3",

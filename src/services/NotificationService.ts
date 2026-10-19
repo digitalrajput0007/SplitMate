@@ -184,11 +184,17 @@ export const NotificationService = {
 
     setTimeout(() => {
       try {
-        const type = data.type || data.notificationType;
+        const type = (data.type || data.notificationType || '').toUpperCase();
+        const expenseId = data.expenseId;
 
-        if (type.toUpperCase() === 'GROUP_INVITE' || type.toUpperCase() === 'GROUP_INVITATION') {
+        if ((type === 'EXPENSE' || type === 'EXPENSE_ADDED') && expenseId) {
+          navigation.navigate('ExpenseDetail', {
+            expenseId,
+            expense: data.expense,
+          });
+        } else if (type === 'GROUP_INVITE' || type === 'GROUP_INVITATION') {
           navigation.navigate('MainTabs');
-        } else if (type.toUpperCase() === 'SETTLEMENT' || type.toUpperCase() === 'REMINDER' || type.toUpperCase() === 'PAYMENT_REMINDER') {
+        } else if (type === 'SETTLEMENT' || type === 'REMINDER' || type === 'PAYMENT_REMINDER') {
           if (data.groupId) {
             navigation.navigate('GroupDetail', {
               groupId: data.groupId,
@@ -197,6 +203,11 @@ export const NotificationService = {
           } else {
             navigation.navigate('MainTabs');
           }
+        } else if (expenseId) {
+          navigation.navigate('ExpenseDetail', {
+            expenseId,
+            expense: data.expense,
+          });
         } else if (data.groupId) {
           navigation.navigate('GroupDetail', {
             groupId: data.groupId,

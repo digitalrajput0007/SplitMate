@@ -40,11 +40,12 @@ import { MediaPickerSheet } from '../components/MediaPickerSheet';
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
 export default function ExpenseDetailScreen({ navigation, route }: Props) {
-  const initialExpense: ExpenseData = route.params?.expense;
+  const initialExpense: ExpenseData | undefined = route.params?.expense;
+  const targetExpenseId = route.params?.expenseId || initialExpense?.expenseId;
   const { colors } = useTheme();
   const currentUser = auth.currentUser;
 
-  const [expense, setExpense] = useState<ExpenseData | null>(initialExpense);
+  const [expense, setExpense] = useState<ExpenseData | null>(initialExpense || null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [group, setGroup] = useState<GroupData | null>(null);
@@ -74,12 +75,14 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   });
 
   useEffect(() => {
-    if (initialExpense?.expenseId) {
-      const unsub = subscribeToExpenseDetail(initialExpense.expenseId, (data) => {
-        setExpense(data);
+    if (targetExpenseId) {
+      const unsub = subscribeToExpenseDetail(targetExpenseId, (data) => {
+        if (data) {
+          setExpense(data);
+        }
       });
 
-      const unsubComments = subscribeToExpenseComments(initialExpense.expenseId, (commentList) => {
+      const unsubComments = subscribeToExpenseComments(targetExpenseId, (commentList) => {
         setComments(commentList);
       });
 
@@ -88,7 +91,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
         unsubComments();
       };
     }
-  }, [initialExpense]);
+  }, [targetExpenseId]);
 
   useEffect(() => {
     if (expense?.groupId) {

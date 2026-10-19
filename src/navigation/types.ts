@@ -27,7 +27,7 @@ export type RootStackParamList = {
   HelpSupport: undefined;
   Notifications: undefined;
   GroupSettings: { groupId: string };
-  ExpenseDetail: { expense: ExpenseData };
+  ExpenseDetail: { expense?: ExpenseData; expenseId?: string };
   RecurringExpenses: undefined;
   PrivacySecurity: undefined;
   ContactUs: undefined;

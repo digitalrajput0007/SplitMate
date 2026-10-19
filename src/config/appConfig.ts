@@ -1,4 +1,12 @@
 import { Linking, Share } from 'react-native';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
+
+export const APP_VERSION: string =
+  Constants.expoConfig?.version ||
+  Constants.nativeAppVersion ||
+  packageJson.version ||
+  '1.2.1';
 
 export const ENABLE_OTP = true;
 export const ADS_ENABLED = true;

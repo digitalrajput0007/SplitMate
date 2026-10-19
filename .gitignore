@@ -8,3 +8,4 @@ android/.gradle/
 scratch/
 android/local.properties
 .idea/
+*firebase-adminsdk*.json

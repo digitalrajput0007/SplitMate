@@ -2448,7 +2448,7 @@ export const subscribeUserActivityFeed = (
         items.push({
           id: g.groupId,
           type: 'group',
-          title: `${g.name} created`,
+          title: g.name,
           subtitle: `New group started!`,
           amount: 0,
           category: '👥',

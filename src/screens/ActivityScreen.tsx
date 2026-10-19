@@ -9,7 +9,9 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   Image,
+  TouchableOpacity,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
@@ -26,6 +28,7 @@ import {
 import { SmartImage } from '../components/SmartImage';
 
 export default function ActivityScreen() {
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
@@ -100,21 +103,36 @@ export default function ActivityScreen() {
 
   const renderActivityItem = ({ item }: { item: ActivityItem }) => {
     const actor = getActorInfo(item.actorUid);
+    const displayTitle = item.type === 'group' ? item.title.replace(/\s+created$/i, '') : item.title;
+
+    const handlePress = () => {
+      if (item.type === 'expense' && item.id) {
+        navigation.navigate('ExpenseDetail', { expenseId: item.id });
+      } else if (item.type === 'group' && item.id) {
+        navigation.navigate('GroupDetail', { groupId: item.id, groupName: displayTitle });
+      }
+    };
+
     return (
-      <View style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-        <SmartImage
-          uri={actor.photo || undefined}
-          thumbnailUri={actor.thumb || undefined}
-          name={actor.name}
-          mode="thumbnail"
-          size={44}
-          fallbackIcon="person"
-          style={styles.avatarImg}
-        />
+      <TouchableOpacity
+        style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+        onPress={handlePress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.actorAvatarContainer}>
+          <SmartImage
+            uri={actor.photo || undefined}
+            thumbnailUri={actor.thumb || undefined}
+            name={actor.name}
+            mode="thumbnail"
+            size={44}
+            fallbackIcon="person"
+          />
+        </View>
         <View style={styles.feedContent}>
           <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
             <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
-            <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.title}</Text>
+            <Text style={{ color: colors.primary, fontWeight: '600' }}>{displayTitle}</Text>
           </Text>
           <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
           <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
@@ -126,7 +144,7 @@ export default function ActivityScreen() {
             </Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -210,11 +228,16 @@ const styles = StyleSheet.create({
   feedList: { gap: Spacing.md },
   feedCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     borderWidth: 1,
     ...Shadows.card,
+  },
+  actorAvatarContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actorAvatar: {
     width: 44,

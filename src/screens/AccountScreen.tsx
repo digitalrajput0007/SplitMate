@@ -31,7 +31,9 @@ import {
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
 import { RootStackParamList } from '../navigation/types';
-import { shareApp, openPlayStoreRating } from '../config/appConfig';
+import { shareApp, openPlayStoreRating, APP_VERSION } from '../config/appConfig';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
 import { SmartImage } from '../components/SmartImage';
@@ -56,6 +58,7 @@ export default function AccountScreen() {
   const currencyConfig = getCurrencyConfig();
   const { themeMode, colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
+  const appVersion = Constants.expoConfig?.version || packageJson.version || APP_VERSION || '1.2.1';
 
   const [permission, requestPermission] = useCameraPermissions();
   const [displayName, setDisplayName] = useState(currentUser?.displayName || 'User');
@@ -375,7 +378,9 @@ export default function AccountScreen() {
           <Text style={[styles.logoutText, { color: colors.error }]}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.footerText, { color: colors.onSurfaceVariant }]}>Made with ❤️ in India • v1.2.0</Text>
+        <Text style={[styles.footerText, { color: colors.onSurfaceVariant }]}>
+          Made with ❤️ in India • v{appVersion}
+        </Text>
       </ScrollView>
 
       <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>

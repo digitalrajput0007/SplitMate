@@ -50,14 +50,18 @@ export default function NotificationsScreen({ navigation }: Props) {
       await markNotificationAsRead(id);
     }
 
-    if (item.type === 'EXPENSE' && item.data?.expenseId) {
-      if (item.data.groupId) {
-        navigation.navigate('GroupDetail', {
-          groupId: item.data.groupId,
-          groupName: item.data.groupName || 'Group'
-        });
-      }
-    } else if (
+    const isExpense = String(item.type).toUpperCase() === 'EXPENSE';
+    const expenseId = item.data?.expenseId || (item as any).expenseId;
+
+    if (isExpense && expenseId) {
+      navigation.navigate('ExpenseDetail', {
+        expenseId,
+        expense: item.data?.expense,
+      });
+      return;
+    }
+
+    if (
       item.type === 'GROUP_INVITE' || 
       item.type === 'group_invitation' || 
       item.type.toUpperCase() === 'SETTLEMENT' || 
