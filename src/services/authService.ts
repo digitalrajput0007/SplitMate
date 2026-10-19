@@ -64,8 +64,13 @@ export const signInWithGoogle = async () => {
     const userInfo = await GoogleSignin.signIn();
     console.log("[Auth] Google Sign-in response received");
 
+    if (userInfo.type === 'cancelled') {
+      console.log("[Auth] Google Sign-in cancelled by user");
+      return;
+    }
+
     // 4. Get credential for Firebase
-    const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
+    const idToken = userInfo.data?.idToken;
 
     let finalIdToken = idToken;
     if (!finalIdToken) {
@@ -86,11 +91,11 @@ export const signInWithGoogle = async () => {
     setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
     TelemetryService.trackLogin('google');
 
-    const data = (userInfo as any).data || userInfo;
+    const data = userInfo.data;
     return {
       user,
-      googleName: data.user?.name,
-      googlePhoto: data.user?.photo,
+      googleName: data?.user?.name,
+      googlePhoto: data?.user?.photo,
     };
   } catch (error: any) {
     if (error.code === '7') {
@@ -460,7 +465,12 @@ export const reauthenticateGoogleUser = async (): Promise<void> => {
   } catch (e) {}
 
   const userInfo = await GoogleSignin.signIn();
-  const idToken = (userInfo as any).data?.idToken || (userInfo as any).idToken;
+  
+  if (userInfo.type === 'cancelled') {
+    throw new Error('Google Sign-in cancelled by user');
+  }
+
+  const idToken = userInfo.data?.idToken;
 
   let finalIdToken = idToken;
   if (!finalIdToken) {

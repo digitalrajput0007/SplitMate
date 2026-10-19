@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,13 @@ import {
   Platform,
   ActivityIndicator,
   InteractionManager,
+  Animated,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Path, Defs, RadialGradient as SVGRadialGradient, Stop } from 'react-native-svg';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { BannerAdSlot } from '../components/BannerAdSlot';
@@ -261,83 +264,113 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Total Balance Card */}
-        <View style={[styles.netBalanceCard, { backgroundColor: colors.primary }]}>
+        {/* Total Balance Wallet Card */}
+        <LinearGradient
+          colors={['#1F2937', '#111827', '#0F172A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.netBalanceCard, { overflow: 'hidden' }]}
+        >
+          <View style={StyleSheet.absoluteFill}>
+            <Svg height="100%" width="100%">
+              <Defs>
+                <SVGRadialGradient id="grad" cx="50%" cy="50%" rx="50%" ry="50%" fx="50%" fy="50%">
+                  <Stop offset="0%" stopColor="#818CF8" stopOpacity="0.4" />
+                  <Stop offset="100%" stopColor="#312E81" stopOpacity="0" />
+                </SVGRadialGradient>
+                <SVGRadialGradient id="grad2" cx="50%" cy="50%" rx="50%" ry="50%" fx="50%" fy="50%">
+                  <Stop offset="0%" stopColor="#C084FC" stopOpacity="0.3" />
+                  <Stop offset="100%" stopColor="#4C1D95" stopOpacity="0" />
+                </SVGRadialGradient>
+              </Defs>
+              <Circle cx="85%" cy="15%" r="120" fill="url(#grad)" />
+              <Circle cx="15%" cy="90%" r="140" fill="url(#grad2)" />
+              <Path d="M0,0 Q100,50 200,0 T400,50 V200 H0 Z" fill="#ffffff" opacity="0.03" />
+            </Svg>
+          </View>
+
           <View style={styles.netBalanceHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={[styles.netBalanceLabel, { color: colors.onPrimary, opacity: 0.8 }]}>NET BALANCE</Text>
-              <MaterialIcons name="info-outline" size={14} color={colors.onPrimary} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MaterialIcons name="account-balance-wallet" size={18} color="#9CA3AF" />
+              <Text style={[styles.netBalanceLabel, { color: '#9CA3AF', letterSpacing: 1.5 }]}>SPLITMATE WALLET</Text>
             </View>
             <TouchableOpacity style={styles.walletIconBtn} onPress={() => navigation.navigate('PaymentMethods')}>
-              <Ionicons name="wallet-outline" size={20} color={colors.onPrimary} />
+              <Ionicons name="card-outline" size={20} color="#D1D5DB" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.amountDisplay}>
-            <Text style={[styles.plusSign, { color: colors.onPrimary }]}>
+            <Text style={[styles.plusSign, { color: '#F9FAFB' }]}>
               {balance.totalBalance >= 0 ? '+' : ''}
             </Text>
-            <Text style={[styles.totalAmount, { color: colors.onPrimary }]}>
+            <Text style={[styles.totalAmount, { color: '#F9FAFB', fontSize: 38, fontWeight: '800' }]}>
               {formatCurrency(balance.totalBalance)}
             </Text>
           </View>
 
           <View style={styles.balanceBreakdown}>
-            <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You are owed</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
-                {formatCurrency(balance.youAreOwed)}
-              </Text>
+            <View style={styles.breakdownBoxWallet}>
+              <View style={[styles.breakdownDot, { backgroundColor: '#10B981' }]} />
+              <View>
+                <Text style={[styles.breakdownLabel, { color: '#9CA3AF', fontSize: 12 }]}>You are owed</Text>
+                <Text style={[styles.breakdownValue, { color: '#D1D5DB', fontSize: 15 }]}>
+                  {formatCurrency(balance.youAreOwed)}
+                </Text>
+              </View>
             </View>
-            <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You owe</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
-                {formatCurrency(balance.youOwe)}
-              </Text>
+            <View style={styles.breakdownBoxWallet}>
+              <View style={[styles.breakdownDot, { backgroundColor: '#EF4444' }]} />
+              <View>
+                <Text style={[styles.breakdownLabel, { color: '#9CA3AF', fontSize: 12 }]}>You owe</Text>
+                <Text style={[styles.breakdownValue, { color: '#D1D5DB', fontSize: 15 }]}>
+                  {formatCurrency(balance.youOwe)}
+                </Text>
+              </View>
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.settleUpBtn, { backgroundColor: '#FFFFFF' }]}
+            style={[styles.settleUpBtn, { backgroundColor: 'rgba(255,255,255,0.1)', borderColor: 'rgba(255,255,255,0.2)', borderWidth: 1 }]}
             onPress={() => navigation.navigate('SettlementCenter')}
-            activeOpacity={0.9}
+            activeOpacity={0.8}
           >
-            <Ionicons name="list-outline" size={20} color={colors.primary} />
-            <Text style={[styles.settleUpText, { color: colors.primary }]}>View Settlements</Text>
+            <Ionicons name="list-outline" size={18} color="#F9FAFB" />
+            <Text style={[styles.settleUpText, { color: '#F9FAFB', fontWeight: '600' }]}>View Settlements</Text>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
 
         {/* Action Buttons Row */}
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionItem} onPress={handleAddExpensePress}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="add" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.actionItemCard, { backgroundColor: colors.surfaceContainerLow }]} onPress={handleAddExpensePress}>
+            <View style={[styles.actionIconWrapper, { backgroundColor: 'rgba(79, 70, 229, 0.1)' }]}>
+              <MaterialIcons name="add" size={26} color="#4F46E5" />
             </View>
             <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Add{"\n"}Expense</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('CreateGroup')}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="group-add" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.actionItemCard, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => navigation.navigate('CreateGroup')}>
+            <View style={[styles.actionIconWrapper, { backgroundColor: 'rgba(16, 185, 129, 0.1)' }]}>
+              <MaterialIcons name="group-add" size={26} color="#10B981" />
             </View>
             <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Create{"\n"}Group</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('MainTabs', { screen: 'ContactsTab' })}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="contacts" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.actionItemCard, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => navigation.navigate('MainTabs', { screen: 'ContactsTab' })}>
+            <View style={[styles.actionIconWrapper, { backgroundColor: 'rgba(245, 158, 11, 0.1)' }]}>
+              <MaterialIcons name="contacts" size={26} color="#F59E0B" />
             </View>
             <Text style={[styles.actionLabel, { color: colors.onSurface }]}>My{"\n"}Contacts</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('PaymentMethods')}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="payment" size={24} color={colors.primary} />
+          <TouchableOpacity style={[styles.actionItemCard, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => navigation.navigate('PaymentMethods')}>
+            <View style={[styles.actionIconWrapper, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
+              <MaterialIcons name="payment" size={26} color="#EC4899" />
             </View>
             <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Payment{"\n"}Methods</Text>
           </TouchableOpacity>
         </View>
 
+        <View style={{ gap: Spacing.lg }}>
         {/* Pending Invitations */}
         {invites.length > 0 && (
           <View style={styles.section}>
@@ -512,7 +545,7 @@ export default function HomeScreen() {
               <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
             </TouchableOpacity>
           </View>
-          <View style={[styles.activityList, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider, borderWidth: 1 }]}>
+          <View style={[styles.activityList]}>
             {recentActivities.length === 0 ? (
               <View style={{ padding: Spacing.md, alignItems: 'center' }}>
                 <Text style={{ color: colors.outline }}>No recent activity</Text>
@@ -532,7 +565,7 @@ export default function HomeScreen() {
                 else if (item.type === 'reminder') actionText = `sent a reminder to ${targetName} for`;
 
                 return (
-                  <View key={item.id} style={styles.activityItem}>
+                  <View key={item.id} style={[styles.activityItemCard, { backgroundColor: colors.surfaceContainerLowest }]}>
                     <View style={[styles.activityDot, { backgroundColor: item.type === 'expense' ? '#3B82F6' : item.type === 'reminder' ? '#F59E0B' : '#10B981' }]} />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
@@ -552,6 +585,7 @@ export default function HomeScreen() {
               })
             )}
           </View>
+        </View>
         </View>
 
         <BannerAdSlot />
@@ -746,13 +780,24 @@ const styles = StyleSheet.create({
   },
   balanceBreakdown: {
     flexDirection: 'row',
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
   },
-  breakdownBox: {
+  breakdownBoxWallet: {
     flex: 1,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  breakdownDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   breakdownLabel: {
     ...Typography.bodySm,
@@ -779,22 +824,29 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.xs,
   },
-  actionItem: {
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  actionIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.lg,
+  actionItemCard: {
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.card,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.xs,
+    borderRadius: BorderRadius.xl,
+    flex: 1,
+    marginHorizontal: 4,
+    gap: Spacing.sm,
+    ...Shadows.cardElevated,
+  },
+  actionIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionLabel: {
     ...Typography.labelMd,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 16,
+    fontWeight: '600',
   },
   section: {
     gap: Spacing.md,
@@ -816,9 +868,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.md,
     borderRadius: BorderRadius.xl,
-    borderWidth: 1,
     gap: Spacing.md,
-    ...Shadows.card,
+    ...Shadows.cardElevated,
   },
   invitationIconCircle: {
     width: 40,
@@ -857,14 +908,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   activityList: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.md,
-    gap: Spacing.lg,
+    gap: Spacing.md,
   },
-  activityItem: {
+  activityItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.cardElevated,
   },
   activityDot: {
     width: 8,

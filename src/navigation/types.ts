@@ -9,7 +9,7 @@ export type RootStackParamList = {
   OTPScreen: { email: string };
   ResetPasswordScreen: { email: string };
   EmailVerification: { email: string };
-  EmailVerificationOTP: { email: string };
+  EmailVerificationOTP: { email: string; password?: string };
   ResetPasswordOTP: { email: string };
   ProfileSetup: { displayName?: string, photoURL?: string, fromGoogle?: boolean } | undefined;
   OTPVerification: { email: string, type: 'verify' | 'reset' };

@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "563027170263-qjihalioq3ce17l5fu23nd60vehgf200.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.splitmate.newapp",
+            "certificate_hash": "4fd51f73c7a34b6e4cdd02bcc152ff66bdae74d7"
+          }
+        },
+        {
           "client_id": "563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -154,6 +154,12 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
+      
+      if (!result) {
+        setLoading(false);
+        return;
+      }
+
       setIsUnlocked(true);
       setLoading(false);
 
@@ -161,19 +167,6 @@ export default function SignInScreen({ navigation }: Props) {
       (async () => {
         try {
           await setUserEmailVerifiedInFirestore(result.user.uid);
-
-          // Check if user already has a profile. If not, create one with Google data.
-          const existingProfile = await getUserProfileFromFirestore(result.user.uid);
-          if (!existingProfile && result.googleName) {
-            await saveUserProfileToFirestore({
-              uid: result.user.uid,
-              name: result.googleName,
-              email: result.user.email || '',
-              photoUrl: result.googlePhoto || '',
-              emailVerified: true,
-            });
-            console.log('[Auth] Created initial profile for Google user');
-          }
         } catch (e) {
           console.warn('Background Google user verification/profile sync error:', e);
         }

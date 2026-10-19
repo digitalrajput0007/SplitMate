@@ -49,6 +49,8 @@ import SetupPinScreen from '../screens/SetupPinScreen';
 import ContactsPermissionScreen from '../screens/ContactsPermissionScreen';
 import AddExpenseScreen from '../screens/AddExpenseScreen';
 import GroupsScreen from '../screens/GroupsScreen';
+import { OfflineOverlay } from '../components/OfflineOverlay';
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
 
 import { RootStackParamList, MainTabParamList } from './types';
 
@@ -197,12 +199,11 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         setLoadingProfile(true);
         const isGoogleUser = authUser.providerData.some(p => p.providerId === 'google.com');
 
-        // Check if user already completed profile setup in Firestore or Auth displayName
+        // Check if user already completed profile setup in Firestore
         let hasCompleteProfile = false;
         try {
           const profile = await getUserProfileFromFirestore(authUser.uid);
-          const name = (profile as any)?.name || authUser.displayName;
-          if (name && typeof name === 'string' && name.trim() !== '') {
+          if (profile && (profile as any).name) {
             hasCompleteProfile = true;
           }
         } catch (e) {
@@ -228,7 +229,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         if (!unsubProfile) {
           unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
             if (profile) {
-              const name = (profile as any)?.name || authUser.displayName;
+              const name = (profile as any)?.name;
               const complete = !!(name && typeof name === 'string' && name.trim() !== '');
               setUserStatus({
                 isVerified: authUser.emailVerified || isGoogleUser || (profile as any)?.emailVerified || (profile as any)?.isVerified || false,
@@ -261,7 +262,12 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
   }, []);
 
   if (initializing || loadingProfile || security.isLoading) {
-    return null;
+    return (
+      <>
+        <AppLoadingScreen />
+        <OfflineOverlay />
+      </>
+    );
   }
 
   const showLock = user && !security.isUnlocked;
@@ -360,6 +366,8 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
           <UnlockScreen />
         </View>
       )}
+      
+      <OfflineOverlay />
     </View>
   );
 }
