@@ -12,6 +12,7 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -421,6 +422,24 @@ export default function AccountScreen() {
 
             <TouchableOpacity style={[styles.fullHelpBtn, { backgroundColor: colors.primary }]} onPress={() => { setHelpModalVisible(false); navigation.navigate('HelpSupport'); }}>
               <Text style={[styles.fullHelpText, { color: colors.onPrimary }]}>Open Full Support Page</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 12,
+                marginTop: 10,
+                borderRadius: BorderRadius.lg,
+                borderWidth: 1,
+                borderColor: colors.outlineVariant,
+              }}
+              onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms#faq')}
+            >
+              <MaterialIcons name="open-in-new" size={16} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>View Terms & Web FAQ</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>

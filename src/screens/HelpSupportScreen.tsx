@@ -99,6 +99,15 @@ export default function HelpSupportScreen({ navigation }: Props) {
             );
           })}
         </View>
+
+        <TouchableOpacity
+          style={[styles.webFaqBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+          onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms#faq')}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="open-in-new" size={18} color={colors.primary} />
+          <Text style={[styles.webFaqText, { color: colors.primary }]}>View Complete FAQ & Terms on the Web</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -145,4 +154,20 @@ const styles = StyleSheet.create({
   faqHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   faqQuestion: { ...Typography.bodyLg, flex: 1, fontWeight: '600', fontSize: 14 },
   faqAnswer: { ...Typography.bodyMd, marginTop: Spacing.sm, lineHeight: 20 },
+  webFaqBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
+    ...Shadows.card,
+  },
+  webFaqText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
 });

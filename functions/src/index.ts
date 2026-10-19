@@ -45,7 +45,7 @@ export function generateOTPEmailHTML(options: { mode: 'signup' | 'reset' | strin
     ? "If you didn't request this code, you can safely ignore this email."
     : "If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.";
 
-  const textContent = `${heading}\n\n${bodyLine1}\n${bodyLine2}\n\nOTP: ${options.otp}\n\nThis code expires in 10 minutes.\nNever share this code with anyone.\n\n${additionalMessage}\n\nSplitMate - Simple expense sharing for everyone.\n© 2026 SplitMate`;
+  const textContent = `${heading}\n\n${bodyLine1}\n${bodyLine2}\n\nOTP: ${options.otp}\n\nThis code expires in 10 minutes.\nNever share this code with anyone.\n\n${additionalMessage}\n\nSplitMate - Simple expense sharing for everyone.\nPrivacy: https://www.fyndralabs.com/products/splitmate/privacy\nTerms: https://www.fyndralabs.com/products/splitmate/terms\nHelp & FAQ: https://www.fyndralabs.com/products/splitmate/terms#faq\n\n© 2026 SplitMate • Fyndra Labs`;
 
   const htmlContent = `<!DOCTYPE html>
 <html lang="en">
@@ -142,11 +142,12 @@ export function generateOTPEmailHTML(options: { mode: 'signup' | 'reset' | strin
           <p style="margin: 0 0 14px 0; font-size: 13px; color: #64748B;">Simple expense sharing for everyone.</p>
           
           <p style="margin: 0 0 14px 0; font-size: 12px; color: #64748B;">
-            <a href="https://www.fyndralabs.com/products/splitmate/privacy" style="color: #2563EB; text-decoration: none; font-weight: 500;">Privacy Policy</a> &nbsp;•&nbsp; 
-            <a href="https://www.fyndralabs.com/products/splitmate/terms" style="color: #2563EB; text-decoration: none; font-weight: 500;">Terms</a>
+            <a href="https://www.fyndralabs.com/products/splitmate/privacy" style="color: #0284C7; text-decoration: none; font-weight: 500;">Privacy Policy</a> &nbsp;•&nbsp; 
+            <a href="https://www.fyndralabs.com/products/splitmate/terms" style="color: #0284C7; text-decoration: none; font-weight: 500;">Terms</a> &nbsp;•&nbsp; 
+            <a href="https://www.fyndralabs.com/products/splitmate/terms#faq" style="color: #0284C7; text-decoration: none; font-weight: 500;">Help & FAQ</a>
           </p>
 
-          <p style="margin: 0; font-size: 12px; color: #94A3B8;">© 2026 SplitMate</p>
+          <p style="margin: 0; font-size: 12px; color: #94A3B8;">© 2026 SplitMate • Fyndra Labs</p>
         </td>
       </tr>
     </table>
