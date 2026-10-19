@@ -22,6 +22,7 @@ import {
   subscribeToGroupExpenses,
   addMemberToGroupWithPreference,
   ExpenseData,
+  UserProfile,
   formatCurrency,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
@@ -52,7 +53,7 @@ export function AddGroupMemberModal({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [allPlatformUsers, setAllPlatformUsers] = useState<UserProfile[]>([]);
-  const [savedContacts, setSavedContacts] = useState<UserProfile[]>([]);
+  const [savedContacts, setSavedContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<CombinedContact | null>(null);
 
@@ -89,8 +90,8 @@ export function AddGroupMemberModal({
     if (!searchQuery.trim()) {
       // Show saved contacts by default
       return savedContacts
-        .filter(c => !existingMemberIds.includes(c.uid))
-        .map(c => ({ ...c, isRegistered: true, isSavedContact: true } as CombinedContact));
+        .filter(c => !c.uid || !existingMemberIds.includes(c.uid))
+        .map(c => ({ ...c, isRegistered: !!c.uid, isSavedContact: true } as CombinedContact));
     }
 
     const query = searchQuery.toLowerCase();

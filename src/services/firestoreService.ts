@@ -196,6 +196,8 @@ export interface GroupData {
   createdBy: string;
   createdAt: any;
   isArchived?: boolean;
+  familyName?: string;
+  setupMonthlySplit?: boolean;
   balanceLabel?: 'owed' | 'owe' | 'settled';
   balanceAmount?: string;
 }
@@ -255,6 +257,7 @@ export interface SettlementData {
   toUserId: string;
   toName?: string;
   amount: number;
+  notes?: string;
   status: 'completed' | 'pending';
   createdAt?: any;
 }
@@ -279,6 +282,7 @@ export interface Contact {
   email?: string;
   uid?: string; // Linked user ID if they exist on the platform
   photoUrl?: string;
+  photoThumbnailUrl?: string;
 }
 
 /**
@@ -649,6 +653,7 @@ export const createGroupInFirestore = async (
     groupType?: 'Trip' | 'Family' | 'Couple' | 'Flatmate' | 'Other';
     photoUrl?: string;
     photoThumbnailUrl?: string;
+    photoMetadata?: any;
     familyName?: string;
     setupMonthlySplit?: boolean;
     enableDates?: boolean;

@@ -109,6 +109,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     try {
       await addExpenseToFirestore({
         groupId: groupId || '',
+        createdBy: currentUser?.uid || formData.paidBy,
         ...formData,
         receiptUrl: receiptUrl,
         receiptMetadata: receiptMetadata,

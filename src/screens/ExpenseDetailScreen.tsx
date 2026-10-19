@@ -629,4 +629,5 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   deleteBtnText: { ...Typography.titleMd, fontWeight: '700' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

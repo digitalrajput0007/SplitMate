@@ -157,6 +157,7 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
     setIsPickerVisible,
     takePhoto,
     pickFromGallery,
+    browseFiles: pickFromGallery,
     removeMedia,
   };
 }

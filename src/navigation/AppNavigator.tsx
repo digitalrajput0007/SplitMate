@@ -319,7 +319,8 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
               <Stack.Screen name="Splash" component={SplashScreen} />
               <Stack.Screen name="Onboarding" component={OnboardingScreen} />
               <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-              <Stack.Screen name="OTPVerification" component={OTPScreen} />
+              <Stack.Screen name="OTPScreen" component={OTPScreen} />
+              <Stack.Screen name="OTPVerification" component={OTPScreen as any} />
               <Stack.Screen name="EmailVerificationOTP" component={EmailVerificationOTPScreen} />
               <Stack.Screen name="ResetPasswordOTP" component={ResetPasswordOTPScreen} />
               <Stack.Screen name="EmailScreen" component={EmailScreen} />

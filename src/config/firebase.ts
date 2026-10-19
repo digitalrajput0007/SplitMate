@@ -3,8 +3,9 @@ import {
   initializeAuth, 
   getAuth, 
   Auth,
-  getReactNativePersistence
 } from 'firebase/auth';
+import * as FirebaseAuth from 'firebase/auth';
+const getReactNativePersistence = (FirebaseAuth as any).getReactNativePersistence;
 import { 
   initializeFirestore, 
   memoryLocalCache, 

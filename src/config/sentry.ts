@@ -18,7 +18,7 @@ export const initSentry = () => {
 
   Sentry.init({
     dsn: SENTRY_DSN,
-    debug: __DEV__,
+    debug: false,
     environment: __DEV__ ? 'development' : 'production',
     release: `splitmate@${Constants.expoConfig?.version || '1.0.0'}`,
     dist: Constants.expoConfig?.android?.versionCode?.toString() || '1',

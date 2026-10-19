@@ -176,6 +176,10 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   const youOwe = useMemo(() => allDebts.filter(d => d.fromUserId === currentUid), [allDebts]);
   const youAreOwed = useMemo(() => allDebts.filter(d => d.toUserId === currentUid), [allDebts]);
 
+  const totalOwe = useMemo(() => youOwe.reduce((sum, d) => sum + d.amount, 0), [youOwe]);
+  const totalOwed = useMemo(() => youAreOwed.reduce((sum, d) => sum + d.amount, 0), [youAreOwed]);
+  const netBalance = totalOwed - totalOwe;
+
   const handleRecordSettlement = async (debt: GroupDebt) => {
     const isOtherOwesMe = debt.toUserId === currentUid;
 
@@ -329,6 +333,47 @@ export default function SettlementCenterScreen({ navigation }: Props) {
           </View>
         ) : (
           <>
+            <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+              <View style={styles.summaryTopRow}>
+                <View>
+                  <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Net Settlement Position</Text>
+                  <Text style={[
+                    styles.summaryNetValue,
+                    { color: netBalance > 0 ? colors.positive : netBalance < 0 ? colors.error : colors.onSurface }
+                  ]}>
+                    {netBalance > 0 ? `+${formatCurrency(netBalance)}` : netBalance < 0 ? `-${formatCurrency(Math.abs(netBalance))}` : formatCurrency(0)}
+                  </Text>
+                </View>
+                <View style={[
+                  styles.badgePill,
+                  { backgroundColor: netBalance >= 0 ? colors.positiveContainer : colors.errorContainer }
+                ]}>
+                  <MaterialIcons
+                    name={netBalance >= 0 ? "arrow-downward" : "arrow-upward"}
+                    size={14}
+                    color={netBalance >= 0 ? colors.positiveText : colors.error}
+                  />
+                  <Text style={[styles.badgePillText, { color: netBalance >= 0 ? colors.positiveText : colors.error }]}>
+                    {netBalance > 0 ? "You're Owed Net" : netBalance < 0 ? "You Owe Net" : "All Clear"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.summaryDivider, { backgroundColor: colors.outlineVariant }]} />
+
+              <View style={styles.summaryStatsRow}>
+                <View style={styles.summaryStatItem}>
+                  <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Total you are owed</Text>
+                  <Text style={[styles.statValue, { color: colors.positive }]}>+{formatCurrency(totalOwed)}</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: colors.outlineVariant }]} />
+                <View style={styles.summaryStatItem}>
+                  <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Total you owe</Text>
+                  <Text style={[styles.statValue, { color: colors.error }]}>-{formatCurrency(totalOwe)}</Text>
+                </View>
+              </View>
+            </View>
+
             {youOwe.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.error }]}>YOU OWE</Text>
@@ -368,6 +413,66 @@ const styles = StyleSheet.create({
   emptySub: { ...Typography.bodyMd, textAlign: 'center' },
   section: { gap: Spacing.md },
   sectionTitle: { ...Typography.labelLg, fontWeight: '800', letterSpacing: 1 },
+  summaryCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    gap: Spacing.md,
+    ...Shadows.card,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  summaryNetValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+  },
+  badgePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryDivider: {
+    height: 1,
+    width: '100%',
+  },
+  summaryStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summaryStatItem: {
+    flex: 1,
+    gap: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    marginHorizontal: Spacing.md,
+  },
   card: {
     borderRadius: BorderRadius.xl,
     padding: Spacing.md,

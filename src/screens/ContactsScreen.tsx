@@ -374,7 +374,10 @@ export default function ContactsScreen() {
                     style={[styles.groupRowCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
                     onPress={() => {
                       setSelectedContactForDetail(null);
-                      navigation.navigate('GroupDetail', { groupId: item.group.groupId });
+                      navigation.navigate('GroupDetail', {
+                        groupId: item.group.groupId,
+                        groupName: item.group.name || 'Group',
+                      });
                     }}
                     activeOpacity={0.7}
                   >

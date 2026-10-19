@@ -97,7 +97,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
 
           if (firestoreProf.name) {
-            // Already has a profile, AppNavigator will redirect
+            // Already has a profile, redirect to MainTabs
+            navigation.replace('MainTabs');
             return;
           }
         }
@@ -429,16 +430,16 @@ const styles = StyleSheet.create({
   avatarInitialsText: {
     fontSize: 40,
     fontWeight: '700',
-    color: '#3F51B5',
+    color: Colors.primaryDark,
   },
   cameraBadge: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#4C56AF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -465,66 +466,70 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4B5563',
+    color: Colors.secondaryText,
   },
   inputBox: {
     width: '100%',
     height: 52,
-    borderRadius: 10,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: Colors.border,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     justifyContent: 'center',
   },
   inputBoxRow: {
     width: '100%',
     height: 52,
-    borderRadius: 10,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: Colors.border,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   inputText: {
     fontSize: 15,
-    color: '#1F2937',
+    color: Colors.primaryText,
     fontWeight: '400',
   },
   continueButton: {
     width: '100%',
-    height: 50,
-    borderRadius: 10,
-    backgroundColor: '#4051BF',
+    height: 52,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
+    ...Shadows.card,
   },
   disabledButton: {
     opacity: 0.6,
   },
   continueButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   upiInfoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: Colors.primaryFixed,
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 4,
+    gap: 10,
+    backgroundColor: Colors.primaryContainer,
+    padding: 12,
+    borderRadius: BorderRadius.md,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
   },
   upiInfoText: {
     flex: 1,
     fontSize: 12,
-    color: Colors.onPrimaryFixed,
-    lineHeight: 16,
+    color: Colors.primaryDark,
+    lineHeight: 18,
+    fontWeight: '500',
   },
   modalBackdrop: {
     flex: 1,

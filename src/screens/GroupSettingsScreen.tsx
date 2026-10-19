@@ -31,7 +31,6 @@ import {
   toggleGroupArchive,
   subscribeToGroupExpenses,
   subscribeToGroupSettlements,
-  getGroupMembersInvitationStatus,
   GroupData,
   UserProfile,
   ExpenseData,

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { getLockSettings, LockSettings, defaultLockSettings } from '../services/secureStorageService';
+import { getLockSettings, saveLockSettings, LockSettings, defaultLockSettings } from '../services/secureStorageService';
 
 interface SecurityContextType {
   isUnlocked: boolean;
@@ -72,7 +72,6 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateLockSettings = async (settings: LockSettings) => {
-    const { saveLockSettings } = await import('../services/secureStorageService');
     await saveLockSettings(settings);
     setLockSettings(settings);
 

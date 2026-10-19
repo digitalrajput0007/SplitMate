@@ -196,12 +196,17 @@ export default function SignInScreen({ navigation }: Props) {
               <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
                 <AppLogo size={44} />
               </View>
+              <View style={[styles.brandTag, { backgroundColor: colors.primaryContainer }]}>
+                <Text style={[styles.brandTagText, { color: colors.primary }]}>FYNDRA LABS</Text>
+                <Text style={[styles.brandDot, { color: colors.primary }]}>•</Text>
+                <Text style={[styles.brandTagSub, { color: colors.primary }]}>Spend, Split, Settle.</Text>
+              </View>
               <Text style={[styles.heading, { color: colors.onSurface }]}>
                 {isSignUp ? 'Create account' : 'Welcome back'}
               </Text>
               <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
                 {isSignUp
-                  ? 'Start splitting smarter today.'
+                  ? 'Start splitting smarter with your friends today.'
                   : 'Sign in to manage your group expenses.'}
               </Text>
             </View>
@@ -489,7 +494,29 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  brandTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
     marginBottom: Spacing.md,
+    gap: 6,
+  },
+  brandTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  brandDot: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  brandTagSub: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   logoIcon: {
     fontSize: 32,

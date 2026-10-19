@@ -20,7 +20,7 @@ import {
 import { captureError } from '../config/sentry';
 import { TelemetryService } from './telemetryService';
 
-export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT' | 'payment_reminder' | 'group_invitation' | 'general';
+export type NotificationType = 'GROUP_INVITE' | 'REMINDER' | 'EXPENSE' | 'COMMENT' | 'SETTLEMENT' | 'payment_reminder' | 'group_invitation' | 'general' | 'GROUP_DELETED';
 
 export interface AppNotification {
   id?: string;

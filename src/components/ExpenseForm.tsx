@@ -254,7 +254,7 @@ export default function ExpenseForm({
   };
 
   const handleRemoveReceipt = () => {
-    setReceiptImage(null);
+    onRemoveReceipt();
   };
 
   const parsedAmount = parseFloat(amount) || 0;
@@ -384,8 +384,8 @@ export default function ExpenseForm({
       showsVerticalScrollIndicator={false}
     >
       {/* Amount Input */}
-      <View style={[styles.amountCard, { backgroundColor: colors.primaryContainer }]}>
-        <Text style={[styles.amountLabel, { color: colors.onPrimaryContainer }]}>Total Amount</Text>
+      <View style={[styles.amountCard, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.amountLabel, { color: '#E0F2FE' }]}>Total Amount</Text>
         <View style={styles.amountInputRow}>
           <Text style={[styles.amountCurrency, { color: colors.onPrimary }]}>₹</Text>
           <TextInput
@@ -393,7 +393,7 @@ export default function ExpenseForm({
             value={displayAmount}
             onChangeText={handleAmountChange}
             placeholder="0"
-            placeholderTextColor="rgba(255,255,255,0.4)"
+            placeholderTextColor="rgba(255,255,255,0.6)"
             keyboardType="decimal-pad"
             autoFocus={!initialData?.amount}
           />

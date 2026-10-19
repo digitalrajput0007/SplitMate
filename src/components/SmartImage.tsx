@@ -43,7 +43,7 @@ export const SmartImage = React.memo(function SmartImage({
     const isCustomIcon = fallbackIcon && fallbackIcon !== 'person';
 
     return (
-      <View style={[styles.fallback, { backgroundColor: colors.primaryFixed }, style, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}>
+      <View style={[styles.fallback, { backgroundColor: colors.primaryFixed }, style as any, size ? { width: size, height: size, borderRadius: size / 2 } : {}]}>
         {isCustomIcon ? (
           <MaterialIcons name={fallbackIcon} size={size ? size * 0.5 : 24} color={colors.primary} />
         ) : initials ? (

@@ -5,9 +5,11 @@ export interface SimplifiedDebt {
   fromUserId: string;
   fromName: string;
   fromPhotoUrl?: string;
+  fromPhotoThumbnailUrl?: string;
   toUserId: string;
   toName: string;
   toPhotoUrl?: string;
+  toPhotoThumbnailUrl?: string;
   toPaymentHandle: string;
   amount: number;
 }
