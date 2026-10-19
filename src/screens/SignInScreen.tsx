@@ -141,7 +141,7 @@ export default function SignInScreen({ navigation }: Props) {
         // Direct Firebase Sign-up Fallback (If ENABLE_OTP is false)
         const user = await signUpWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
-        const resolveRes = await resolveAuthenticatedUser(user, { navigation });
+        const resolveRes = await resolveAuthenticatedUser(user, { preventNavigation: true });
         if (resolveRes.status === 'error') {
           setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
         }
@@ -149,7 +149,7 @@ export default function SignInScreen({ navigation }: Props) {
       } else {
         const user = await signInWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
-        const resolveRes = await resolveAuthenticatedUser(user, { navigation });
+        const resolveRes = await resolveAuthenticatedUser(user, { preventNavigation: true });
         if (resolveRes.status === 'error') {
           setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
         }
@@ -202,16 +202,16 @@ export default function SignInScreen({ navigation }: Props) {
       if (result.status === 'success') {
         setIsUnlocked(true);
 
-        // Fire Firestore profile verification sync asynchronously in background without blocking navigation
-        setUserEmailVerifiedInFirestore(result.user.uid).catch((e) => {
-          console.warn('Background Google user verification/profile sync error:', e);
-        });
-
         const resolveRes = await resolveAuthenticatedUser(result.user, {
-          navigation,
+          preventNavigation: true,
           fromGoogle: true,
           googleName: result.googleName,
           googlePhoto: result.googlePhoto,
+        });
+
+        // Fire Firestore profile verification sync asynchronously in background after profile is resolved
+        setUserEmailVerifiedInFirestore(result.user.uid).catch((e) => {
+          console.warn('Background Google user verification/profile sync error:', e);
         });
 
         if (resolveRes.status === 'error') {
@@ -251,7 +251,7 @@ export default function SignInScreen({ navigation }: Props) {
       setLinkModalVisible(false);
 
       const resolveRes = await resolveAuthenticatedUser(user, {
-        navigation,
+        preventNavigation: true,
         fromGoogle: true,
         googleName: linkGoogleName,
         googlePhoto: linkGooglePhoto,

@@ -28,6 +28,8 @@ import {
   getUserProfileFromFirestore,
   isMobileNumberRegistered,
   isProfileComplete,
+  getPersistentProfileStatus,
+  getPersistentProfile,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
@@ -79,6 +81,16 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         setPhotoUrl('');
         return;
       }
+
+      // Fast check persistent storage: If user profile is already known to be complete, redirect to MainTabs immediately
+      try {
+        const persistentStatus = await getPersistentProfileStatus(activeUser.uid, activeUser.email);
+        const persistentProf = await getPersistentProfile(activeUser.uid, activeUser.email);
+        if (persistentStatus === 'complete' || (persistentProf && isProfileComplete(persistentProf))) {
+          navigation.replace('MainTabs');
+          return;
+        }
+      } catch (cacheErr) {}
 
       let resolvedName = route.params?.displayName || activeUser.displayName || '';
       let resolvedPhoto = route.params?.photoURL || activeUser.photoURL || '';

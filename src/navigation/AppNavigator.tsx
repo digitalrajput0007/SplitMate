@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { getUserProfileFromFirestore, isProfileComplete, getPersistentProfileStatus } from '../services/firestoreService';
+import { getUserProfileFromFirestore, isProfileComplete, getPersistentProfileStatus, getPersistentProfile } from '../services/firestoreService';
 import { resolveAuthenticatedUser } from '../services/authService';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
@@ -206,16 +206,17 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
 
         try {
           // Fast check persistent storage first so existing profiles load without flashing setup screen
-          const persistentStatus = await getPersistentProfileStatus(authUser.uid);
-          if (persistentStatus === 'complete') {
+          const persistentStatus = await getPersistentProfileStatus(authUser.uid, authUser.email);
+          const persistentProf = await getPersistentProfile(authUser.uid, authUser.email);
+          if (persistentStatus === 'complete' || (persistentProf && isProfileComplete(persistentProf))) {
             hasCompleteProfile = true;
-          }
-
-          const resolveResult = await resolveAuthenticatedUser(authUser, { preventNavigation: true });
-          if (resolveResult.status === 'complete') {
-            hasCompleteProfile = true;
-          } else if (resolveResult.status === 'unverified') {
-            isVerified = false;
+          } else {
+            const resolveResult = await resolveAuthenticatedUser(authUser, { preventNavigation: true });
+            if (resolveResult.status === 'complete') {
+              hasCompleteProfile = true;
+            } else if (resolveResult.status === 'unverified') {
+              isVerified = false;
+            }
           }
         } catch (e) {
           console.warn('[AppNavigator] Error checking user profile:', e);

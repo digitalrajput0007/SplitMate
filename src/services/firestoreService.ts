@@ -29,12 +29,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PROFILE_STATUS_KEY_PREFIX = '@splitmate_profile_status_';
 const PROFILE_DATA_KEY_PREFIX = '@splitmate_cached_profile_';
+const PROFILE_STATUS_EMAIL_PREFIX = '@splitmate_profile_status_email_';
+const PROFILE_DATA_EMAIL_PREFIX = '@splitmate_cached_profile_email_';
 
-export async function getPersistentProfileStatus(uid: string): Promise<'complete' | 'needs_setup' | null> {
+export async function getPersistentProfileStatus(uid?: string | null, email?: string | null): Promise<'complete' | 'needs_setup' | null> {
   try {
-    const val = await AsyncStorage.getItem(PROFILE_STATUS_KEY_PREFIX + uid);
-    if (val === 'complete' || val === 'needs_setup') {
-      return val;
+    if (uid) {
+      const val = await AsyncStorage.getItem(PROFILE_STATUS_KEY_PREFIX + uid);
+      if (val === 'complete' || val === 'needs_setup') {
+        return val;
+      }
+    }
+    if (email) {
+      const valByEmail = await AsyncStorage.getItem(PROFILE_STATUS_EMAIL_PREFIX + email.toLowerCase().trim());
+      if (valByEmail === 'complete' || valByEmail === 'needs_setup') {
+        return valByEmail;
+      }
     }
     return null;
   } catch {
@@ -42,17 +52,28 @@ export async function getPersistentProfileStatus(uid: string): Promise<'complete
   }
 }
 
-export async function setPersistentProfileStatus(uid: string, status: 'complete' | 'needs_setup'): Promise<void> {
+export async function setPersistentProfileStatus(uid: string, status: 'complete' | 'needs_setup', email?: string | null): Promise<void> {
   try {
-    await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, status);
+    if (uid) {
+      await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, status);
+    }
+    if (email) {
+      await AsyncStorage.setItem(PROFILE_STATUS_EMAIL_PREFIX + email.toLowerCase().trim(), status);
+    }
   } catch {}
 }
 
-export async function getPersistentProfile(uid: string): Promise<UserProfile | null> {
+export async function getPersistentProfile(uid?: string | null, email?: string | null): Promise<UserProfile | null> {
   try {
-    const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY_PREFIX + uid);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    if (uid) {
+      const raw = await AsyncStorage.getItem(PROFILE_DATA_KEY_PREFIX + uid);
+      if (raw) return JSON.parse(raw);
+    }
+    if (email) {
+      const rawByEmail = await AsyncStorage.getItem(PROFILE_DATA_EMAIL_PREFIX + email.toLowerCase().trim());
+      if (rawByEmail) return JSON.parse(rawByEmail);
+    }
+    return null;
   } catch {
     return null;
   }
@@ -60,11 +81,41 @@ export async function getPersistentProfile(uid: string): Promise<UserProfile | n
 
 export async function setPersistentProfile(uid: string, profile: UserProfile): Promise<void> {
   try {
-    await AsyncStorage.setItem(PROFILE_DATA_KEY_PREFIX + uid, JSON.stringify(profile));
+    const raw = JSON.stringify(profile);
+    if (uid) {
+      await AsyncStorage.setItem(PROFILE_DATA_KEY_PREFIX + uid, raw);
+    }
+    if (profile.email) {
+      await AsyncStorage.setItem(PROFILE_DATA_EMAIL_PREFIX + profile.email.toLowerCase().trim(), raw);
+    }
     if (isProfileComplete(profile)) {
-      await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, 'complete');
+      if (uid) {
+        await AsyncStorage.setItem(PROFILE_STATUS_KEY_PREFIX + uid, 'complete');
+      }
+      if (profile.email) {
+        await AsyncStorage.setItem(PROFILE_STATUS_EMAIL_PREFIX + profile.email.toLowerCase().trim(), 'complete');
+      }
     }
   } catch {}
+}
+
+/**
+ * Searches Firestore for a user profile by email address
+ */
+export async function findUserByEmail(email: string): Promise<UserProfile | null> {
+  try {
+    if (!email) return null;
+    const trimmed = email.toLowerCase().trim();
+    const q = query(collection(db, 'users'), where('email', '==', trimmed));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return snap.docs[0].data() as UserProfile;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[Firestore] Error finding user by email:', e);
+    return null;
+  }
 }
 
 // In-memory profile cache for reducing Firestore calls
@@ -138,7 +189,7 @@ export function subscribeToUserProfile(uid: string, onUpdate: (profile: UserProf
             return;
           }
           if (isProfileComplete(profile)) {
-            setPersistentProfileStatus(uid, 'complete').catch(() => {});
+            setPersistentProfileStatus(uid, 'complete', profile.email).catch(() => {});
             setPersistentProfile(uid, profile).catch(() => {});
           }
           userProfileCache.set(uid, { data: profile, timestamp: Date.now() });
@@ -482,7 +533,7 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
     }
 
     if (isProfileComplete(sanitized as UserProfile)) {
-      setPersistentProfileStatus(profile.uid, 'complete').catch(() => {});
+      setPersistentProfileStatus(profile.uid, 'complete', sanitized.email || profile.email).catch(() => {});
       setPersistentProfile(profile.uid, sanitized as UserProfile).catch(() => {});
     }
 
@@ -496,7 +547,13 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
 export const setUserEmailVerifiedInFirestore = async (uid: string): Promise<void> => {
   try {
     const userRef = doc(db, 'users', uid);
-    await setDoc(userRef, { emailVerified: true, updatedAt: serverTimestamp() }, { merge: true });
+    // Use updateDoc to avoid creating an incomplete partial stub document in local Firestore cache
+    await updateDoc(userRef, { emailVerified: true, updatedAt: serverTimestamp() }).catch(async () => {
+      const snap = await getDoc(userRef).catch(() => null);
+      if (snap && snap.exists()) {
+        await setDoc(userRef, { emailVerified: true, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+      }
+    });
   } catch (error) {
     console.error('Error setting emailVerified in Firestore:', error);
   }
@@ -512,7 +569,7 @@ export const getUserProfileFromFirestore = async (
       if (cached?.data && isProfileComplete(cached.data)) {
         return cached.data;
       }
-      const persistentProf = await getPersistentProfile(uid);
+      const persistentProf = await getPersistentProfile(uid, auth.currentUser?.email);
       if (persistentProf && isProfileComplete(persistentProf)) {
         userProfileCache.set(uid, { data: persistentProf, timestamp: Date.now() });
         return persistentProf;
@@ -529,7 +586,7 @@ export const getUserProfileFromFirestore = async (
           const prof = serverSnap.data() as UserProfile;
           userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
           if (isProfileComplete(prof)) {
-            setPersistentProfileStatus(uid, 'complete').catch(() => {});
+            setPersistentProfileStatus(uid, 'complete', prof.email).catch(() => {});
             setPersistentProfile(uid, prof).catch(() => {});
           }
           return prof;
@@ -545,7 +602,7 @@ export const getUserProfileFromFirestore = async (
       // If the document has pending writes and is incomplete, it's an uncommitted local mutation (e.g. pushToken).
       // Check persistent profile cache first so we never downgrade a known complete user.
       if (!isProfileComplete(prof) && snap.metadata.hasPendingWrites) {
-        const persistentProf = await getPersistentProfile(uid);
+        const persistentProf = await getPersistentProfile(uid, auth.currentUser?.email);
         if (persistentProf && isProfileComplete(persistentProf)) {
           return persistentProf;
         }
@@ -561,7 +618,7 @@ export const getUserProfileFromFirestore = async (
       }
       userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
       if (isProfileComplete(prof)) {
-        setPersistentProfileStatus(uid, 'complete').catch(() => {});
+        setPersistentProfileStatus(uid, 'complete', prof.email).catch(() => {});
         setPersistentProfile(uid, prof).catch(() => {});
       }
       return prof;

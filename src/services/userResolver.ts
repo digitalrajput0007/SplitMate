@@ -5,6 +5,9 @@ import {
   UserProfile,
   getPersistentProfileStatus,
   getPersistentProfile,
+  setPersistentProfile,
+  setPersistentProfileStatus,
+  findUserByEmail,
 } from './firestoreService';
 import { ENABLE_OTP } from '../config/appConfig';
 
@@ -65,12 +68,12 @@ export async function resolveAuthenticatedUser(
       console.log(`[Resolver] Resolving authenticated user UID: ${uid}`);
 
       // 0. Instant Persistent Cache Check
-      // If user profile is already known to be complete on this device, resolve immediately
+      // If user profile is already known to be complete on this device (by UID or email), resolve immediately
       try {
-        const persistentStatus = await getPersistentProfileStatus(uid);
-        const persistentProfile = await getPersistentProfile(uid);
-        if (persistentStatus === 'complete' && persistentProfile && isProfileComplete(persistentProfile)) {
-          console.log(`[Resolver] Instant verified profile from persistent storage for UID: ${uid}`);
+        const persistentStatus = await getPersistentProfileStatus(uid, firebaseUser.email);
+        const persistentProfile = await getPersistentProfile(uid, firebaseUser.email);
+        if (persistentStatus === 'complete' || (persistentProfile && isProfileComplete(persistentProfile))) {
+          console.log(`[Resolver] Instant verified profile from persistent storage for UID: ${uid} (email: ${firebaseUser.email})`);
           return {
             status: 'complete',
             profile: persistentProfile,
@@ -85,16 +88,31 @@ export async function resolveAuthenticatedUser(
       const isGoogleUser = firebaseUser.providerData.some((p: any) => p.providerId === 'google.com');
       const isEmailVerified = firebaseUser.emailVerified || isGoogleUser;
 
-      // 2. Fetch Firestore Profile using canonical UID
+      // 2. Fetch Firestore Profile using standard lookup
       let profile: UserProfile | null = null;
       try {
-        profile = await getUserProfileFromFirestore(uid, {
-          throwOnError: true,
-          bypassCache: true,
-          forceServer: true,
-        });
+        profile = await getUserProfileFromFirestore(uid);
+
+        // If not found by UID, check if user document exists under their email
+        if (!profile && firebaseUser.email) {
+          profile = await findUserByEmail(firebaseUser.email);
+          if (profile && isProfileComplete(profile)) {
+            // Cache under current UID so future lookups are instant
+            setPersistentProfile(uid, profile).catch(() => {});
+          }
+        }
       } catch (fetchErr: any) {
         console.error('[Resolver] Firestore profile lookup error:', fetchErr);
+
+        // Fall back to persistent profile if available before declaring error
+        const fallback = await getPersistentProfile(uid, firebaseUser.email);
+        if (fallback && isProfileComplete(fallback)) {
+          return {
+            status: 'complete',
+            profile: fallback,
+          };
+        }
+
         const isNetworkErr =
           fetchErr?.code === 'unavailable' ||
           fetchErr?.message?.includes('network') ||
@@ -142,6 +160,10 @@ export async function resolveAuthenticatedUser(
       console.log(`[Resolver] Profile completion status for ${uid}: ${complete}`);
 
       if (complete) {
+        if (profile) {
+          setPersistentProfileStatus(uid, 'complete', profile.email || firebaseUser.email).catch(() => {});
+          setPersistentProfile(uid, profile).catch(() => {});
+        }
         return {
           status: 'complete',
           profile,
