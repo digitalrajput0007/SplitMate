@@ -14,10 +14,10 @@ export type RootStackParamList = {
   ProfileSetup: { displayName?: string, photoURL?: string, fromGoogle?: boolean } | undefined;
   OTPVerification: { email: string, type: 'verify' | 'reset' };
   ForgotPassword: { email?: string };
-  AddExpense: { groupId?: string; groupName?: string } | undefined;
+  AddExpense: { groupId?: string; groupName?: string; initialBillingMonth?: string } | undefined;
   CreateGroup: undefined;
   GroupDetail: { groupId: string; groupName: string };
-  SettleUp: { groupId: string };
+  SettleUp: { groupId: string; billingMonth?: string };
   SettlementCenter: undefined;
   ProfileEdit: undefined;
   PaymentMethods: undefined;

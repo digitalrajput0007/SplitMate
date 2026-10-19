@@ -37,6 +37,11 @@ import {
 import { useTheme } from '../context/ThemeContext';
 import { SmartImage } from '../components/SmartImage';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  getExpenseBillingMonth,
+  formatBillingMonthLabel,
+  getCurrentBillingMonth,
+} from '../utils/dateUtils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
 
@@ -46,6 +51,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const currentUid = currentUser?.uid || 'user_current';
 
   const groupId = route.params?.groupId || 'goa_trip';
+  const billingMonth = route.params?.billingMonth;
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
@@ -137,25 +143,35 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     };
   }, [group?.memberIds.join(','), currentUid]);
 
+  const filteredExpenses = useMemo(() => {
+    if (!billingMonth || billingMonth === 'ALL') return expenses;
+    return expenses.filter((e) => getExpenseBillingMonth(e) === billingMonth);
+  }, [expenses, billingMonth]);
+
+  const filteredSettlements = useMemo(() => {
+    if (!billingMonth || billingMonth === 'ALL') return settlements;
+    return settlements.filter((s) => (s.billingMonth || getExpenseBillingMonth(s)) === billingMonth);
+  }, [settlements, billingMonth]);
+
   const simplifiedDebts = useMemo(() => {
-    const raw = simplifyDebts(expenses, settlements, memberProfiles, group?.memberExistingExpensesPreference);
+    const raw = simplifyDebts(filteredExpenses, filteredSettlements, memberProfiles, group?.memberExistingExpensesPreference);
     const activeMemberIds = group?.memberIds || [];
     if (activeMemberIds.length === 0) return [];
     return raw.filter(
       (d) => activeMemberIds.includes(d.fromUserId) && activeMemberIds.includes(d.toUserId)
     );
-  }, [expenses, settlements, memberProfiles, group?.memberIds, group?.memberExistingExpensesPreference]);
+  }, [filteredExpenses, filteredSettlements, memberProfiles, group?.memberIds, group?.memberExistingExpensesPreference]);
 
-  const totalGroupExpense = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-  const userTotalPaid = expenses
+  const totalGroupExpense = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const userTotalPaid = filteredExpenses
     .filter((e) => e.paidBy === currentUid)
     .reduce((acc, e) => acc + e.amount, 0);
-  const userTotalShare = expenses.reduce((acc, e) => acc + (e.splitDetails?.[currentUid] || 0), 0);
+  const userTotalShare = filteredExpenses.reduce((acc, e) => acc + (e.splitDetails?.[currentUid] || 0), 0);
 
-  const userReceived = settlements
+  const userReceived = filteredSettlements
     .filter((s) => s.toUserId === currentUid && (s.status === 'completed' || !s.status))
     .reduce((acc, s) => acc + s.amount, 0);
-  const userSent = settlements
+  const userSent = filteredSettlements
     .filter((s) => s.fromUserId === currentUid && (s.status === 'completed' || !s.status))
     .reduce((acc, s) => acc + s.amount, 0);
 
@@ -198,6 +214,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
         amount: debt.amount,
         status: isOtherOwesMe ? 'completed' : 'pending',
+        billingMonth: billingMonth && billingMonth !== 'ALL' ? billingMonth : getCurrentBillingMonth(),
       });
       
       if (isOtherOwesMe) {
@@ -259,9 +276,19 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             }
             style={styles.headerGroupAvatar}
           />
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Settle Up</Text>
-            <Text style={[styles.groupSubtitle, { color: colors.onSurfaceVariant }]}>{group?.name || 'Loading...'}</Text>
+            <Text style={[styles.groupSubtitle, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+              {group?.name || 'Loading...'}
+            </Text>
+            {billingMonth && billingMonth !== 'ALL' && (
+              <View style={[styles.monthBadgeHeader, { backgroundColor: colors.primaryContainer }]}>
+                <Ionicons name="calendar-outline" size={11} color={colors.primary} />
+                <Text style={[styles.monthBadgeHeaderText, { color: colors.primary }]}>
+                  Settling balances for {formatBillingMonthLabel(billingMonth)}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={{ width: 48 }} />
@@ -270,7 +297,16 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Settlement Summary Card */}
         <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-          <Text style={[styles.summaryTitle, { color: colors.onSurfaceVariant }]}>Group Summary</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.summaryTitle, { color: colors.onSurfaceVariant }]}>
+              {billingMonth && billingMonth !== 'ALL' ? `${formatBillingMonthLabel(billingMonth)} Summary` : 'Group Summary'}
+            </Text>
+            {billingMonth && billingMonth !== 'ALL' && (
+              <View style={[styles.monthBadge, { backgroundColor: colors.primaryContainer }]}>
+                <Text style={[styles.monthBadgeText, { color: colors.primary }]}>{formatBillingMonthLabel(billingMonth)}</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.summaryGrid}>
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Total Expense</Text>
@@ -461,4 +497,29 @@ const styles = StyleSheet.create({
   secondaryAction: { flex: 1, height: 40, borderRadius: BorderRadius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   actionTxt: { ...Typography.labelMd, fontWeight: '700' },
   secondaryActionTxt: { ...Typography.labelMd, fontWeight: '600' },
+  monthBadgeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+    marginTop: 2,
+    alignSelf: 'flex-start',
+  },
+  monthBadgeHeaderText: {
+    ...Typography.bodySm,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  monthBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  monthBadgeText: {
+    ...Typography.labelMd,
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });

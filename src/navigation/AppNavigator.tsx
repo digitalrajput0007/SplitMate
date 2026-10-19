@@ -6,7 +6,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebase';
-import { getUserProfileFromFirestore } from '../services/firestoreService';
+import { getUserProfileFromFirestore, isProfileComplete } from '../services/firestoreService';
+import { resolveAuthenticatedUser } from '../services/authService';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { addSentryBreadcrumb, routingInstrumentation } from '../config/sentry';
@@ -199,19 +200,23 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         setLoadingProfile(true);
         const isGoogleUser = authUser.providerData.some(p => p.providerId === 'google.com');
 
-        // Check if user already completed profile setup in Firestore
+        // Check user profile with shared canonical resolver logic
         let hasCompleteProfile = false;
+        let isVerified = authUser.emailVerified || isGoogleUser || false;
+
         try {
-          const profile = await getUserProfileFromFirestore(authUser.uid);
-          if (profile && (profile as any).name) {
+          const resolveResult = await resolveAuthenticatedUser(authUser, { preventNavigation: true });
+          if (resolveResult.status === 'complete') {
             hasCompleteProfile = true;
+          } else if (resolveResult.status === 'unverified') {
+            isVerified = false;
           }
         } catch (e) {
           console.warn('[AppNavigator] Error checking user profile:', e);
         }
 
         setUserStatus({
-          isVerified: authUser.emailVerified || isGoogleUser || false,
+          isVerified,
           hasProfile: hasCompleteProfile,
         });
         setUser(authUser);
@@ -229,11 +234,13 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         if (!unsubProfile) {
           unsubProfile = subscribeToUserProfile(authUser.uid, (profile) => {
             if (profile) {
-              const name = (profile as any)?.name;
-              const complete = !!(name && typeof name === 'string' && name.trim() !== '');
-              setUserStatus({
-                isVerified: authUser.emailVerified || isGoogleUser || (profile as any)?.emailVerified || (profile as any)?.isVerified || false,
-                hasProfile: complete,
+              const complete = isProfileComplete(profile);
+              setUserStatus((prev) => {
+                const nextHasProfile = complete || (prev?.hasProfile ?? false);
+                return {
+                  isVerified: authUser.emailVerified || isGoogleUser || (profile as any)?.emailVerified || (profile as any)?.isVerified || false,
+                  hasProfile: nextHasProfile,
+                };
               });
             }
           });

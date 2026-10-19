@@ -21,7 +21,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { checkBiometricHardware, checkBiometricEnrolled, authenticateBiometric } from '../services/biometricService';
 import { deletePinHash } from '../services/secureStorageService';
-import { changeUserPassword, deleteUserAccount, reauthenticateEmailUser, reauthenticateGoogleUser } from '../services/authService';
+import { changeUserPassword, deleteUserAccount, reauthenticateEmailUser, reauthenticateGoogleUser, linkGoogleToCurrentUser } from '../services/authService';
 import { auth } from '../config/firebase';
 
 export default function PrivacySecurityScreen() {
@@ -29,6 +29,32 @@ export default function PrivacySecurityScreen() {
   const { colors, isDark } = useTheme();
   const { lockSettings, updateLockSettings } = useSecurity();
   const [authenticating, setAuthenticating] = useState(false);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
+
+  const currentUser = auth.currentUser;
+  const isGoogleLinked = currentUser?.providerData.some(p => p.providerId === 'google.com');
+
+  const handleLinkGoogle = async () => {
+    if (linkingGoogle) return;
+    setLinkingGoogle(true);
+    try {
+      await linkGoogleToCurrentUser();
+      Alert.alert(
+        'Account Linked',
+        'Your Google account has been successfully linked to your SplitMate account. You can now sign in using either Email/Password or Google Sign-In.'
+      );
+    } catch (err: any) {
+      if (err.code === 'auth/credential-already-in-use') {
+        Alert.alert('Account Already Linked', 'This Google account is already linked to another SplitMate account.');
+      } else if (err.message?.includes('cancelled')) {
+        // User cancelled, do nothing
+      } else {
+        Alert.alert('Linking Failed', err.message || 'Failed to link Google account. Please try again.');
+      }
+    } finally {
+      setLinkingGoogle(false);
+    }
+  };
 
   // Change Password Modal State
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -340,6 +366,61 @@ export default function PrivacySecurityScreen() {
               <MaterialIcons name="chevron-right" size={24} color={colors.error} />
             )}
           </TouchableOpacity>
+        </View>
+
+        {/* Linked Accounts Section */}
+        <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Linked Accounts</Text>
+        <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+          <View style={styles.row}>
+            <View style={{ flex: 1, paddingRight: Spacing.md }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Email & Password</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>{currentUser?.email || 'Not configured'}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>Connected</Text>
+            </View>
+          </View>
+
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+          <View style={styles.row}>
+            <View style={{ flex: 1, paddingRight: Spacing.md }}>
+              <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Google Sign-In</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>
+                {isGoogleLinked ? 'Connected with Google' : 'Link Google to sign in with either method'}
+              </Text>
+            </View>
+            {isGoogleLinked ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <MaterialIcons name="check-circle" size={18} color={colors.primary} />
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>Connected</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: 8,
+                  backgroundColor: colors.primaryContainer,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+                onPress={handleLinkGoogle}
+                disabled={linkingGoogle}
+              >
+                {linkingGoogle ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <>
+                    <MaterialIcons name="link" size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>Link Google</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Legal Policies */}

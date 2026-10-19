@@ -6,12 +6,14 @@ import {
   updatePassword,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  linkWithCredential,
   User,
   GoogleAuthProvider,
   signInWithCredential,
   deleteUser,
   sendPasswordResetEmail,
   sendEmailVerification,
+  AuthCredential,
 } from "firebase/auth";
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { auth, db, app, WEB_CLIENT_ID } from "../config/firebase";
@@ -26,18 +28,42 @@ import { Platform } from "react-native";
 
 import { NotificationService } from "./NotificationService";
 import { deletePinHash } from "./secureStorageService";
-import { cleanupUserFromFirestore } from "./firestoreService";
+import { cleanupUserFromFirestore, clearUserProfileCache, setUserEmailVerifiedInFirestore } from "./firestoreService";
 import { setSentryUserContext, clearSentryUserContext, captureError } from "../config/sentry";
 import { TelemetryService } from "./telemetryService";
+import { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult } from "./userResolver";
 
-// Removed module-level GoogleSignin configuration. It is now done inside signInWithGoogle.
+export { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult };
 
 const functions = getFunctions(app, 'us-central1');
+
+export type GoogleSignInResult =
+  | {
+      status: 'success';
+      user: User;
+      googleName?: string;
+      googlePhoto?: string;
+    }
+  | {
+      status: 'cancelled';
+    }
+  | {
+      status: 'account_exists_with_different_credential';
+      email: string;
+      pendingCredential: AuthCredential;
+      googleName?: string;
+      googlePhoto?: string;
+    };
 
 /* =========================================================
    🌐 GOOGLE SIGN IN
 ========================================================= */
-export const signInWithGoogle = async () => {
+export const signInWithGoogle = async (): Promise<GoogleSignInResult | undefined> => {
+  let pendingCredential: AuthCredential | null = null;
+  let userEmail: string = '';
+  let googleName: string | undefined;
+  let googlePhoto: string | undefined;
+
   try {
     if (Platform.OS === 'web') {
       throw new Error("Google Sign-in not implemented for web yet");
@@ -66,8 +92,12 @@ export const signInWithGoogle = async () => {
 
     if (userInfo.type === 'cancelled') {
       console.log("[Auth] Google Sign-in cancelled by user");
-      return;
+      return { status: 'cancelled' };
     }
+
+    userEmail = userInfo.data?.user?.email || '';
+    googleName = userInfo.data?.user?.name || undefined;
+    googlePhoto = userInfo.data?.user?.photo || undefined;
 
     // 4. Get credential for Firebase
     const idToken = userInfo.data?.idToken;
@@ -83,6 +113,7 @@ export const signInWithGoogle = async () => {
 
     console.log("[Auth] Firebase Sign-in with credential...");
     const credential = GoogleAuthProvider.credential(finalIdToken);
+    pendingCredential = credential;
 
     // 5. Sign in to Firebase
     const userCredential = await signInWithCredential(auth, credential);
@@ -91,13 +122,29 @@ export const signInWithGoogle = async () => {
     setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
     TelemetryService.trackLogin('google');
 
-    const data = userInfo.data;
     return {
+      status: 'success',
       user,
-      googleName: data?.user?.name,
-      googlePhoto: data?.user?.photo,
+      googleName,
+      googlePhoto,
     };
   } catch (error: any) {
+    if (error?.code === 'auth/account-exists-with-different-credential') {
+      console.warn("[Auth] Account exists with different credential. Resolving conflict safely...");
+      const email = (error.customData?.email as string) || userEmail;
+      const credential = pendingCredential || GoogleAuthProvider.credentialFromError(error);
+
+      if (credential) {
+        return {
+          status: 'account_exists_with_different_credential',
+          email,
+          pendingCredential: credential,
+          googleName,
+          googlePhoto,
+        };
+      }
+    }
+
     if (error.code === '7') {
       console.error("[Auth] Google Sign-in Network Error. Check internet connection.");
     } else if (error.code === '10') {
@@ -371,7 +418,23 @@ export const signOutUser = async (): Promise<void> => {
   } catch (e) {
     console.warn('[Auth] Error unregistering push token on sign out:', e);
   }
+
+  // 1. Invalidate and clear all cached profile data and active Firestore listeners
+  clearUserProfileCache();
+
+  // 2. Clear Sentry user context
   clearSentryUserContext();
+
+  // 3. Clear Google Sign-in session to force fresh picker on next sign-in
+  try {
+    if (Platform.OS !== 'web') {
+      await GoogleSignin.signOut();
+    }
+  } catch (e) {
+    console.warn('[Auth] Error signing out GoogleSignin:', e);
+  }
+
+  // 4. Sign out from Firebase Auth
   await signOut(auth);
 };
 
@@ -482,4 +545,84 @@ export const reauthenticateGoogleUser = async (): Promise<void> => {
 
   const credential = GoogleAuthProvider.credential(finalIdToken);
   await reauthenticateWithCredential(user, credential);
+};
+
+/* =========================================================
+   🔗 ACCOUNT LINKING HELPERS
+========================================================= */
+
+/**
+ * Links a pending Google credential to an existing email/password account.
+ * Handles the auth/account-exists-with-different-credential resolution securely.
+ * Preserves the canonical Firebase UID, Firestore profile, and user records.
+ */
+export const linkGoogleCredentialToExistingAccount = async (
+  email: string,
+  pass: string,
+  pendingCredential: AuthCredential
+): Promise<{ user: User }> => {
+  try {
+    console.log(`[Auth] Linking Google credential to existing account: ${email}`);
+    // 1. Sign in with the existing email and password
+    const userCredential = await signInWithEmailAndPassword(auth, email.trim(), pass);
+    const user = userCredential.user;
+
+    // 2. Link the pending Google credential to this user
+    await linkWithCredential(user, pendingCredential);
+    console.log(`[Auth] Successfully linked Google credential to canonical UID: ${user.uid}`);
+
+    // 3. Mark verified in Firestore and update Sentry & telemetry
+    await setUserEmailVerifiedInFirestore(user.uid);
+    setSentryUserContext({ uid: user.uid, email: user.email, displayName: user.displayName });
+    TelemetryService.trackLogin('google_linked');
+
+    return { user };
+  } catch (error: any) {
+    console.error('[Auth] Error linking Google credential to existing account:', error);
+    captureError(error, { tags: { location: 'authService', action: 'linkGoogleCredential' } });
+    throw error;
+  }
+};
+
+/**
+ * Allows an already authenticated user (e.g. from Settings) to link their Google account.
+ */
+export const linkGoogleToCurrentUser = async (): Promise<User> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user found.');
+
+  if (Platform.OS === 'web') {
+    throw new Error('Google linking is not supported on web.');
+  }
+
+  GoogleSignin.configure({
+    webClientId: WEB_CLIENT_ID,
+    offlineAccess: true,
+    forceCodeForRefreshToken: true,
+  });
+
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  try {
+    await GoogleSignin.signOut();
+  } catch (e) {}
+
+  const userInfo = await GoogleSignin.signIn();
+  if (userInfo.type === 'cancelled') {
+    throw new Error('Google Sign-in cancelled by user');
+  }
+
+  const idToken = userInfo.data?.idToken;
+  let finalIdToken = idToken;
+  if (!finalIdToken) {
+    const tokens = await GoogleSignin.getTokens();
+    finalIdToken = tokens.idToken;
+  }
+
+  if (!finalIdToken) throw new Error('Could not retrieve ID Token from Google.');
+
+  const credential = GoogleAuthProvider.credential(finalIdToken);
+  await linkWithCredential(user, credential);
+  await setUserEmailVerifiedInFirestore(user.uid);
+  console.log(`[Auth] Successfully linked Google to current user UID: ${user.uid}`);
+  return user;
 };

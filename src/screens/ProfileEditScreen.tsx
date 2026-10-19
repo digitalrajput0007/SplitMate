@@ -112,6 +112,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
           photoUrl,
           photoThumbnailUrl,
           photoMetadata,
+          profileCompleted: true,
         });
 
         Alert.alert('Success', 'Profile updated successfully');

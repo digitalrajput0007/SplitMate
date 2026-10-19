@@ -17,8 +17,8 @@ import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
-import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail, signInWithEmail, warmUpOTPService } from '../services/authService';
-import { setUserEmailVerifiedInFirestore, getUserProfileFromFirestore } from '../services/firestoreService';
+import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail, signInWithEmail, warmUpOTPService, resolveAuthenticatedUser } from '../services/authService';
+import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OTPInputBlocks } from '../components';
@@ -95,30 +95,9 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
 
       setIsUnlocked(true);
 
-      // 3. Determine if user needs Profile Setup or Main Application
-      let needsProfileSetup = true;
-      if (activeUser?.uid) {
-        try {
-          const profile = await getUserProfileFromFirestore(activeUser.uid);
-          if (profile && profile.name && profile.mobile) {
-            needsProfileSetup = false;
-          }
-        } catch (e) {
-          console.warn('[Auth] Profile check error, defaulting to profile setup:', e);
-        }
-      }
-
-      // Direct smooth navigation transition without intermediate state flicker
-      try {
-        if (needsProfileSetup) {
-          console.log('[Auth] Redirecting to Profile Setup screen...');
-          (navigation as any).navigate('ProfileSetup');
-        } else {
-          console.log('[Auth] Profile exists, redirecting to Main Tabs...');
-          (navigation as any).navigate('MainTabs');
-        }
-      } catch (navErr) {
-        console.log('[Auth] Navigation state transition handled automatically by AppNavigator');
+      // 3. Shared canonical post-authentication resolver
+      if (activeUser) {
+        await resolveAuthenticatedUser(activeUser, { navigation });
       }
     } catch (error: any) {
       isVerifyingRef.current = false;

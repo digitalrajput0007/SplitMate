@@ -44,3 +44,65 @@ export const formatFirestoreDate = (
   const d = parseFirestoreDate(timestamp, fallbackDateStr);
   return d.toLocaleDateString('en-IN', options);
 };
+
+/**
+ * Returns current month in 'YYYY-MM' format (e.g. '2026-10').
+ */
+export const getCurrentBillingMonth = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+};
+
+/**
+ * Resolves the billing month 'YYYY-MM' for an expense or settlement item.
+ * Fallbacks to item.date, item.createdAt, or getCurrentBillingMonth().
+ */
+export const getExpenseBillingMonth = (item?: {
+  billingMonth?: string;
+  date?: string;
+  createdAt?: any;
+}): string => {
+  if (!item) return getCurrentBillingMonth();
+  if (item.billingMonth && /^\d{4}-\d{2}$/.test(item.billingMonth)) {
+    return item.billingMonth;
+  }
+  let d: Date | null = null;
+  if (item.date) {
+    const parsedDate = new Date(item.date);
+    if (!isNaN(parsedDate.getTime())) {
+      d = parsedDate;
+    }
+  }
+  if (!d && item.createdAt) {
+    const parsedCreated = parseFirestoreDate(item.createdAt);
+    if (!isNaN(parsedCreated.getTime())) {
+      d = parsedCreated;
+    }
+  }
+  if (d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  }
+  return getCurrentBillingMonth();
+};
+
+/**
+ * Formats 'YYYY-MM' into a user-friendly label (e.g., 'Oct 2026' or 'All Time').
+ */
+export const formatBillingMonthLabel = (ym: string): string => {
+  if (!ym || ym === 'ALL') return 'All Time';
+  const parts = ym.split('-');
+  if (parts.length === 2) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    if (!isNaN(year) && !isNaN(month) && month >= 0 && month <= 11) {
+      const date = new Date(year, month, 15);
+      return date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+    }
+  }
+  return ym;
+};
+

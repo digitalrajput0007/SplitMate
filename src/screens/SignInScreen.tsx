@@ -18,13 +18,22 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
-import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword, sendOTPEmailHTTP } from '../services/authService';
+import {
+  signUpWithEmail,
+  signInWithEmail,
+  signInWithGoogle,
+  resetPassword,
+  sendOTPEmailHTTP,
+  linkGoogleCredentialToExistingAccount,
+  resolveAuthenticatedUser,
+} from '../services/authService';
 import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { ENABLE_OTP } from '../config/appConfig';
+import { AuthCredential } from 'firebase/auth';
 
 function GoogleLogoSvg({ size = 20 }: { size?: number }) {
   return (
@@ -65,6 +74,16 @@ export default function SignInScreen({ navigation }: Props) {
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
+
+  // Account Linking Modal State
+  const [linkModalVisible, setLinkModalVisible] = useState(false);
+  const [linkEmail, setLinkEmail] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkPendingCredential, setLinkPendingCredential] = useState<AuthCredential | null>(null);
+  const [linkGoogleName, setLinkGoogleName] = useState<string | undefined>();
+  const [linkGooglePhoto, setLinkGooglePhoto] = useState<string | undefined>();
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState('');
 
   const isPasswordValid = (pass: string) => {
     return (
@@ -120,12 +139,20 @@ export default function SignInScreen({ navigation }: Props) {
         }
 
         // Direct Firebase Sign-up Fallback (If ENABLE_OTP is false)
-        await signUpWithEmail(trimmedEmail, password);
+        const user = await signUpWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
+        const resolveRes = await resolveAuthenticatedUser(user, { navigation });
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        }
         setLoading(false);
       } else {
-        await signInWithEmail(trimmedEmail, password);
+        const user = await signInWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
+        const resolveRes = await resolveAuthenticatedUser(user, { navigation });
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        }
         setLoading(false);
       }
     } catch (err: any) {
@@ -155,25 +182,95 @@ export default function SignInScreen({ navigation }: Props) {
     try {
       const result = await signInWithGoogle();
       
-      if (!result) {
+      if (!result || result.status === 'cancelled') {
         setLoading(false);
         return;
       }
 
-      setIsUnlocked(true);
-      setLoading(false);
+      if (result.status === 'account_exists_with_different_credential') {
+        setLoading(false);
+        setLinkEmail(result.email);
+        setLinkPendingCredential(result.pendingCredential);
+        setLinkGoogleName(result.googleName);
+        setLinkGooglePhoto(result.googlePhoto);
+        setLinkPassword('');
+        setLinkError('');
+        setLinkModalVisible(true);
+        return;
+      }
 
-      // Fire Firestore profile verification sync asynchronously in background without blocking navigation
-      (async () => {
-        try {
-          await setUserEmailVerifiedInFirestore(result.user.uid);
-        } catch (e) {
+      if (result.status === 'success') {
+        setIsUnlocked(true);
+
+        // Fire Firestore profile verification sync asynchronously in background without blocking navigation
+        setUserEmailVerifiedInFirestore(result.user.uid).catch((e) => {
           console.warn('Background Google user verification/profile sync error:', e);
+        });
+
+        const resolveRes = await resolveAuthenticatedUser(result.user, {
+          navigation,
+          fromGoogle: true,
+          googleName: result.googleName,
+          googlePhoto: result.googlePhoto,
+        });
+
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
         }
-      })();
+        setLoading(false);
+      }
     } catch (err: any) {
       setLoading(false);
       console.log('Google Auth Error:', err);
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled') {
+        return;
+      }
+      setErrorMessage(err.message || 'Failed to authenticate with Google. Please try again.');
+    }
+  };
+
+  const handleLinkAccountSubmit = async () => {
+    if (!linkPassword) {
+      setLinkError('Please enter your account password.');
+      return;
+    }
+    if (!linkPendingCredential) {
+      setLinkError('Missing pending Google credential. Please try signing in again.');
+      return;
+    }
+
+    setLinkLoading(true);
+    setLinkError('');
+    try {
+      const { user } = await linkGoogleCredentialToExistingAccount(
+        linkEmail,
+        linkPassword,
+        linkPendingCredential
+      );
+      setIsUnlocked(true);
+      setLinkModalVisible(false);
+
+      const resolveRes = await resolveAuthenticatedUser(user, {
+        navigation,
+        fromGoogle: true,
+        googleName: linkGoogleName,
+        googlePhoto: linkGooglePhoto,
+      });
+
+      if (resolveRes.status === 'error') {
+        setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate servers.');
+      }
+      setLinkLoading(false);
+    } catch (err: any) {
+      setLinkLoading(false);
+      console.error('[Auth] Account linking error:', err);
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setLinkError('Incorrect password. Please enter the password you used when creating your account.');
+      } else if (err.code === 'auth/credential-already-in-use') {
+        setLinkError('This Google account is already linked to another SplitMate account.');
+      } else {
+        setLinkError(err.message || 'Failed to link Google account. Please try again.');
+      }
     }
   };
 
@@ -453,6 +550,57 @@ export default function SignInScreen({ navigation }: Props) {
                     <ActivityIndicator color={colors.onPrimary} size="small" />
                   ) : (
                     <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Link Account Modal */}
+        <Modal visible={linkModalVisible} transparent animationType="fade" onRequestClose={() => setLinkModalVisible(false)}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLinkModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <MaterialIcons name="link" size={24} color={colors.primary} />
+                <Text style={[styles.resetTitle, { color: colors.onSurface, flex: 1 }]}>Link Google Account</Text>
+              </View>
+              <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>
+                An account with <Text style={{ fontWeight: '700', color: colors.onSurface }}>{linkEmail}</Text> already exists using Email & Password. Enter your password to securely link Google Sign-In to your existing SplitMate account.
+              </Text>
+
+              {!!linkError && (
+                <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginVertical: 4 }]}>
+                  <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                  <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{linkError}</Text>
+                </View>
+              )}
+
+              <OutlinedInput
+                label="Account Password"
+                value={linkPassword}
+                onChangeText={setLinkPassword}
+                placeholder="Enter your password"
+                secureTextEntry
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setLinkModalVisible(false)}>
+                  <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: colors.primary },
+                    (linkLoading || !linkPassword) && styles.disabledButton,
+                  ]}
+                  disabled={linkLoading || !linkPassword}
+                  onPress={handleLinkAccountSubmit}
+                >
+                  {linkLoading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.sendText, { color: colors.onPrimary }]}>Link & Sign In</Text>
                   )}
                 </TouchableOpacity>
               </View>

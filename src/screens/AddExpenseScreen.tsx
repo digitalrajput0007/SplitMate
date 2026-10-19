@@ -34,7 +34,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 export default function AddExpenseScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const currentUser = auth.currentUser;
-  const { groupId, groupName } = route.params || {};
+  const { groupId, groupName, initialBillingMonth } = route.params || {};
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
@@ -182,6 +182,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
             <ExpenseForm
               members={membersForForm}
               initialData={{ paidBy: currentUser?.uid || '', receiptUrl: receiptUrl }}
+              initialBillingMonth={initialBillingMonth}
               onPickReceipt={() => setIsPickerVisible(true)}
               onRemoveReceipt={() => setReceiptUrl('')}
               onSubmit={handleSave}

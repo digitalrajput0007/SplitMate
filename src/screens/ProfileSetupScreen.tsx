@@ -27,6 +27,7 @@ import {
   saveUserProfileToFirestore,
   getUserProfileFromFirestore,
   isMobileNumberRegistered,
+  isProfileComplete,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
@@ -96,8 +97,8 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           if (firestoreProf.dob) resolvedDob = firestoreProf.dob;
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
 
-          if (firestoreProf.name) {
-            // Already has a profile, redirect to MainTabs
+          if (isProfileComplete(firestoreProf)) {
+            // Already has a complete profile, redirect to MainTabs
             navigation.replace('MainTabs');
             return;
           }
@@ -175,23 +176,31 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       await updateUserProfile(name.trim(), photoUrl || undefined);
 
       // 3. Save to Firestore
-      if (currentUser?.uid) {
+      if (activeUser?.uid) {
         await saveUserProfileToFirestore({
-          uid: currentUser.uid,
+          uid: activeUser.uid,
           name: name.trim(),
-          email: currentUser?.email || '',
-          photoUrl: photoUrl || currentUser?.photoURL || '',
+          email: activeUser?.email || '',
+          photoUrl: photoUrl || activeUser?.photoURL || '',
           photoThumbnailUrl: photoThumbnailUrl,
           photoMetadata: photoMetadata,
           paymentHandle: paymentHandle ? paymentHandle.trim() : '',
           dob: formattedDob,
           mobile: fullMobile,
+          profileCompleted: true,
         });
       }
       setSaving(false);
 
-      // Redirect to MainTabs (HomeScreen)
-      navigation.navigate('MainTabs');
+      // Redirect to MainTabs (HomeScreen) cleanly with reset
+      try {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'MainTabs' }],
+        });
+      } catch (e) {
+        navigation.navigate('MainTabs');
+      }
     } catch (err: any) {
       setSaving(false);
       console.log('Error saving profile:', err);

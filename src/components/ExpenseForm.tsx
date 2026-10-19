@@ -19,8 +19,8 @@ import { formatCurrency } from '../services/currencyService';
 import { Image } from 'react-native';
 import { SmartImage } from './SmartImage';
 import { ImagePreviewModal } from './ImagePreviewModal';
-
 import { Switch } from 'react-native';
+import { getExpenseBillingMonth, getCurrentBillingMonth } from '../utils/dateUtils';
 
 export interface RecurringConfig {
   isRecurring: boolean;
@@ -37,6 +37,7 @@ export interface ExpenseFormData {
   splitDetails: Record<string, number>;
   category: string;
   date?: string;
+  billingMonth?: string; // 'YYYY-MM'
   notes?: string;
   receiptUrl?: string;
   recurringConfig?: RecurringConfig;
@@ -52,6 +53,7 @@ interface Member {
 interface ExpenseFormProps {
   members: Member[];
   initialData?: Partial<ExpenseFormData>;
+  initialBillingMonth?: string;
   onPickReceipt: () => void;
   onRemoveReceipt: () => void;
   onSubmit: (data: ExpenseFormData) => void;
@@ -71,6 +73,7 @@ const SPLIT_TYPES = [
 export default function ExpenseForm({
   members,
   initialData,
+  initialBillingMonth,
   onPickReceipt,
   onRemoveReceipt,
   onSubmit,
@@ -155,14 +158,34 @@ export default function ExpenseForm({
   const [selectedCategory, setSelectedCategory] = useState(initialData?.category || '🍕 Food');
   const [splitType, setSplitType] = useState<'equal' | 'exact' | 'percentage'>(initialData?.splitType || 'equal');
   const [paidByUserId, setPaidByUserId] = useState<string>(initialData?.paidBy || members[0]?.uid || '');
-  const [date, setDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
+
+  const getInitialDate = (): Date => {
+    if (initialData?.date) {
+      const d = new Date(initialData.date);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const targetMonth = initialBillingMonth || initialData?.billingMonth;
+    if (targetMonth && targetMonth !== 'ALL' && targetMonth !== getCurrentBillingMonth()) {
+      const parts = targetMonth.split('-');
+      if (parts.length === 2) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        if (!isNaN(year) && !isNaN(month)) {
+          return new Date(year, month, 1);
+        }
+      }
+    }
+    return new Date();
+  };
+
+  const [date, setDate] = useState<Date>(getInitialDate);
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
 
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
-  const [startDate, setStartDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
+  const [startDate, setStartDate] = useState<Date>(getInitialDate);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [showStartDatePicker, setShowStartDatePicker] = useState(false);
   const [showEndDatePicker, setShowEndDatePicker] = useState(false);
@@ -349,6 +372,7 @@ export default function ExpenseForm({
       return `${yyyy}-${mm}-${dd}`;
     };
 
+    const resolvedBillingMonth = getExpenseBillingMonth({ date: date.toISOString() });
     const data: ExpenseFormData = {
       title: description.trim(),
       amount: parsedAmount,
@@ -357,6 +381,7 @@ export default function ExpenseForm({
       splitDetails,
       category: selectedCategory,
       date: date.toISOString(),
+      billingMonth: resolvedBillingMonth,
       notes: notes.trim(),
       receiptUrl: initialData?.receiptUrl || '',
       recurringConfig: isRecurring

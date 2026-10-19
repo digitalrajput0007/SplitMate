@@ -5,6 +5,7 @@ import {
   updateDoc,
   getDoc, 
   getDocFromCache,
+  getDocFromServer,
   getDocs, 
   deleteDoc, 
   query, 
@@ -19,7 +20,7 @@ import {
 import { getCurrencyConfig, formatCurrency } from './currencyService';
 export { formatCurrency };
 import { db, auth } from '../config/firebase';
-import { parseFirestoreDate, formatFirestoreDate } from '../utils/dateUtils';
+import { parseFirestoreDate, formatFirestoreDate, getCurrentBillingMonth, getExpenseBillingMonth } from '../utils/dateUtils';
 import { NotificationService } from './NotificationService';
 import { captureError } from '../config/sentry';
 import { TelemetryService } from './telemetryService';
@@ -29,6 +30,36 @@ import { simplifyDebts } from './debtSimplifier';
 const userProfileCache = new Map<string, { data: UserProfile | null; timestamp: number }>();
 const userProfileListeners = new Map<string, Set<(profile: UserProfile | null) => void>>();
 const userProfileUnsubscribers = new Map<string, () => void>();
+
+/**
+ * Clears in-memory profile cache and unregisters all active listeners.
+ * MUST be called on user sign-out to prevent stale user state and memory leaks.
+ */
+export function clearUserProfileCache() {
+  userProfileCache.clear();
+  userProfileListeners.clear();
+  userProfileUnsubscribers.forEach((unsub) => {
+    try {
+      unsub();
+    } catch (e) {
+      console.warn('Error unsubscribing profile listener:', e);
+    }
+  });
+  userProfileUnsubscribers.clear();
+}
+
+/**
+ * Canonical check to determine if a user profile is complete.
+ * Required fields: Full Name and Mobile Number (at least 10 digits).
+ * Respects explicit profileCompleted flag if present.
+ */
+export function isProfileComplete(profile: UserProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (profile.profileCompleted === true) return true;
+  const hasName = typeof profile.name === 'string' && profile.name.trim().length > 0;
+  const hasMobile = typeof profile.mobile === 'string' && profile.mobile.trim().length >= 10;
+  return hasName && hasMobile;
+}
 
 /**
  * Real-time listener for a specific user profile with in-memory caching & deduplication
@@ -59,8 +90,21 @@ export function subscribeToUserProfile(uid: string, onUpdate: (profile: UserProf
       userRef,
       (snap) => {
         const profile = snap.exists() ? (snap.data() as UserProfile) : null;
-        userProfileCache.set(uid, { data: profile, timestamp: Date.now() });
-        userProfileListeners.get(uid)?.forEach(cb => cb(profile));
+        if (profile) {
+          // If the snapshot has pending local writes and is missing required profile fields,
+          // don't overwrite an existing complete profile with an uncommitted mutation.
+          if (!isProfileComplete(profile) && snap.metadata.hasPendingWrites) {
+            const existing = userProfileCache.get(uid)?.data;
+            if (existing && isProfileComplete(existing)) {
+              return;
+            }
+          }
+          userProfileCache.set(uid, { data: profile, timestamp: Date.now() });
+          userProfileListeners.get(uid)?.forEach(cb => cb(profile));
+        } else {
+          userProfileCache.set(uid, { data: null, timestamp: Date.now() });
+          userProfileListeners.get(uid)?.forEach(cb => cb(null));
+        }
       },
       (error) => {
         console.error('Error listening to user profile:', error);
@@ -124,6 +168,7 @@ export interface UserProfile {
   dob?: string;
   mobile?: string;
   emailVerified?: boolean;
+  profileCompleted?: boolean;
   preferences?: {
     groupInvites?: boolean;
     expenseAlerts?: boolean;
@@ -215,6 +260,7 @@ export interface ExpenseData {
   splitDetails: Record<string, number>;
   category: string;
   date?: string;
+  billingMonth?: string; // 'YYYY-MM'
   notes?: string;
   receiptUrl?: string;
   receiptMetadata?: {
@@ -259,6 +305,7 @@ export interface SettlementData {
   amount: number;
   notes?: string;
   status: 'completed' | 'pending';
+  billingMonth?: string; // 'YYYY-MM'
   createdAt?: any;
 }
 
@@ -323,6 +370,7 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       dob: profile.dob,
       mobile: profile.mobile,
       emailVerified: profile.emailVerified,
+      profileCompleted: profile.profileCompleted,
       updatedAt: serverTimestamp(),
     };
 
@@ -407,32 +455,57 @@ export const setUserEmailVerifiedInFirestore = async (uid: string): Promise<void
   }
 };
 
-export const getUserProfileFromFirestore = async (uid: string): Promise<UserProfile | null> => {
+export const getUserProfileFromFirestore = async (
+  uid: string,
+  options?: { throwOnError?: boolean; bypassCache?: boolean; forceServer?: boolean }
+): Promise<UserProfile | null> => {
   try {
-    const cached = userProfileCache.get(uid);
-    if (cached?.data) return cached.data;
+    if (!options?.bypassCache && !options?.forceServer) {
+      const cached = userProfileCache.get(uid);
+      if (cached?.data && isProfileComplete(cached.data)) {
+        return cached.data;
+      }
+    }
 
     const userRef = doc(db, 'users', uid);
 
-    try {
-      const cacheSnap = await getDocFromCache(userRef);
-      if (cacheSnap.exists()) {
-        const prof = cacheSnap.data() as UserProfile;
-        userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
-        return prof;
+    // If forceServer is set, attempt server fetch directly
+    if (options?.forceServer) {
+      try {
+        const serverSnap = await getDocFromServer(userRef);
+        if (serverSnap.exists()) {
+          const prof = serverSnap.data() as UserProfile;
+          userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
+          return prof;
+        }
+      } catch (err) {
+        // Fall back to getDoc if offline or network unavailable
       }
-    } catch (cacheErr) {
-      // Not in offline cache, proceed to server
     }
 
     const snap = await getDoc(userRef);
     if (snap.exists()) {
-      const prof = snap.data() as UserProfile;
+      let prof = snap.data() as UserProfile;
+      // If the document has pending writes and is incomplete, it's an uncommitted local mutation (e.g. pushToken).
+      // Query the server to get the authoritative profile fields.
+      if (!isProfileComplete(prof) && snap.metadata.hasPendingWrites) {
+        try {
+          const serverSnap = await getDocFromServer(userRef);
+          if (serverSnap.exists()) {
+            prof = serverSnap.data() as UserProfile;
+          }
+        } catch (serverErr) {
+          // If offline, continue with local snapshot
+        }
+      }
       userProfileCache.set(uid, { data: prof, timestamp: Date.now() });
       return prof;
     }
     return null;
   } catch (error: any) {
+    if (options?.throwOnError) {
+      throw error;
+    }
     if (error?.code !== 'unavailable' && !error?.message?.includes('offline')) {
       console.log('Firestore Profile Fetch Notice:', error?.message || error);
     }
@@ -1570,8 +1643,10 @@ export const addExpenseToFirestore = async (expense: Omit<ExpenseData, 'expenseI
     const expenseRef = doc(collection(db, 'expenses'));
     const subcollExpenseRef = doc(db, 'groups', expense.groupId, 'expenses', expenseRef.id);
 
+    const billingMonth = expense.billingMonth || getExpenseBillingMonth(expense);
     const expenseData = sanitizeData({
       ...expense,
+      billingMonth,
       expenseId: expenseRef.id,
       createdBy: user.uid,
       createdAt: serverTimestamp(),
@@ -1739,6 +1814,7 @@ export const processDueRecurringExpenses = async (): Promise<void> => {
         await runTransaction(db, async (transaction) => {
           const expSnap = await transaction.get(expenseRef);
           if (!expSnap.exists()) {
+            const expenseDate = new Date(runDate).toISOString();
             const expenseData: ExpenseData = {
               expenseId: deterministicId,
               groupId: rec.groupId,
@@ -1749,7 +1825,8 @@ export const processDueRecurringExpenses = async (): Promise<void> => {
               splitType: rec.splitType || 'equal',
               splitDetails: rec.splitDetails,
               category: rec.category || '📦 Other',
-              date: new Date(runDate).toISOString(),
+              date: expenseDate,
+              billingMonth: getExpenseBillingMonth({ date: expenseDate }),
               notes: rec.notes ? `${rec.notes} (Recurring)` : 'Recurring expense',
               createdAt: serverTimestamp(),
             };
@@ -1780,7 +1857,12 @@ export const updateExpenseInFirestore = async (expenseId: string, data: Partial<
     const user = auth.currentUser;
     const expenseRef = doc(db, 'expenses', expenseId);
 
-    const updatePayload = sanitizeData({ ...data, updatedAt: serverTimestamp() });
+    const billingMonth = data.billingMonth || (data.date ? getExpenseBillingMonth(data as any) : undefined);
+    const updatePayload = sanitizeData({
+      ...data,
+      ...(billingMonth ? { billingMonth } : {}),
+      updatedAt: serverTimestamp(),
+    });
     
     // Instantly execute primary write
     const writePromise = setDoc(expenseRef, updatePayload, { merge: true });
@@ -1986,6 +2068,7 @@ export const addSettlementToFirestore = async (settlement: Omit<SettlementData, 
       ...settlement,
       status: settlement.status || 'pending',
       settlementId: settlementRef.id,
+      billingMonth: settlement.billingMonth || getCurrentBillingMonth(),
       createdAt: serverTimestamp(),
     };
     await setDoc(settlementRef, settlementData);
@@ -2281,22 +2364,22 @@ export const subscribeUserActivityFeed = (
   const unsub1 = onSnapshot(expensesQuery, (snap) => {
     currentExpenses = snap.docs.map((d) => d.data() as ExpenseData);
     mergeAndNotify();
-  });
+  }, (err) => console.warn('[RecentActivity] Expenses listener error:', err));
 
   const unsub2 = onSnapshot(settlementsQuery, (snap) => {
     currentSettlements = snap.docs.map((d) => d.data() as SettlementData);
     mergeAndNotify();
-  });
+  }, (err) => console.warn('[RecentActivity] Settlements listener error:', err));
 
   const unsub3 = onSnapshot(groupsQuery, (snap) => {
     currentGroups = snap.docs.map((d) => ({ ...d.data(), groupId: d.id } as GroupData));
     mergeAndNotify();
-  });
+  }, (err) => console.warn('[RecentActivity] Groups listener error:', err));
 
   const unsub4 = onSnapshot(notificationsQuery, (snap) => {
     currentReminders = snap.docs.map((d) => d.data() as AppNotification);
     mergeAndNotify();
-  });
+  }, (err) => console.warn('[RecentActivity] Notifications listener error:', err));
 
   return () => {
     unsub1();
@@ -2355,84 +2438,112 @@ export const subscribeUserGroupBalances = (
     return () => {};
   }
 
-  const expensesQuery = query(collection(db, 'expenses'));
-  const settlementsQuery = query(collection(db, 'settlements'));
   const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
 
-  let allExpenses: ExpenseData[] = [];
-  let allSettlements: SettlementData[] = [];
-  let userGroupsMap = new Map<string, GroupData>();
+  let expenseUnsubscribers: (() => void)[] = [];
+  let settlementUnsubscribers: (() => void)[] = [];
+  const groupExpensesMap = new Map<string, ExpenseData[]>();
+  const groupSettlementsMap = new Map<string, SettlementData[]>();
+  const userGroupsMap = new Map<string, GroupData>();
 
   const recalculate = () => {
     const groupBalances: Record<string, number> = {};
 
-    allExpenses.forEach((exp) => {
-      const gId = exp.groupId;
-      if (!userGroupsMap.has(gId)) return;
-
-      const groupData = userGroupsMap.get(gId);
+    userGroupsMap.forEach((groupData, gId) => {
+      let balance = 0;
       const joinedAt = groupData?.membersJoinedAt?.[uid];
       const includeExisting = groupData?.memberExistingExpensesPreference?.[uid] ?? true;
-      const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+      const expenses = groupExpensesMap.get(gId) || [];
+      const settlements = groupSettlementsMap.get(gId) || [];
 
-      if (!includeExisting && joinedAt && expTime < joinedAt) return;
+      expenses.forEach((exp) => {
+        const expTime = exp.createdAt?.seconds ? exp.createdAt.seconds * 1000 : Date.now();
+        if (!includeExisting && joinedAt && expTime < joinedAt) return;
 
-      const effectiveSplits = getEffectiveSplitDetails(exp, groupData);
-      const isPayer = exp.paidBy === uid;
-      const userShare = effectiveSplits[uid] || 0;
+        const effectiveSplits = getEffectiveSplitDetails(exp, groupData);
+        const isPayer = exp.paidBy === uid;
+        const userShare = effectiveSplits[uid] || 0;
 
-      if (!(gId in groupBalances)) groupBalances[gId] = 0;
-
-      if (isPayer) {
-        groupBalances[gId] += (exp.amount - userShare);
-      } else if (userShare > 0) {
-        groupBalances[gId] -= userShare;
-      }
-    });
-
-    allSettlements.forEach((s) => {
-      const gId = s.groupId;
-      if (!userGroupsMap.has(gId)) return;
-      if (s.status === 'completed' || !s.status) {
-        if (!(gId in groupBalances)) groupBalances[gId] = 0;
-        if (s.fromUserId === uid) {
-          groupBalances[gId] += s.amount;
-        } else if (s.toUserId === uid) {
-          groupBalances[gId] -= s.amount;
+        if (isPayer) {
+          balance += (exp.amount - userShare);
+        } else if (userShare > 0) {
+          balance -= userShare;
         }
-      }
-    });
+      });
 
-    // Round values
-    Object.keys(groupBalances).forEach(gId => {
-      groupBalances[gId] = Math.round(groupBalances[gId] * 100) / 100;
+      settlements.forEach((s) => {
+        if (s.status === 'completed' || !s.status) {
+          if (s.fromUserId === uid) {
+            balance += s.amount;
+          } else if (s.toUserId === uid) {
+            balance -= s.amount;
+          }
+        }
+      });
+
+      groupBalances[gId] = Math.round(balance * 100) / 100;
     });
 
     onBalancesUpdate(groupBalances);
   };
 
-  const unsub1 = onSnapshot(expensesQuery, (snap) => {
-    allExpenses = snap.docs.map((d) => d.data() as ExpenseData);
-    recalculate();
-  });
+  const setupGroupListeners = (groupIds: string[]) => {
+    expenseUnsubscribers.forEach((u) => u());
+    settlementUnsubscribers.forEach((u) => u());
+    expenseUnsubscribers = [];
+    settlementUnsubscribers = [];
+    groupExpensesMap.clear();
+    groupSettlementsMap.clear();
 
-  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
-    allSettlements = snap.docs.map((d) => d.data() as SettlementData);
-    recalculate();
-  });
+    if (groupIds.length === 0) {
+      recalculate();
+      return;
+    }
 
-  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < groupIds.length; i += 30) {
+      chunks.push(groupIds.slice(i, i + 30));
+    }
+
+    chunks.forEach((chunk) => {
+      const expQ = query(collection(db, 'expenses'), where('groupId', 'in', chunk));
+      const setQ = query(collection(db, 'settlements'), where('groupId', 'in', chunk));
+
+      const unsubExp = onSnapshot(expQ, (snap) => {
+        const exps = snap.docs.map(d => d.data() as ExpenseData);
+        chunk.forEach(gId => {
+          groupExpensesMap.set(gId, exps.filter(e => e.groupId === gId));
+        });
+        recalculate();
+      }, (err) => console.warn('[UserGroupBalances] Expenses listener error:', err));
+
+      const unsubSet = onSnapshot(setQ, (snap) => {
+        const sets = snap.docs.map(d => d.data() as SettlementData);
+        chunk.forEach(gId => {
+          groupSettlementsMap.set(gId, sets.filter(s => s.groupId === gId));
+        });
+        recalculate();
+      }, (err) => console.warn('[UserGroupBalances] Settlements listener error:', err));
+
+      expenseUnsubscribers.push(unsubExp);
+      settlementUnsubscribers.push(unsubSet);
+    });
+  };
+
+  const unsubGroups = onSnapshot(groupsQuery, (snap) => {
     userGroupsMap.clear();
+    const gIds: string[] = [];
     snap.docs.forEach((docSnap) => {
       userGroupsMap.set(docSnap.id, docSnap.data() as GroupData);
+      gIds.push(docSnap.id);
     });
-    recalculate();
-  });
+    setupGroupListeners(gIds);
+  }, (err) => console.warn('[UserGroupBalances] Groups listener error:', err));
 
   return () => {
-    unsub1();
-    unsub2();
-    unsub3();
+    unsubGroups();
+    expenseUnsubscribers.forEach((u) => u());
+    settlementUnsubscribers.forEach((u) => u());
   };
 };
 
@@ -2630,10 +2741,10 @@ export const subscribeUserMonthlyInsights = (
 ) => {
   if (!uid) return () => {};
 
-  const expensesQuery = query(collection(db, 'expenses'));
-  const settlementsQuery = query(collection(db, 'settlements'));
   const groupsQuery = query(collection(db, 'groups'), where('memberIds', 'array-contains', uid));
 
+  let expenseUnsubscribers: (() => void)[] = [];
+  let settlementUnsubscribers: (() => void)[] = [];
   let allExpenses: ExpenseData[] = [];
   let allSettlements: SettlementData[] = [];
   let activeGroupsCount = 0;
@@ -2679,25 +2790,58 @@ export const subscribeUserMonthlyInsights = (
     });
   };
 
-  const unsub1 = onSnapshot(expensesQuery, (snap) => {
-    allExpenses = snap.docs.map((d) => d.data() as ExpenseData);
-    calculate();
-  });
+  const setupGroupListeners = (groupIds: string[]) => {
+    expenseUnsubscribers.forEach((u) => u());
+    settlementUnsubscribers.forEach((u) => u());
+    expenseUnsubscribers = [];
+    settlementUnsubscribers = [];
+    allExpenses = [];
+    allSettlements = [];
 
-  const unsub2 = onSnapshot(settlementsQuery, (snap) => {
-    allSettlements = snap.docs.map((d) => d.data() as SettlementData);
-    calculate();
-  });
+    if (groupIds.length === 0) {
+      calculate();
+      return;
+    }
 
-  const unsub3 = onSnapshot(groupsQuery, (snap) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < groupIds.length; i += 30) {
+      chunks.push(groupIds.slice(i, i + 30));
+    }
+
+    const chunkExps = new Map<number, ExpenseData[]>();
+    const chunkSets = new Map<number, SettlementData[]>();
+
+    chunks.forEach((chunk, idx) => {
+      const expQ = query(collection(db, 'expenses'), where('groupId', 'in', chunk));
+      const setQ = query(collection(db, 'settlements'), where('groupId', 'in', chunk));
+
+      const unsubExp = onSnapshot(expQ, (snap) => {
+        chunkExps.set(idx, snap.docs.map(d => d.data() as ExpenseData));
+        allExpenses = Array.from(chunkExps.values()).flat();
+        calculate();
+      }, (err) => console.warn('[MonthlyInsights] Expenses listener error:', err));
+
+      const unsubSet = onSnapshot(setQ, (snap) => {
+        chunkSets.set(idx, snap.docs.map(d => d.data() as SettlementData));
+        allSettlements = Array.from(chunkSets.values()).flat();
+        calculate();
+      }, (err) => console.warn('[MonthlyInsights] Settlements listener error:', err));
+
+      expenseUnsubscribers.push(unsubExp);
+      settlementUnsubscribers.push(unsubSet);
+    });
+  };
+
+  const unsubGroups = onSnapshot(groupsQuery, (snap) => {
     activeGroupsCount = snap.docs.length;
-    calculate();
-  });
+    const gIds = snap.docs.map(d => d.id);
+    setupGroupListeners(gIds);
+  }, (err) => console.warn('[MonthlyInsights] Groups listener error:', err));
 
   return () => {
-    unsub1();
-    unsub2();
-    unsub3();
+    unsubGroups();
+    expenseUnsubscribers.forEach((u) => u());
+    settlementUnsubscribers.forEach((u) => u());
   };
 };
 
