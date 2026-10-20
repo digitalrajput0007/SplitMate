@@ -73,9 +73,8 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult | undefined
 
     // Configure Google Sign-in right before using it
     GoogleSignin.configure({
-      webClientId: WEB_CLIENT_ID,
+      webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
       offlineAccess: true,
-      forceCodeForRefreshToken: true,
     });
 
     // 1. Check Play Services
@@ -517,9 +516,8 @@ export const reauthenticateGoogleUser = async (): Promise<void> => {
 
   // Configure Google Sign-in right before using it
   GoogleSignin.configure({
-    webClientId: WEB_CLIENT_ID,
+    webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
     offlineAccess: true,
-    forceCodeForRefreshToken: true,
   });
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -596,9 +594,8 @@ export const linkGoogleToCurrentUser = async (): Promise<User> => {
   }
 
   GoogleSignin.configure({
-    webClientId: WEB_CLIENT_ID,
+    webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
     offlineAccess: true,
-    forceCodeForRefreshToken: true,
   });
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
