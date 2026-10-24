@@ -40,6 +40,8 @@ if (Platform.OS === 'web') {
 import * as SplashScreen from 'expo-splash-screen';
 import { InteractionManager } from 'react-native';
 
+import { DialogProvider } from './src/context/DialogContext';
+
 function MainAppContent() {
   const { colors, isDark } = useTheme();
 
@@ -64,20 +66,22 @@ function MainAppContent() {
   return (
     <ErrorBoundary>
       <SecurityProvider>
-        <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
-          <StatusBar style={isDark ? "light" : "dark"} backgroundColor={colors.background} />
-          <View style={{ flex: 1, backgroundColor: colors.background }}>
-            {Platform.OS === 'web' ? (
-              <View style={webStyles.outerContainer}>
-                <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
-                  <AppNavigator />
+        <DialogProvider>
+          <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
+            <StatusBar style={isDark ? "light" : "dark"} backgroundColor={colors.background} />
+            <View style={{ flex: 1, backgroundColor: colors.background }}>
+              {Platform.OS === 'web' ? (
+                <View style={webStyles.outerContainer}>
+                  <View style={[webStyles.phoneFrame, { backgroundColor: colors.background }]}>
+                    <AppNavigator />
+                  </View>
                 </View>
-              </View>
-            ) : (
-              <AppNavigator />
-            )}
-          </View>
-        </SafeAreaProvider>
+              ) : (
+                <AppNavigator />
+              )}
+            </View>
+          </SafeAreaProvider>
+        </DialogProvider>
       </SecurityProvider>
     </ErrorBoundary>
   );

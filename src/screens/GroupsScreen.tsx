@@ -22,6 +22,7 @@ import { parseFirestoreDate } from '../utils/dateUtils';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
 import { M3BottomSheet } from '../components/M3BottomSheet';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -234,6 +235,18 @@ export default function GroupsScreen() {
       >
         {loading && groups.length === 0 ? (
           <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : owned.length === 0 && joined.length === 0 && archived.length === 0 ? (
+          <EmptyStateIllustration
+            type="groups"
+            title={searchQuery ? 'No Matching Groups' : 'No Groups Yet'}
+            description={
+              searchQuery
+                ? `No groups found matching "${searchQuery}". Try a different keyword or create one.`
+                : 'Create a group for your trip, flatmates, or friends to start splitting expenses in 1 tap.'
+            }
+            actionLabel="Create Group"
+            onActionPress={() => navigation.navigate('CreateGroup')}
+          />
         ) : (
           <>
             {/* Your Groups Section */}
@@ -257,11 +270,14 @@ export default function GroupsScreen() {
                 {owned.length > 0 ? (
                   owned.map(g => renderGroupCard(g, true))
                 ) : (
-                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
-                    <Text style={[styles.emptyText, { color: colors.outline }]}>
-                      You haven't created any groups yet.
-                    </Text>
-                  </View>
+                  <EmptyStateIllustration
+                    type="groups"
+                    compact
+                    title="No created groups"
+                    description="You haven't created any groups yet. Tap below to start one."
+                    actionLabel="Create Group"
+                    onActionPress={() => navigation.navigate('CreateGroup')}
+                  />
                 )}
               </View>
             )}
@@ -287,11 +303,12 @@ export default function GroupsScreen() {
                 {joined.length > 0 ? (
                   joined.map(g => renderGroupCard(g, false))
                 ) : (
-                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
-                    <Text style={[styles.emptyText, { color: colors.outline }]}>
-                      You haven't joined any groups yet.
-                    </Text>
-                  </View>
+                  <EmptyStateIllustration
+                    type="groups"
+                    compact
+                    title="No joined groups"
+                    description="Groups you get invited to or join with a link will appear here."
+                  />
                 )}
               </View>
             )}

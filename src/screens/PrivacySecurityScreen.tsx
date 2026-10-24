@@ -18,6 +18,7 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { useSecurity } from '../context/SecurityContext';
 import { checkBiometricHardware, checkBiometricEnrolled, authenticateBiometric } from '../services/biometricService';
 import { deletePinHash } from '../services/secureStorageService';
@@ -27,6 +28,7 @@ import { auth } from '../config/firebase';
 export default function PrivacySecurityScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
   const { lockSettings, updateLockSettings } = useSecurity();
   const [authenticating, setAuthenticating] = useState(false);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
@@ -39,17 +41,17 @@ export default function PrivacySecurityScreen() {
     setLinkingGoogle(true);
     try {
       await linkGoogleToCurrentUser();
-      Alert.alert(
+      dialog.showSuccess(
         'Account Linked',
         'Your Google account has been successfully linked to your SplitMate account. You can now sign in using either Email/Password or Google Sign-In.'
       );
     } catch (err: any) {
       if (err.code === 'auth/credential-already-in-use') {
-        Alert.alert('Account Already Linked', 'This Google account is already linked to another SplitMate account.');
+        dialog.showWarning('Account Already Linked', 'This Google account is already linked to another SplitMate account.');
       } else if (err.message?.includes('cancelled')) {
         // User cancelled, do nothing
       } else {
-        Alert.alert('Linking Failed', err.message || 'Failed to link Google account. Please try again.');
+        dialog.showError('Linking Failed', err.message || 'Failed to link Google account. Please try again.');
       }
     } finally {
       setLinkingGoogle(false);
@@ -81,7 +83,7 @@ export default function PrivacySecurityScreen() {
     try {
       await deleteUserAccount();
       setDeletingAccount(false);
-      Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+      dialog.showSuccess('Account Deleted', 'Your account has been deleted successfully.');
     } catch (err: any) {
       setDeletingAccount(false);
       if (err.code === 'auth/requires-recent-login') {
@@ -89,30 +91,25 @@ export default function PrivacySecurityScreen() {
         const isGoogleUser = currentUser?.providerData.some(p => p.providerId === 'google.com');
 
         if (isGoogleUser) {
-          Alert.alert(
+          dialog.showConfirm(
             'Security Re-verification Required',
             'Deleting your account is a sensitive action. Please re-authenticate with your Google account to proceed.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Re-authenticate with Google',
-                onPress: async () => {
-                  setDeletingAccount(true);
-                  try {
-                    await reauthenticateGoogleUser();
-                    await deleteUserAccount();
-                    setDeletingAccount(false);
-                    Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
-                  } catch (gErr: any) {
-                    setDeletingAccount(false);
-                    Alert.alert(
-                      'Re-authentication Failed',
-                      gErr.message || 'Could not verify your identity. Please try again.'
-                    );
-                  }
-                },
-              },
-            ]
+            async () => {
+              setDeletingAccount(true);
+              try {
+                await reauthenticateGoogleUser();
+                await deleteUserAccount();
+                setDeletingAccount(false);
+                dialog.showSuccess('Account Deleted', 'Your account has been deleted successfully.');
+              } catch (gErr: any) {
+                setDeletingAccount(false);
+                dialog.showError(
+                  'Re-authentication Failed',
+                  gErr.message || 'Could not verify your identity. Please try again.'
+                );
+              }
+            },
+            { confirmText: 'Re-authenticate with Google', cancelText: 'Cancel' }
           );
         } else {
           setReauthPassword('');
@@ -120,7 +117,7 @@ export default function PrivacySecurityScreen() {
           setReauthModalVisible(true);
         }
       } else {
-        Alert.alert('Error Deleting Account', err.message || 'Failed to delete account. Please try again later.');
+        dialog.showError('Error Deleting Account', err.message || 'Failed to delete account. Please try again later.');
       }
     }
   };
@@ -128,17 +125,11 @@ export default function PrivacySecurityScreen() {
   const handleDeleteAccount = () => {
     if (deletingAccount) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Delete Account',
       'Are you sure you want to permanently delete your SplitMate account? All your active groups and expense records will be deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Permanently',
-          style: 'destructive',
-          onPress: performAccountDeletion,
-        },
-      ]
+      performAccountDeletion,
+      { confirmText: 'Delete Permanently', destructive: true }
     );
   };
 
@@ -157,7 +148,7 @@ export default function PrivacySecurityScreen() {
       setReauthLoading(false);
       setReauthModalVisible(false);
       setReauthPassword('');
-      Alert.alert('Account Deleted', 'Your account has been deleted successfully.');
+      dialog.showSuccess('Account Deleted', 'Your account has been deleted successfully.');
     } catch (err: any) {
       setReauthLoading(false);
       if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
@@ -178,7 +169,7 @@ export default function PrivacySecurityScreen() {
 
       if (!hasHardware || !isEnrolled) {
         setAuthenticating(false);
-        Alert.alert(
+        dialog.showWarning(
           'Biometrics Unavailable',
           'Biometric authentication (Fingerprint / Face ID) is not set up or supported on this device.'
         );
@@ -189,17 +180,17 @@ export default function PrivacySecurityScreen() {
 
       if (result.success) {
         await updateLockSettings({ ...lockSettings, isBiometricEnabled: val });
-        Alert.alert(
+        dialog.showSuccess(
           val ? 'Biometric Lock Enabled' : 'Biometric Lock Disabled',
           val
             ? 'SplitMate will now require Fingerprint / Face ID authentication whenever the app opens.'
             : 'Biometric security lock has been turned off.'
         );
       } else {
-        Alert.alert('Authentication Failed', 'Identity verification failed.');
+        dialog.showError('Authentication Failed', 'Identity verification failed.');
       }
     } catch (e: any) {
-      Alert.alert('Authentication Error', e.message || 'Unable to authenticate with biometrics.');
+      dialog.showError('Authentication Error', e.message || 'Unable to authenticate with biometrics.');
     } finally {
       setAuthenticating(false);
     }
@@ -209,20 +200,15 @@ export default function PrivacySecurityScreen() {
     if (val) {
       navigation.navigate('SetupPin');
     } else {
-      Alert.alert(
+      dialog.showConfirm(
         'Disable PIN',
         'Are you sure you want to disable PIN lock?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Disable',
-            style: 'destructive',
-            onPress: async () => {
-              await deletePinHash();
-              await updateLockSettings({ ...lockSettings, isPinEnabled: false });
-            }
-          }
-        ]
+        async () => {
+          await deletePinHash();
+          await updateLockSettings({ ...lockSettings, isPinEnabled: false });
+          dialog.showSuccess('PIN Disabled', 'PIN lock security has been turned off.');
+        },
+        { confirmText: 'Disable', destructive: true }
       );
     }
   };
@@ -258,7 +244,7 @@ export default function PrivacySecurityScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      Alert.alert('Success', 'Your password has been changed successfully.');
+      dialog.showSuccess('Success', 'Your password has been changed successfully.');
     } catch (err: any) {
       setPasswordLoading(false);
       if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential' || err.message?.toLowerCase().includes('password')) {

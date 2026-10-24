@@ -30,6 +30,7 @@ import {
 } from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { RootStackParamList } from '../navigation/types';
 import { shareApp, openPlayStoreRating, APP_VERSION } from '../config/appConfig';
 import Constants from 'expo-constants';
@@ -37,6 +38,7 @@ import packageJson from '../../package.json';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
 import { SmartImage } from '../components/SmartImage';
+import { M3Dialog } from '../components/M3Dialog';
 import QRCode from 'react-native-qrcode-svg';
 
 let CameraView: any = View;
@@ -138,6 +140,8 @@ export default function AccountScreen() {
     }
   };
 
+  const dialog = useDialog();
+
   const handleAddScannedContact = async () => {
     if (!scannedUser || !currentUser?.uid) return;
     setAddingContact(true);
@@ -154,30 +158,39 @@ export default function AccountScreen() {
       await addContactToUserFirestore(currentUser.uid, contactData);
 
       setAddingContact(false);
-      Alert.alert('Contact Added', `${scannedUser.name} has been added to your SplitMate contacts!`);
+      dialog.showSuccess('Contact Added', `${scannedUser.name} has been added to your SplitMate contacts!`);
       setScannedUser(null);
       setScannedLock(false);
       setQrModalVisible(false);
     } catch (e) {
       console.error('Error adding scanned contact:', e);
       setAddingContact(false);
-      Alert.alert('Error', 'Failed to add contact. Please try again.');
+      dialog.showError('Error', 'Failed to add contact. Please try again.');
     }
   };
 
-  const confirmLogout = async () => {
-    setLogoutModalVisible(false);
-    try {
-      await signOutUser();
-      setDisplayName('User');
-      setDisplayEmail('');
-      setDisplayMobile('');
-      setPaymentHandle('');
-      setPhotoUrl('');
-      // AppNavigator will handle redirection to SignIn automatically via onAuthStateChanged
-    } catch (e: any) {
-      Alert.alert('Logout Error', 'Couldn\'t sign out, please try again');
-    }
+  const handleSignOutPress = () => {
+    dialog.showConfirm(
+      'Sign Out?',
+      "Are you sure you want to sign out? You'll need to sign in again to access your shared expenses.",
+      async () => {
+        try {
+          await signOutUser();
+          setDisplayName('User');
+          setDisplayEmail('');
+          setDisplayMobile('');
+          setPaymentHandle('');
+          setPhotoUrl('');
+        } catch (e: any) {
+          dialog.showError('Logout Error', "Couldn't sign out, please try again.");
+        }
+      },
+      {
+        confirmText: 'Sign Out',
+        cancelText: 'Cancel',
+        destructive: true,
+      }
+    );
   };
 
   const handleShareApp = () => {
@@ -373,7 +386,7 @@ export default function AccountScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]} onPress={() => setLogoutModalVisible(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]} onPress={handleSignOutPress} activeOpacity={0.85}>
           <MaterialIcons name="logout" size={24} color={colors.error} />
           <Text style={[styles.logoutText, { color: colors.error }]}>Sign Out</Text>
         </TouchableOpacity>
@@ -382,24 +395,6 @@ export default function AccountScreen() {
           Made with ❤️ in India • v{appVersion}
         </Text>
       </ScrollView>
-
-      <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLogoutModalVisible(false)}>
-          <View style={[styles.confirmDialog, { backgroundColor: colors.surfaceContainerLowest }]}>
-            <MaterialIcons name="logout" size={32} color={colors.error} style={{ alignSelf: 'center', marginBottom: 8 }} />
-            <Text style={[styles.confirmTitle, { color: colors.onSurface }]}>Sign Out?</Text>
-            <Text style={[styles.confirmSub, { color: colors.onSurfaceVariant }]}>Are you sure? You'll need to sign in again.</Text>
-            <View style={styles.confirmBtnRow}>
-              <TouchableOpacity style={[styles.cancelDialogBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={[styles.cancelDialogText, { color: colors.onSurface }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmLogoutBtn, { backgroundColor: colors.error }]} onPress={confirmLogout}>
-                <Text style={[styles.confirmLogoutText, { color: colors.onError }]}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       <Modal visible={helpModalVisible} transparent animationType="slide" onRequestClose={() => setHelpModalVisible(false)}>
         <View style={[styles.lazyModalContainer, { backgroundColor: colors.background }]}>

@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { sendOTPEmailHTTP } from '../services/authService';
 
@@ -23,13 +24,14 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EmailScreen'>;
 
 export default function EmailScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSendOTP = async () => {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      dialog.showWarning('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
@@ -42,7 +44,7 @@ export default function EmailScreen({ navigation }: Props) {
     } catch (error: any) {
       setLoading(false);
       console.error('[UI] OTP request failed:', error);
-      Alert.alert('Error', error.message || 'Failed to send verification code. Please try again.');
+      dialog.showError('Error', error.message || 'Failed to send verification code. Please try again.');
     }
   };
 

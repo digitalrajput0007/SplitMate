@@ -17,6 +17,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { useSecurity } from '../context/SecurityContext';
 import {
   signUpWithEmail,
@@ -62,6 +63,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const { setIsUnlocked } = useSecurity();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -532,7 +534,7 @@ export default function SignInScreen({ navigation }: Props) {
                   disabled={resetLoading || !resetEmail.trim() || !resetEmail.includes('@')}
                   onPress={async () => {
                     if (!resetEmail.trim()) {
-                      Alert.alert('Email Required', 'Please enter your email address.');
+                      dialog.showWarning('Email Required', 'Please enter your email address.');
                       return;
                     }
                     setResetLoading(true);
@@ -540,7 +542,7 @@ export default function SignInScreen({ navigation }: Props) {
                       await resetPassword(resetEmail.trim());
                       setResetSuccessMessage('Password reset email sent! Please check your inbox.');
                     } catch (e: any) {
-                      Alert.alert('Reset Failed', e.message || 'Unable to send reset link.');
+                      dialog.showError('Reset Failed', e.message || 'Unable to send reset link.');
                     } finally {
                       setResetLoading(false);
                     }

@@ -27,12 +27,14 @@ import {
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 
 export default function AddExpenseScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
   const { groupId, groupName, initialBillingMonth } = route.params || {};
 
@@ -77,17 +79,12 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         if (isOwner) {
           navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
         } else {
-          Alert.alert(
+          dialog.showError(
             'Group Deleted',
             'The group owner has deleted this group.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
-                },
-              },
-            ]
+            () => {
+              navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+            }
           );
         }
       }
@@ -134,7 +131,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       navigation.goBack();
     } catch (error: any) {
       console.error('Error adding expense:', error);
-      Alert.alert('Error', error.message || 'Failed to save expense.');
+      dialog.showError('Error', error.message || 'Failed to save expense.');
     } finally {
       setSubmitting(false);
     }

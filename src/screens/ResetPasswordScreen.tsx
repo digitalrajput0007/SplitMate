@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { resetPasswordWithOTP } from '../services/authService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ResetPasswordScreen'>;
@@ -24,6 +25,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ResetPasswordScreen'>;
 export default function ResetPasswordScreen({ navigation, route }: Props) {
   const { email = '' } = route.params || {};
   const { colors } = useTheme();
+  const dialog = useDialog();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -31,12 +33,12 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
 
   const handleReset = async () => {
     if (password.length < 6) {
-      Alert.alert('Invalid Password', 'Password must be at least 6 characters long.');
+      dialog.showWarning('Invalid Password', 'Password must be at least 6 characters long.');
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Mismatch', 'Passwords do not match.');
+      dialog.showWarning('Mismatch', 'Passwords do not match.');
       return;
     }
 
@@ -45,13 +47,13 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
       console.log(`[UI] Resetting password for: ${email}`);
       await resetPasswordWithOTP(email, password);
       setLoading(false);
-      Alert.alert('Success', 'Your password has been reset successfully.', [
-        { text: 'Login Now', onPress: () => navigation.navigate('SignIn') }
-      ]);
+      dialog.showSuccess('Success', 'Your password has been reset successfully.', () => {
+        navigation.navigate('SignIn');
+      });
     } catch (error: any) {
       setLoading(false);
       console.error('[UI] Password reset failed:', error);
-      Alert.alert('Error', error.message || 'Failed to reset password. Please try again.');
+      dialog.showError('Error', error.message || 'Failed to reset password. Please try again.');
     }
   };
 

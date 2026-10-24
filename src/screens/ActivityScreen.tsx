@@ -26,6 +26,7 @@ import {
   UserProfile,
 } from '../services/firestoreService';
 import { SmartImage } from '../components/SmartImage';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
 
 export default function ActivityScreen() {
   const navigation = useNavigation<any>();
@@ -167,15 +168,13 @@ export default function ActivityScreen() {
       ) : activities.length === 0 ? (
         <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}>
           <HeaderComponent />
-          <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
-              <MaterialIcons name="history" size={48} color={colors.outline} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No activity yet</Text>
-            <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
-              New expenses, settlements, and groups will appear here as they happen.
-            </Text>
-          </View>
+          <EmptyStateIllustration
+            type="activity"
+            title="No Activity Yet"
+            description="When you or your group members add expenses, make payments, or create groups, real-time activity will show up here."
+            actionLabel="View Groups"
+            onActionPress={() => navigation.navigate('GroupsTab')}
+          />
         </ScrollView>
       ) : (
         <FlatList

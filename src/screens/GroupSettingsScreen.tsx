@@ -46,6 +46,7 @@ import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
 import { GroupTypeOption } from './CreateGroupModal';
 
@@ -63,6 +64,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
   const groupId = route.params?.groupId;
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [groupName, setGroupName] = useState('');
@@ -146,17 +148,12 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           if (data.enableFlatmateSettleReminder !== undefined) setEnableFlatmateSettleReminder(data.enableFlatmateSettleReminder);
           if (data.flatmateReminderDate) setFlatmateReminderDate(new Date(data.flatmateReminderDate));
         } else if (!isDeletingRef.current) {
-          Alert.alert(
+          dialog.showError(
             'Group Deleted',
             'The group owner has deleted this group.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.navigate('MainTabs', { screen: 'Groups' } as any);
-                },
-              },
-            ]
+            () => {
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+            }
           );
         }
       });
@@ -221,7 +218,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
   const handleUpdateGroup = async () => {
     if (!groupName.trim() || !groupId) {
-      Alert.alert('Validation Error', 'Group name cannot be empty.');
+      dialog.showWarning('Validation Error', 'Group name cannot be empty.');
       return;
     }
 
@@ -262,10 +259,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       }
 
       await updateGroupInFirestore(groupId, updateData);
-      Alert.alert('Group Updated', 'Group settings updated successfully.');
+      dialog.showSuccess('Group Updated', 'Group settings updated successfully.');
     } catch (error: any) {
       console.error('Error updating group:', error);
-      Alert.alert('Error', error.message || 'Failed to update group.');
+      dialog.showError('Error', error.message || 'Failed to update group.');
     } finally {
       setSaving(false);
     }
@@ -274,23 +271,18 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const handleTransferOwnership = (u: UserProfile) => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Transfer Ownership',
       `Are you sure you want to make ${u.name} the owner of this group? You will lose administrative privileges.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Transfer',
-          onPress: async () => {
-            try {
-              await transferGroupOwnership(groupId, u.uid);
-              Alert.alert('Success', `${u.name} is now the group owner.`);
-            } catch (e) {
-              Alert.alert('Error', 'Failed to transfer ownership.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await transferGroupOwnership(groupId, u.uid);
+          dialog.showSuccess('Success', `${u.name} is now the group owner.`);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to transfer ownership.');
+        }
+      },
+      { confirmText: 'Transfer' }
     );
   };
 
@@ -298,10 +290,10 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     if (!groupId) return;
     try {
       await reinviteUserToGroupInFirestore(groupId, u.uid);
-      Alert.alert('Re-invited', `A new invitation request has been sent to ${u.name}.`);
+      dialog.showSuccess('Re-invited', `A new invitation request has been sent to ${u.name}.`);
     } catch (error: any) {
       console.error('Re-invite error details:', error);
-      Alert.alert('Error', error?.message || 'Failed to re-invite member.');
+      dialog.showError('Error', error?.message || 'Failed to re-invite member.');
     }
   };
 
@@ -334,24 +326,18 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     const balance = calculateMemberBalance(u.uid);
 
     if (Math.abs(balance) < 0.05) {
-      Alert.alert(
+      dialog.showConfirm(
         'Remove Member',
         `Remove ${u.name} from this group? They will no longer see group expenses.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Remove',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await removeMemberFromGroup(groupId, u.uid);
-                Alert.alert('Removed', `${u.name} has been removed from the group.`);
-              } catch (err) {
-                Alert.alert('Error', 'Failed to remove member.');
-              }
-            },
-          },
-        ]
+        async () => {
+          try {
+            await removeMemberFromGroup(groupId, u.uid);
+            dialog.showSuccess('Removed', `${u.name} has been removed from the group.`);
+          } catch (err) {
+            dialog.showError('Error', 'Failed to remove member.');
+          }
+        },
+        { confirmText: 'Remove', destructive: true }
       );
       return;
     }
@@ -361,13 +347,18 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     const formattedVal = formatCurrency(absVal);
     const statusText = isOwed ? `is owed ${formattedVal}` : `owes ${formattedVal}`;
 
-    Alert.alert(
-      'Unsettled Balance Warning ⚠️',
-      `${u.name} ${statusText} in this group.\n\nChoose how to handle this balance before removing them:`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+    dialog.showDialog({
+      title: 'Unsettled Balance Warning ⚠️',
+      message: `${u.name} ${statusText} in this group. Choose how to handle this balance before removing them:`,
+      type: 'warning',
+      actions: [
+        {
+          text: 'Cancel',
+          variant: 'ghost',
+        },
         {
           text: 'Mark Settled',
+          variant: 'primary',
           onPress: async () => {
             try {
               if (isOwed) {
@@ -390,19 +381,20 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 });
               }
               await removeMemberFromGroup(groupId, u.uid);
-              Alert.alert('Success', `Settled ${formattedVal} and removed ${u.name}.`);
+              dialog.showSuccess('Success', `Settled ${formattedVal} and removed ${u.name}.`);
             } catch (e) {
-              Alert.alert('Error', 'Failed to settle and remove member.');
+              dialog.showError('Error', 'Failed to settle and remove member.');
             }
           },
         },
         {
-          text: 'Redistribute Balance',
+          text: 'Redistribute',
+          variant: 'outline',
           onPress: async () => {
             try {
               const remainingMembers = acceptedUsers.filter(x => x.uid !== u.uid);
               if (remainingMembers.length === 0) {
-                Alert.alert('Error', 'No remaining members to redistribute balance to.');
+                dialog.showError('Error', 'No remaining members to redistribute balance to.');
                 return;
               }
               const remainingMemberUids = remainingMembers.map(x => x.uid);
@@ -413,43 +405,38 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
               // 2. Remove member from group
               await removeMemberFromGroup(groupId, u.uid);
 
-              Alert.alert('Success', `Redistributed balance among remaining members and removed ${u.name}. Updated owes are now calculated for remaining members.`);
+              dialog.showSuccess('Success', `Redistributed balance among remaining members and removed ${u.name}.`);
             } catch (e) {
               console.error('Error redistributing balance on member removal:', e);
-              Alert.alert('Error', 'Failed to redistribute balance and remove member.');
+              dialog.showError('Error', 'Failed to redistribute balance and remove member.');
             }
           },
         },
-      ]
-    );
+      ],
+    });
   };
 
   const handleToggleArchive = async () => {
     if (!groupId) return;
     const isCurrentlyArchived = group?.isArchived || false;
 
-    Alert.alert(
+    dialog.showConfirm(
       isCurrentlyArchived ? 'Restore Group' : 'Archive Group',
       isCurrentlyArchived
         ? 'Do you want to restore this group to your active list?'
         : 'Archiving hides the group from your main list but keeps all records. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: isCurrentlyArchived ? 'Restore' : 'Archive',
-          onPress: async () => {
-            try {
-              await toggleGroupArchive(groupId, !isCurrentlyArchived);
-              Alert.alert('Success', isCurrentlyArchived ? 'Group restored.' : 'Group archived.');
-              if (!isCurrentlyArchived) {
-                navigation.goBack();
-              }
-            } catch (e) {
-              Alert.alert('Error', 'Failed to update archive status.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await toggleGroupArchive(groupId, !isCurrentlyArchived);
+          dialog.showSuccess('Success', isCurrentlyArchived ? 'Group restored.' : 'Group archived.');
+          if (!isCurrentlyArchived) {
+            navigation.goBack();
+          }
+        } catch (e) {
+          dialog.showError('Error', 'Failed to update archive status.');
+        }
+      },
+      { confirmText: isCurrentlyArchived ? 'Restore' : 'Archive' }
     );
   };
 
@@ -459,7 +446,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     // 1. Check Outstanding Balance
     const currentBalance = calculateUserBalance();
     if (Math.abs(currentBalance) > 0.05) {
-      Alert.alert(
+      dialog.showWarning(
         'Outstanding Balance',
         `You cannot leave the group until your balance is zero. Your current balance: ${formatCurrency(currentBalance)}.`
       );
@@ -470,26 +457,20 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
     // 2. Sole Member Case: Delete group directly
     if (otherMembers.length === 0) {
-      Alert.alert(
+      dialog.showConfirm(
         'Delete Group',
         'You are the only member in this group. Leaving will permanently delete this group and all its records.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete Group',
-            style: 'destructive',
-            onPress: async () => {
-              isDeletingRef.current = true;
-              try {
-                await deleteGroupFromFirestore(groupId);
-                navigation.navigate('MainTabs', { screen: 'Groups' } as any);
-              } catch (e) {
-                isDeletingRef.current = false;
-                Alert.alert('Error', 'Failed to delete group.');
-              }
-            },
-          },
-        ]
+        async () => {
+          isDeletingRef.current = true;
+          try {
+            await deleteGroupFromFirestore(groupId);
+            navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+          } catch (e) {
+            isDeletingRef.current = false;
+            dialog.showError('Error', 'Failed to delete group.');
+          }
+        },
+        { confirmText: 'Delete Group', destructive: true }
       );
       return;
     }
@@ -508,30 +489,24 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     }
 
     // 5. Standard Leave Confirmation
-    Alert.alert(
+    dialog.showConfirm(
       'Leave Group',
       'Are you sure you want to leave this group? You will no longer be able to see expenses or contribute.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await leaveGroupInFirestore(groupId, currentUser.uid);
-              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
-            } catch (e) {
-              Alert.alert('Error', 'Failed to leave group.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await leaveGroupInFirestore(groupId, currentUser.uid);
+          navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to leave group.');
+        }
+      },
+      { confirmText: 'Leave', destructive: true }
     );
   };
 
   const handleConfirmTransferAndLeave = async () => {
     if (!groupId || !currentUser || !selectedNewAdminUid) {
-      Alert.alert('Selection Required', 'Please select a member to promote to Admin.');
+      dialog.showWarning('Selection Required', 'Please select a member to promote to Admin.');
       return;
     }
 
@@ -548,58 +523,46 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
       navigation.navigate('MainTabs', { screen: 'Groups' } as any);
     } catch (e: any) {
       setTransferringAdmin(false);
-      Alert.alert('Error', e.message || 'Failed to transfer admin rights and leave group.');
+      dialog.showError('Error', e.message || 'Failed to transfer admin rights and leave group.');
     }
   };
 
   const handleCancelInvite = (u: UserProfile) => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Cancel Invitation',
       `Are you sure you want to cancel the invitation for ${u.name}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await cancelGroupInvitation(groupId, u.uid);
-              Alert.alert('Success', 'Invitation cancelled successfully.');
-            } catch (e: any) {
-              console.error('Error cancelling invitation:', e);
-              Alert.alert('Error', 'Failed to cancel invitation.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await cancelGroupInvitation(groupId, u.uid);
+          dialog.showSuccess('Success', 'Invitation cancelled successfully.');
+        } catch (e: any) {
+          console.error('Error cancelling invitation:', e);
+          dialog.showError('Error', 'Failed to cancel invitation.');
+        }
+      },
+      { confirmText: 'Yes, Cancel', destructive: true }
     );
   };
 
   const handleDeleteGroup = async () => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Delete Group',
       'Are you sure you want to delete this group? All expense records for this group will be deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              isDeletingRef.current = true;
-              await deleteGroupFromFirestore(groupId);
-              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
-            } catch (error: any) {
-              isDeletingRef.current = false;
-              Alert.alert('Error', error.message || 'Failed to delete group.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          isDeletingRef.current = true;
+          await deleteGroupFromFirestore(groupId);
+          navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+        } catch (error: any) {
+          isDeletingRef.current = false;
+          dialog.showError('Error', error.message || 'Failed to delete group.');
+        }
+      },
+      { confirmText: 'Delete', destructive: true }
     );
   };
 

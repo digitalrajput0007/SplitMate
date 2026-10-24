@@ -16,6 +16,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { verifyOTP, sendOTPEmailHTTP, resetPasswordWithOTP, warmUpOTPService } from '../services/authService';
 import { MaterialIcons } from '@expo/vector-icons';
 import { OTPInputBlocks } from '../components';
@@ -25,6 +26,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ResetPasswordOTP'>;
 export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
   const { email = '' } = route.params || {};
   const { colors } = useTheme();
+  const dialog = useDialog();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -85,7 +87,7 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
   const handleResend = async () => {
     setErrorMessage('');
     if (!email) {
-      Alert.alert('Error', 'No email address found.');
+      dialog.showError('Error', 'No email address found.');
       return;
     }
     setResending(true);
@@ -93,10 +95,10 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
       // Use 'reset' mode to ensure user exists
       await sendOTPEmailHTTP(email, 'reset');
       setTimer(30);
-      Alert.alert('Sent', 'A new code has been sent to your email.');
+      dialog.showSuccess('Code Sent', 'A new code has been sent to your email.');
     } catch (error: any) {
       console.error("Resend OTP error:", error);
-      Alert.alert('Resend Failed', error.message || 'Failed to resend code. Please try again.');
+      dialog.showError('Resend Failed', error.message || 'Failed to resend code. Please try again.');
     } finally {
       setResending(false);
     }
@@ -126,9 +128,9 @@ export default function ResetPasswordOTPScreen({ navigation, route }: Props) {
       if (!email) throw new Error('Missing email parameter');
       await resetPasswordWithOTP(email, newPassword);
       setLoading(false);
-      Alert.alert('Success', 'Password has been reset successfully.', [
-        { text: 'Login', onPress: () => navigation.navigate('SignIn') }
-      ]);
+      dialog.showSuccess('Success', 'Password has been reset successfully.', () => {
+        navigation.navigate('SignIn');
+      });
     } catch (error: any) {
       setLoading(false);
       setErrorMessage(error.message || 'Failed to reset password.');

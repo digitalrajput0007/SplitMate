@@ -32,6 +32,7 @@ import {
   ExpenseComment,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 import { ImagePreviewModal } from '../components/ImagePreviewModal';
 import { useMediaManager } from '../hooks/useMediaManager';
@@ -43,6 +44,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const initialExpense: ExpenseData | undefined = route.params?.expense;
   const targetExpenseId = route.params?.expenseId || initialExpense?.expenseId;
   const { colors } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
 
   const [expense, setExpense] = useState<ExpenseData | null>(initialExpense || null);
@@ -144,9 +146,10 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
     try {
       await updateExpenseInFirestore(expense.expenseId, formData);
       setIsEditing(false);
+      dialog.showSuccess('Expense Updated', 'Group expense updated successfully.');
     } catch (error: any) {
       console.error('Error updating expense:', error);
-      Alert.alert('Error', error.message || 'Failed to update expense.');
+      dialog.showError('Error', error.message || 'Failed to update expense.');
     } finally {
       setSaving(false);
     }
@@ -155,26 +158,19 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const handleDelete = async () => {
     if (!expense?.expenseId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Delete Expense',
       `Are you sure you want to delete "${expense.title}"? Group balances will be recalculated immediately.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteExpenseFromFirestore(expense.expenseId!);
-              Alert.alert('Expense Deleted', 'Expense removed from group records.');
-              navigation.goBack();
-            } catch (error: any) {
-              console.error('Error deleting expense:', error);
-              Alert.alert('Error', error.message || 'Failed to delete expense.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await deleteExpenseFromFirestore(expense.expenseId!);
+          navigation.goBack();
+        } catch (error: any) {
+          console.error('Error deleting expense:', error);
+          dialog.showError('Error', error.message || 'Failed to delete expense.');
+        }
+      },
+      { confirmText: 'Delete', destructive: true }
     );
   };
 

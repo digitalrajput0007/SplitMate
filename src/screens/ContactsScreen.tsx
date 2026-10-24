@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { auth } from '../config/firebase';
 import {
   Contact,
@@ -30,6 +31,7 @@ import { formatCurrency } from '../services/currencyService';
 import { SmartImage } from '../components/SmartImage';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3BottomSheet } from '../components/M3BottomSheet';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
 import { usePairwiseBalances, PairwiseBalanceSummary } from '../hooks/usePairwiseBalances';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -95,15 +97,26 @@ export default function ContactsScreen() {
     return () => unsubs.forEach(u => u());
   }, [myContacts]);
 
+  const dialog = useDialog();
+
   const handleRemove = (contact: Contact) => {
-    Alert.alert('Remove Contact', `Are you sure you want to remove ${contact.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => removeContactFromUserFirestore(currentUser!.uid, contact.phone || contact.name, contact.uid),
+    dialog.showConfirm(
+      'Remove Contact',
+      `Are you sure you want to remove ${contact.name || contact.phone}?`,
+      async () => {
+        try {
+          await removeContactFromUserFirestore(currentUser!.uid, contact.phone || contact.name, contact.uid);
+          dialog.showSuccess('Removed', `${contact.name || 'Contact'} has been removed.`);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to remove contact. Please try again.');
+        }
       },
-    ]);
+      {
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+        destructive: true,
+      }
+    );
   };
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'owesYou' | 'youOwe'>('all');
@@ -266,29 +279,14 @@ export default function ContactsScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : myContacts.length === 0 && !searchQuery ? (
-        /* EXACT EMPTY STATE FROM DESIGN */
-        <ScrollView contentContainerStyle={styles.emptyContainer}>
-          <View style={[styles.illustrationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <Image
-              source={require('../../stitch_assets/add_members.png')}
-              style={styles.illustration}
-              resizeMode="contain"
-            />
-          </View>
-
-          <Text style={[styles.emptyHeadline, { color: colors.onBackground }]}>No Contacts Added</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.onSurfaceVariant }]}>
-            Start adding friends to SplitMate to begin sharing expenses effortlessly.
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.inviteNowBtn, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate('ContactSync')}
-            activeOpacity={0.85}
-          >
-            <MaterialIcons name="person-add" size={22} color={colors.onPrimary} />
-            <Text style={[styles.inviteNowText, { color: colors.onPrimary }]}>Add contacts</Text>
-          </TouchableOpacity>
+        <ScrollView contentContainerStyle={[styles.emptyContainer, { paddingHorizontal: Spacing.lg }]}>
+          <EmptyStateIllustration
+            type="contacts"
+            title="No Contacts Added"
+            description="Start adding friends or sync from contacts to begin splitting dinners, trips, and daily bills effortlessly."
+            actionLabel="Add Contacts"
+            onActionPress={() => navigation.navigate('ContactSync')}
+          />
         </ScrollView>
       ) : (
         <FlatList
@@ -303,9 +301,14 @@ export default function ContactsScreen() {
           removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
             searchQuery ? (
-              <View style={styles.noResults}>
-                <Text style={[styles.emptySubtitle, { color: colors.onSurfaceVariant }]}>No matching contacts found.</Text>
-              </View>
+              <EmptyStateIllustration
+                type="contacts"
+                compact
+                title="No Matching Contacts"
+                description={`No contacts found matching "${searchQuery}".`}
+                actionLabel="Sync Contacts"
+                onActionPress={() => navigation.navigate('ContactSync')}
+              />
             ) : null
           }
         />

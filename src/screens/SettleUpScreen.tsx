@@ -35,6 +35,7 @@ import {
   showSettleUpInterstitial,
 } from '../services/adMobService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { SmartImage } from '../components/SmartImage';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import {
@@ -47,6 +48,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
 
 export default function SettleUpScreen({ navigation, route }: Props) {
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
 
@@ -79,17 +81,12 @@ export default function SettleUpScreen({ navigation, route }: Props) {
         if (isOwner) {
           navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
         } else {
-          Alert.alert(
+          dialog.showError(
             'Group Deleted',
             'The group owner has deleted this group.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
-                },
-              },
-            ]
+            () => {
+              navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+            }
           );
         }
       }
@@ -179,7 +176,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
   const handlePayViaUPI = async (debt: SimplifiedDebt) => {
     if (!debt.toPaymentHandle) {
-      Alert.alert('No UPI ID', 'This user has not added a UPI ID yet.');
+      dialog.showWarning('No UPI ID', 'This user has not added a UPI ID yet.');
       return;
     }
 
@@ -194,7 +191,7 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       await Linking.openURL(upiUrl);
     } catch (e) {
       console.log('UPI Error:', e);
-      Alert.alert(
+      dialog.showAlert(
         'Pay via UPI',
         `Payee: ${debt.toName}\nUPI ID: ${cleanHandle}\nAmount: ${formatCurrency(debt.amount)}\n\n(No UPI app detected or could not open automatically)`
       );
@@ -218,19 +215,19 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       });
       
       if (isOtherOwesMe) {
-        Alert.alert(
+        dialog.showSuccess(
           'Settled Successfully',
           `Balance with ${debt.fromName} has been marked as settled.`
         );
       } else {
-        Alert.alert(
+        dialog.showSuccess(
           'Settlement Request Sent',
           `A settlement request has been sent to ${debt.toName}. The balance will be marked settled once they confirm receipt.`
         );
       }
       showSettleUpInterstitial();
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to record settlement.');
+      dialog.showError('Error', 'Failed to record settlement.');
     } finally {
       setSettlingId(null);
     }
@@ -241,14 +238,14 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     try {
       const allowed = await canSendReminder(debt.fromUserId, groupId);
       if (!allowed) {
-        Alert.alert('Reminder Sent', 'Next reminder available in 24 hours.');
+        dialog.showWarning('Reminder Sent', 'Next reminder available in 24 hours.');
         return;
       }
 
       await sendPaymentReminder(debt.fromUserId, groupId, group?.name || 'Group', debt.amount);
-      Alert.alert('Reminder Sent', `Notification sent to ${debt.fromName}.`);
+      dialog.showSuccess('Reminder Sent', `Notification sent to ${debt.fromName}.`);
     } catch (error: any) {
-      Alert.alert('Error', 'Could not send reminder.');
+      dialog.showError('Error', 'Could not send reminder.');
     } finally {
       setRemindingId(null);
     }

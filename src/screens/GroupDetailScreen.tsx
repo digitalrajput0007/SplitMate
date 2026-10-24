@@ -37,6 +37,7 @@ import {
   UserProfile,
 } from '../services/firestoreService';
 import { simplifyDebts } from '../services/debtSimplifier';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -775,22 +776,22 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
               </Text>
             </View>
           ) : displayedExpenses.length === 0 ? (
-            <View
-              style={[
-                styles.emptyCard,
-                {
-                  backgroundColor: colors.surfaceContainerLowest,
-                  borderColor: colors.outlineVariant,
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
-                <MaterialIcons name="receipt-long" size={38} color={colors.outline} />
-              </View>
-              <Text style={[styles.emptyText, { color: colors.onSurfaceVariant }]}>
-                {selectedMemberId && selectedMemberId !== 'all'
-                  ? `No expenses paid by ${
+            <EmptyStateIllustration
+              type="transactions"
+              title={
+                selectedMemberId && selectedMemberId !== 'all'
+                  ? `No Expenses by ${
+                      selectedMemberId === currentUid
+                        ? 'You'
+                        : memberProfilesMap.get(selectedMemberId)?.name || 'Member'
+                    }`
+                  : selectedMonth === 'ALL'
+                  ? 'No Expenses Added Yet'
+                  : `No Expenses for ${formatBillingMonthLabel(selectedMonth)}`
+              }
+              description={
+                selectedMemberId && selectedMemberId !== 'all'
+                  ? `No recorded expenses paid by ${
                       selectedMemberId === currentUid
                         ? 'you'
                         : memberProfilesMap.get(selectedMemberId)?.name || 'this member'
@@ -800,37 +801,26 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                         : formatBillingMonthLabel(selectedMonth)
                     }.`
                   : selectedMonth === 'ALL'
-                  ? 'No expenses added yet.'
-                  : `No expenses found for ${formatBillingMonthLabel(selectedMonth)}.`}
-              </Text>
-              {selectedMemberId && selectedMemberId !== 'all' ? (
-                <TouchableOpacity
-                  style={[styles.emptyBtn, { backgroundColor: colors.primaryFixed }]}
-                  onPress={() => setSelectedMemberId('all')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.emptyBtnText, { color: colors.primary }]}>
-                    View All Members
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.emptyBtn, { backgroundColor: colors.primaryFixed }]}
-                  onPress={() =>
-                    navigation.navigate('AddExpense', {
-                      groupId,
-                      groupName,
-                      initialBillingMonth: selectedMonth === 'ALL' ? undefined : selectedMonth,
-                    })
-                  }
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.emptyBtnText, { color: colors.primary }]}>
-                    Add Expense
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
+                  ? 'Start sharing by adding the first bill, grocery, or trip expense.'
+                  : `No expenses have been recorded for ${formatBillingMonthLabel(selectedMonth)}.`
+              }
+              actionLabel={
+                selectedMemberId && selectedMemberId !== 'all'
+                  ? 'View All Members'
+                  : 'Add Expense'
+              }
+              onActionPress={() => {
+                if (selectedMemberId && selectedMemberId !== 'all') {
+                  setSelectedMemberId('all');
+                } else {
+                  navigation.navigate('AddExpense', {
+                    groupId,
+                    groupName,
+                    initialBillingMonth: selectedMonth === 'ALL' ? undefined : selectedMonth,
+                  });
+                }
+              }}
+            />
           ) : (
             <View style={styles.expensesListWrapper}>
               {displayedExpenses.map((item, index) => {

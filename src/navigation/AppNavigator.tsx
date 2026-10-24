@@ -12,9 +12,9 @@ import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
 import { addSentryBreadcrumb, routingInstrumentation } from '../config/sentry';
 
-// Screens
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SplashScreen from '../screens/SplashScreen';
-import OnboardingScreen from '../screens/OnboardingScreen';
+import OnboardingScreen, { ONBOARDING_COMPLETED_KEY } from '../screens/OnboardingScreen';
 import SignInScreen from '../screens/SignInScreen';
 import HomeScreen from '../screens/HomeScreen';
 import EmailVerificationScreen from '../screens/EmailVerificationScreen';
@@ -173,6 +173,18 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
   const [loadingProfile, setLoadingProfile] = React.useState(false);
   const [user, setUser] = React.useState<User | null>(null);
   const [userStatus, setUserStatus] = React.useState<{ isVerified: boolean; hasProfile: boolean } | null>(null);
+  const [hasSeenOnboarding, setHasSeenOnboarding] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    // Check if user has already seen first-time onboarding
+    AsyncStorage.getItem(ONBOARDING_COMPLETED_KEY)
+      .then((val) => {
+        setHasSeenOnboarding(val === 'true');
+      })
+      .catch(() => {
+        setHasSeenOnboarding(false);
+      });
+  }, []);
 
   React.useEffect(() => {
     // Register global notification listeners for deep-linking
@@ -272,7 +284,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
     };
   }, []);
 
-  if (initializing || loadingProfile || security.isLoading) {
+  if (initializing || loadingProfile || security.isLoading || hasSeenOnboarding === null) {
     return (
       <>
         <AppLoadingScreen />
@@ -293,7 +305,9 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
   };
 
   const getInitialRouteName = () => {
-    if (!user) return "SignIn";
+    if (!user) {
+      return hasSeenOnboarding ? "SignIn" : "Onboarding";
+    }
     if (userStatus && !userStatus.hasProfile) return "ProfileSetup";
     return "MainTabs";
   };

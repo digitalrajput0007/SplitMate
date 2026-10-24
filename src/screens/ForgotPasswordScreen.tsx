@@ -16,6 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { sendOTPEmailHTTP, resetPassword } from '../services/authService';
 import { ENABLE_OTP } from '../config/appConfig';
@@ -24,6 +25,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
 
 export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const initialEmail = route.params?.email || '';
   const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
@@ -32,7 +34,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const handleResetRequest = async () => {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      dialog.showWarning('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
@@ -48,10 +50,11 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
         await resetPassword(trimmedEmail);
         setLoading(false);
         setSuccessMessage('Password reset email sent! Please check your inbox.');
+        dialog.showSuccess('Reset Link Sent', 'Password reset email sent! Please check your inbox.');
       }
     } catch (error: any) {
       setLoading(false);
-      Alert.alert('Error', error.message || 'Failed to process request.');
+      dialog.showError('Email Not Found', error.message || 'No account found with this email address.');
     }
   };
 

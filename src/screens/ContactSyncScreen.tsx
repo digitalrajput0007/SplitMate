@@ -14,12 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { auth } from '../config/firebase';
 import {
   Contact,
   findUserByPhone,
   getAllUsersFromFirestore,
   getSavedUserContactsFromFirestore,
+  subscribeToUserContacts,
   UserProfile,
 } from '../services/firestoreService';
 import { ContactService, normalizePhoneNumber } from '../services/ContactService';
@@ -39,6 +41,7 @@ interface SyncContact extends Contact {
  */
 export default function ContactSyncScreen() {
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
   const navigation = useNavigation();
   const currentUser = auth.currentUser;
 
@@ -48,12 +51,41 @@ export default function ContactSyncScreen() {
   const [platformUsers, setPlatformUsers] = useState<UserProfile[]>([]);
   const [matchedProfiles, setMatchedProfiles] = useState<Record<string, UserProfile>>({});
   const [existingPhoneSet, setExistingPhoneSet] = useState<Set<string>>(new Set());
+  const [existingUidSet, setExistingUidSet] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'phonebook' | 'splitmate'>('phonebook');
 
   useEffect(() => {
     // Always load platform users for instant searching
     loadPlatformUsers();
   }, []);
+
+  // Real-time listener for current user's saved contacts
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    const unsub = subscribeToUserContacts(currentUser.uid, (contacts) => {
+      const phones = new Set<string>();
+      const uids = new Set<string>();
+      contacts.forEach(c => {
+        if (c.phone) {
+          const norm = normalizePhoneNumber(c.phone);
+          phones.add(norm);
+          phones.add(c.phone.replace(/[^0-9]/g, ''));
+        }
+        if (c.uid) uids.add(c.uid);
+      });
+      setExistingPhoneSet(phones);
+      setExistingUidSet(uids);
+
+      // Also mark deviceContacts as added if already synced
+      setDeviceContacts(prev => prev.map(dc => {
+        const norm = normalizePhoneNumber(dc.phone);
+        const isAdded = phones.has(norm) || phones.has(dc.phone.replace(/[^0-9]/g, '')) || (dc.uid ? uids.has(dc.uid) : false);
+        return isAdded !== dc.isAdded ? { ...dc, isAdded } : dc;
+      }));
+    });
+
+    return () => unsub();
+  }, [currentUser]);
 
   useEffect(() => {
     // Only load phonebook if on Phonebook tab and not already loaded
@@ -69,7 +101,16 @@ export default function ContactSyncScreen() {
         currentUser?.uid ? getSavedUserContactsFromFirestore(currentUser.uid) : Promise.resolve([]),
       ]);
 
-      const existingPhoneSet = new Set(existingContacts.map(c => c.phone));
+      const phones = new Set<string>();
+      const uids = new Set<string>();
+      existingContacts.forEach(c => {
+        if (c.phone) {
+          const norm = normalizePhoneNumber(c.phone);
+          phones.add(norm);
+          phones.add(c.phone.replace(/[^0-9]/g, ''));
+        }
+        if (c.uid) uids.add(c.uid);
+      });
       
       const platformMap: Record<string, UserProfile> = {};
       allUsers.forEach(u => {
@@ -81,7 +122,8 @@ export default function ContactSyncScreen() {
 
       setMatchedProfiles(platformMap);
       setPlatformUsers(allUsers);
-      setExistingPhoneSet(existingPhoneSet);
+      setExistingPhoneSet(phones);
+      setExistingUidSet(uids);
     } catch (e) {
       console.error('Error loading platform users', e);
     }
@@ -94,10 +136,12 @@ export default function ContactSyncScreen() {
       
       const uniqueMap = new Map<string, SyncContact>();
       rawContacts.forEach(c => {
+        const norm = normalizePhoneNumber(c.phone);
+        const isAlreadyAdded = existingPhoneSet.has(norm) || existingPhoneSet.has(c.phone.replace(/[^0-9]/g, ''));
         if (!uniqueMap.has(c.phone)) {
           uniqueMap.set(c.phone, {
             ...c,
-            isAdded: existingPhoneSet.has(c.phone)
+            isAdded: isAlreadyAdded
           });
         }
       });
@@ -117,11 +161,14 @@ export default function ContactSyncScreen() {
     try {
       const { success } = await ContactService.addContact(item.name, item.phone);
       if (success) {
-        setDeviceContacts(prev => prev.map(c => c.phone === item.phone ? { ...c, isAdded: true } : c));
-        Alert.alert('Success', `${item.name} is now in your contacts.`);
+        const norm = normalizePhoneNumber(item.phone);
+        setExistingPhoneSet(prev => new Set(prev).add(norm).add(item.phone.replace(/[^0-9]/g, '')));
+        if (item.uid) setExistingUidSet(prev => new Set(prev).add(item.uid!));
+        setDeviceContacts(prev => prev.map(c => (c.phone === item.phone || normalizePhoneNumber(c.phone) === norm) ? { ...c, isAdded: true } : c));
+        dialog.showSuccess('Contact Added', `${item.name} is now added to your contacts.`);
       }
     } catch (e) {
-      Alert.alert('Error', 'Failed to add contact');
+      dialog.showError('Error', 'Failed to add contact. Please try again.');
     }
   };
 
@@ -171,6 +218,10 @@ export default function ContactSyncScreen() {
 
       return list.map(u => {
         const phoneClean = u.mobile ? normalizePhoneNumber(u.mobile) : '';
+        const phoneRaw = u.mobile ? u.mobile.replace(/[^0-9]/g, '') : '';
+        const isAdded = (phoneClean && existingPhoneSet.has(phoneClean)) ||
+                        (phoneRaw && existingPhoneSet.has(phoneRaw)) ||
+                        (u.uid ? existingUidSet.has(u.uid) : false);
         return {
           name: u.name,
           phone: phoneClean || (u.email || ''),
@@ -178,16 +229,26 @@ export default function ContactSyncScreen() {
           uid: u.uid,
           photoUrl: u.photoUrl,
           photoThumbnailUrl: u.photoThumbnailUrl,
-          isAdded: phoneClean ? existingPhoneSet.has(phoneClean) : false,
+          isAdded,
           isSplitmateUser: true
         } as SyncContact;
       }).filter(u => u.uid !== currentUser?.uid).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
-  }, [deviceContacts, searchQuery, matchedProfiles, activeTab, platformUsers, existingPhoneSet]);
+  }, [deviceContacts, searchQuery, matchedProfiles, activeTab, platformUsers, existingPhoneSet, existingUidSet, currentUser]);
 
   const renderItem = useCallback(({ item }: { item: SyncContact & { isSplitmateUser?: boolean } }) => {
-    const platformUser = matchedProfiles[item.phone];
+    const platformUser = matchedProfiles[item.phone] || (item.uid ? platformUsers.find(u => u.uid === item.uid) : null);
     const isOnPlatform = item.isSplitmateUser ? true : !!platformUser;
+
+    const normPhone = item.phone ? normalizePhoneNumber(item.phone) : '';
+    const rawPhone = item.phone ? item.phone.replace(/[^0-9]/g, '') : '';
+    const isContactAdded = Boolean(
+      item.isAdded ||
+      (normPhone && existingPhoneSet.has(normPhone)) ||
+      (rawPhone && existingPhoneSet.has(rawPhone)) ||
+      (item.uid && existingUidSet.has(item.uid)) ||
+      (platformUser?.uid && existingUidSet.has(platformUser.uid))
+    );
 
     // Priority Logic:
     // 1. Platform Photo (from Firestore profile)
@@ -208,9 +269,17 @@ export default function ContactSyncScreen() {
         />
 
         <View style={styles.contactInfo}>
-          <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>
-            {platformUser?.name || item.name || item.phone}
-          </Text>
+          <View style={styles.nameRow}>
+            <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>
+              {platformUser?.name || item.name || item.phone}
+            </Text>
+            {isContactAdded && (
+              <View style={[styles.addedInlineBadge, { backgroundColor: isDark ? '#064E3B' : '#DCFCE7' }]}>
+                <MaterialIcons name="check" size={12} color={isDark ? '#34D399' : '#15803D'} />
+                <Text style={[styles.addedInlineText, { color: isDark ? '#34D399' : '#15803D' }]}>Added</Text>
+              </View>
+            )}
+          </View>
           <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
           {isOnPlatform && (
             <View style={[styles.platformBadge, { backgroundColor: colors.primary }]}>
@@ -220,16 +289,17 @@ export default function ContactSyncScreen() {
         </View>
 
         <View style={styles.actions}>
-          {item.isAdded ? (
-            <View style={styles.addedState}>
-              <MaterialIcons name="check-circle" size={24} color={colors.primary} />
+          {isContactAdded ? (
+            <View style={[styles.addedBtnPill, { backgroundColor: isDark ? '#064E3B' : '#DCFCE7', borderColor: isDark ? '#059669' : '#86EFAC' }]}>
+              <MaterialIcons name="check" size={16} color={isDark ? '#34D399' : '#15803D'} />
+              <Text style={[styles.addedBtnText, { color: isDark ? '#34D399' : '#15803D' }]}>Added</Text>
             </View>
           ) : isOnPlatform ? (
             <TouchableOpacity
               style={[styles.addBtn, { backgroundColor: colors.primary }]}
               onPress={() => handleAdd(item)}
             >
-              <MaterialIcons name="add" size={20} color={colors.onPrimary} />
+              <MaterialIcons name="add" size={18} color={colors.onPrimary} />
               <Text style={[styles.addBtnText, { color: colors.onPrimary }]}>Add</Text>
             </TouchableOpacity>
           ) : (
@@ -243,7 +313,7 @@ export default function ContactSyncScreen() {
         </View>
       </View>
     );
-  }, [colors, matchedProfiles]);
+  }, [colors, matchedProfiles, platformUsers, existingPhoneSet, existingUidSet, isDark]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -335,9 +405,14 @@ const styles = StyleSheet.create({
   contactSub: { ...Typography.bodySm, opacity: 0.6, marginTop: 2 },
   platformBadge: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
   platformBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  addedInlineBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  addedInlineText: { fontSize: 10, fontWeight: '700' },
   actions: { minWidth: 80, alignItems: 'flex-end' },
   addBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: BorderRadius.md, gap: 4 },
   addBtnText: { ...Typography.labelLg, fontWeight: '700' },
+  addedBtnPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: BorderRadius.md, borderWidth: 1, gap: 4 },
+  addedBtnText: { fontSize: 12, fontWeight: '700' },
   inviteBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: BorderRadius.md, borderWidth: 1 },
   inviteBtnText: { ...Typography.labelLg, fontWeight: '700' },
   addedState: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

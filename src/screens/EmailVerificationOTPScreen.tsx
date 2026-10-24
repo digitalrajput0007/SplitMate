@@ -17,6 +17,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows, Colors } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { useSecurity } from '../context/SecurityContext';
+import { useDialog } from '../context/DialogContext';
 import { verifyOTP, sendOTPEmailHTTP, signOutUser, signUpWithEmail, signInWithEmail, warmUpOTPService, resolveAuthenticatedUser } from '../services/authService';
 import { setUserEmailVerifiedInFirestore } from '../services/firestoreService';
 import { auth } from '../config/firebase';
@@ -29,6 +30,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
   const { email = '' } = route.params || {};
   const { colors } = useTheme();
   const { setIsUnlocked } = useSecurity();
+  const dialog = useDialog();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -123,7 +125,7 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
   const handleResend = async () => {
     setErrorMessage('');
     if (!email) {
-      Alert.alert('Error', 'No email address found.');
+      dialog.showError('Error', 'No email address found.');
       return;
     }
     setResending(true);
@@ -131,10 +133,10 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
       const isSignup = !!(route.params as any)?.password;
       await sendOTPEmailHTTP(email, isSignup ? 'signup' : 'none');
       setTimer(30);
-      Alert.alert('Sent', 'A new code has been sent to your email.');
+      dialog.showSuccess('Sent', 'A new code has been sent to your email.');
     } catch (error: any) {
       console.error("Resend OTP error:", error);
-      Alert.alert('Resend Failed', error.message || 'Failed to resend code. Please try again.');
+      dialog.showError('Resend Failed', error.message || 'Failed to resend code. Please try again.');
     } finally {
       setResending(false);
     }
@@ -146,25 +148,19 @@ export default function EmailVerificationOTPScreen({ navigation, route }: Props)
     } else {
       // If we're at the root of this stack (unverified user state),
       // "Back" should probably sign out the user so they can try a different email.
-      Alert.alert(
+      dialog.showConfirm(
         'Cancel Verification',
         'Are you sure you want to cancel and go back to sign in? This will sign you out.',
-        [
-          { text: 'Wait', style: 'cancel' },
-          {
-            text: 'Yes, Sign Out',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                console.log("[Auth] Manually signing out from OTP screen...");
-                await signOutUser();
-                // Forces AppNavigator to reset
-              } catch (e) {
-                console.error("[Auth] Sign out error:", e);
-              }
-            }
+        async () => {
+          try {
+            console.log("[Auth] Manually signing out from OTP screen...");
+            await signOutUser();
+            // Forces AppNavigator to reset
+          } catch (e) {
+            console.error("[Auth] Sign out error:", e);
           }
-        ]
+        },
+        { confirmText: 'Yes, Sign Out', cancelText: 'Wait', destructive: true }
       );
     }
   };

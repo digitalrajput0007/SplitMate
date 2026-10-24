@@ -24,12 +24,14 @@ import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
 export default function ProfileEditScreen({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
 
   const [name, setName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -86,12 +88,12 @@ export default function ProfileEditScreen({ navigation }: Props) {
   const handleSave = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      Alert.alert('Validation Error', 'Full Name cannot be empty');
+      dialog.showWarning('Validation Error', 'Full Name cannot be empty');
       return;
     }
 
     if (!/^[A-Za-z]+(?:\s[A-Za-z]+)*$/.test(trimmedName)) {
-      Alert.alert(
+      dialog.showWarning(
         'Invalid Name',
         'Name can only contain letters and spaces. Numbers, dots, and special characters are not allowed.'
       );
@@ -115,11 +117,12 @@ export default function ProfileEditScreen({ navigation }: Props) {
           profileCompleted: true,
         });
 
-        Alert.alert('Success', 'Profile updated successfully');
-        navigation.goBack();
+        dialog.showSuccess('Success', 'Profile updated successfully', () => {
+          navigation.goBack();
+        });
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update profile');
+      dialog.showError('Error', e.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }

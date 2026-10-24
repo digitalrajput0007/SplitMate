@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { verifyOTP, sendOTPEmailHTTP } from '../services/authService';
 import { OTPInputBlocks } from '../components';
 
@@ -25,6 +26,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'OTPScreen'>;
 export default function OTPScreen({ navigation, route }: Props) {
   const { email = '' } = route.params || {};
   const { colors } = useTheme();
+  const dialog = useDialog();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,7 +45,7 @@ export default function OTPScreen({ navigation, route }: Props) {
 
   const handleVerify = async () => {
     if (otp.length !== 6) {
-      Alert.alert('Invalid Code', 'Please enter the 6-digit code sent to your email.');
+      dialog.showWarning('Invalid Code', 'Please enter the 6-digit code sent to your email.');
       return;
     }
 
@@ -57,7 +59,7 @@ export default function OTPScreen({ navigation, route }: Props) {
     } catch (error: any) {
       setLoading(false);
       console.error('[UI] Verification failed:', error);
-      Alert.alert('Verification Failed', error.message || 'Invalid or expired OTP.');
+      dialog.showError('Verification Failed', error.message || 'Invalid or expired OTP.');
     }
   };
 
@@ -67,9 +69,9 @@ export default function OTPScreen({ navigation, route }: Props) {
     try {
       await sendOTPEmailHTTP(email);
       setTimer(30);
-      Alert.alert('Sent', 'A new code has been sent to your email.');
+      dialog.showSuccess('Sent', 'A new code has been sent to your email.');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to resend code.');
+      dialog.showError('Error', error.message || 'Failed to resend code.');
     } finally {
       setResending(false);
     }

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ActivityIndicator, Alert, Touchab
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { PinPad } from '../components/PinPad';
 import { verifyPin } from '../services/appLockService';
 import { authenticateBiometric, checkBiometricHardware, checkBiometricEnrolled } from '../services/biometricService';
@@ -16,6 +17,7 @@ enum AuthState {
 
 export default function UnlockScreen() {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const { lockSettings, setIsUnlocked } = useSecurity();
   const [authState, setAuthState] = useState<AuthState>(AuthState.INITIALIZING);
   const [pin, setPin] = useState('');
@@ -75,7 +77,7 @@ export default function UnlockScreen() {
         if (isValid) {
           setIsUnlocked(true);
         } else {
-          Alert.alert('Incorrect PIN', 'Please try again.');
+          dialog.showError('Incorrect PIN', 'Please try again.');
           setPin('');
         }
       }

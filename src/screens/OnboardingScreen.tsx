@@ -1,203 +1,318 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Dimensions,
-  Image,
+  FlatList,
+  TouchableOpacity,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography } from '../theme';
+import { useTheme } from '../context/ThemeContext';
+import AppLogo from '../components/AppLogo';
+import {
+  OnboardingIllustration,
+  SplitMateIllustrationType,
+} from '../components/OnboardingIllustration';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
+export const ONBOARDING_COMPLETED_KEY = '@splitmate_onboarding_completed_v1';
 
 const { width } = Dimensions.get('window');
 
-const SLIDES = [
+interface OnboardingSlide {
+  id: string;
+  illustrationType: SplitMateIllustrationType;
+  badge: string;
+  badgeColor: string;
+  badgeBg: string;
+  headline: string;
+  description: string;
+}
+
+const SLIDES: OnboardingSlide[] = [
   {
     id: '1',
-    title: 'Split Effortlessly',
-    description: 'Add expenses in seconds and split equal or custom amounts with roommates and friends.',
-    icon: '📊',
-    color: '#3F51B5',
+    illustrationType: 'split',
+    badge: 'EFFORTLESS SPLITTING',
+    badgeColor: '#0284C7',
+    badgeBg: '#E0F2FE',
+    headline: 'Split expenses in seconds',
+    description: 'Add bills easily and split equally or with custom amounts among friends and roommates.',
   },
   {
     id: '2',
-    title: 'Instant UPI Settlement',
-    description: 'Settle debts directly with 1-tap Google Pay, PhonePe, or Paytm deep linking.',
-    icon: '💸',
-    color: '#4C56AF',
+    illustrationType: 'settle',
+    badge: '1-TAP UPI SETTLEMENT',
+    badgeColor: '#059669',
+    badgeBg: '#D1FAE5',
+    headline: 'Settle debts instantly',
+    description: 'Direct 1-tap deep links to Google Pay, PhonePe, or Paytm with automatic payment verification.',
   },
   {
     id: '3',
-    title: 'Group Expense Tracking',
-    description: 'Smart algorithms minimize the total number of transactions across all members.',
-    icon: '🤝',
-    color: '#24389C',
+    illustrationType: 'groups',
+    badge: 'SMART GROUP TRACKING',
+    badgeColor: '#4F46E5',
+    badgeBg: '#EEF2FF',
+    headline: 'Minimize group transactions',
+    description: 'Intelligent balance algorithms simplify debts across all members so you settle with minimal payments.',
   },
 ];
 
+type Props = NativeStackScreenProps<RootStackParamList, 'Onboarding'>;
+
 export default function OnboardingScreen({ navigation }: Props) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  const { colors, isDark } = useTheme();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const flatListRef = useRef<FlatList>(null);
+  const insets = useSafeAreaInsets();
+
+  const handleFinish = async () => {
+    try {
+      await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+    } catch (e) {
+      // Storage fallback
+    }
+    navigation.replace('SignIn');
+  };
 
   const handleNext = () => {
-    if (activeIndex < SLIDES.length - 1) {
-      setActiveIndex(activeIndex + 1);
+    if (currentIndex < SLIDES.length - 1) {
+      flatListRef.current?.scrollToIndex({
+        index: currentIndex + 1,
+        animated: true,
+      });
+      setCurrentIndex(currentIndex + 1);
     } else {
-      navigation.navigate('SignIn');
+      handleFinish();
     }
   };
 
-  const currentSlide = SLIDES[activeIndex];
+  const handleSkip = () => {
+    handleFinish();
+  };
+
+  const onMomentumScrollEnd = (e: any) => {
+    const offsetX = e.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / width);
+    setCurrentIndex(index);
+  };
+
+  const isLastSlide = currentIndex === SLIDES.length - 1;
+
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 24 : 12) + Spacing.sm;
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + Spacing.md;
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Top Header / Skip */}
-      <View style={styles.header}>
-        <Text style={styles.brandTitle}>SplitMate</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SignIn')}>
-          <Text style={styles.skipText}>Skip</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Main Slide Card */}
-      <View style={styles.slideCardContainer}>
-        <View style={styles.slideCard}>
-          <View style={[styles.illustrationBox, { backgroundColor: currentSlide.color }]}>
-            <Text style={styles.illustrationEmoji}>{currentSlide.icon}</Text>
-          </View>
-          <Text style={styles.title}>{currentSlide.title}</Text>
-          <Text style={styles.description}>{currentSlide.description}</Text>
+    <View style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      {/* Top Header with Brand and Skip button */}
+      <View style={[styles.topHeader, { paddingTop: topPadding }]}>
+        <View style={styles.brandRow}>
+          <AppLogo size={36} />
+          <Text style={[styles.brandText, { color: colors.onBackground }]}>SplitMate</Text>
         </View>
+
+        {!isLastSlide ? (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={handleSkip}
+            style={styles.skipButton}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={[styles.skipText, { color: colors.onSurfaceVariant }]}>Skip</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
       </View>
 
-      {/* Footer Indicators & CTA */}
-      <View style={styles.footer}>
+      {/* Swipeable Carousel */}
+      <FlatList
+        ref={flatListRef}
+        data={SLIDES}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={onMomentumScrollEnd}
+        renderItem={({ item }) => (
+          <View style={[styles.slideContainer, { width }]}>
+            {/* Interactive Vector Illustration */}
+            <View style={styles.illustrationWrapper}>
+              <OnboardingIllustration type={item.illustrationType} />
+              <View style={[styles.badgePill, { backgroundColor: item.badgeBg }]}>
+                <Text style={[styles.badgeText, { color: item.badgeColor }]}>{item.badge}</Text>
+              </View>
+            </View>
+
+            {/* Slide Text Content */}
+            <View style={styles.textSection}>
+              <Text style={[styles.headline, { color: colors.onBackground }]}>
+                {item.headline}
+              </Text>
+              <Text style={[styles.description, { color: colors.onSurfaceVariant }]}>
+                {item.description}
+              </Text>
+            </View>
+          </View>
+        )}
+      />
+
+      {/* Bottom Controls Area */}
+      <View style={[styles.bottomArea, { paddingBottom: bottomPadding }]}>
         {/* Pagination Dots */}
-        <View style={styles.dotsRow}>
-          {SLIDES.map((_, index) => (
+        <View style={styles.paginationRow}>
+          {SLIDES.map((_, idx) => (
             <TouchableOpacity
-              key={index}
-              onPress={() => setActiveIndex(index)}
+              key={idx}
+              activeOpacity={0.8}
+              onPress={() => {
+                flatListRef.current?.scrollToIndex({ index: idx, animated: true });
+                setCurrentIndex(idx);
+              }}
               style={[
                 styles.dot,
-                index === activeIndex && styles.activeDot,
+                {
+                  backgroundColor: idx === currentIndex ? colors.primary : colors.outlineVariant,
+                  width: idx === currentIndex ? 24 : 8,
+                },
               ]}
             />
           ))}
         </View>
 
-        {/* Primary Action Button */}
+        {/* Action Button */}
         <TouchableOpacity
-          style={styles.nextButton}
-          onPress={handleNext}
           activeOpacity={0.85}
+          onPress={handleNext}
+          style={[
+            styles.actionButton,
+            { backgroundColor: colors.primary },
+          ]}
         >
-          <Text style={styles.nextButtonText}>
-            {activeIndex === SLIDES.length - 1 ? 'Get Started' : 'Next'}
+          <Text style={[styles.actionButtonText, { color: colors.onPrimary }]}>
+            {isLastSlide ? 'Get Started' : 'Next'}
           </Text>
+          <MaterialIcons
+            name={isLastSlide ? 'check' : 'arrow-forward'}
+            size={20}
+            color={colors.onPrimary}
+            style={{ marginLeft: 6 }}
+          />
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: Colors.background,
-    justifyContent: 'space-between',
   },
-  header: {
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.containerMargin,
-    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Platform.OS === 'android' ? Spacing.lg : Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  brandTitle: {
-    ...Typography.titleMd,
-    color: Colors.primary,
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brandText: {
+    ...Typography.titleLg,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  skipButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
   skipText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
+    fontWeight: '600',
   },
-  slideCardContainer: {
+  slideContainer: {
     flex: 1,
-    alignItems: 'center',
+    paddingHorizontal: Spacing.xl,
     justifyContent: 'center',
-    paddingHorizontal: Spacing.containerMargin,
-  },
-  slideCard: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
     alignItems: 'center',
-    ...Shadows.card,
-    borderWidth: 1,
-    borderColor: Colors.divider,
   },
-  illustrationBox: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  illustrationWrapper: {
+    width: width - 48,
+    height: 250,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.xl,
   },
-  illustrationEmoji: {
-    fontSize: 56,
+  badgePill: {
+    marginTop: Spacing.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
   },
-  title: {
-    ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  textSection: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+  },
+  headline: {
+    ...Typography.headlineLg,
+    fontWeight: '800',
     textAlign: 'center',
-    marginBottom: Spacing.sm,
+    letterSpacing: -0.5,
+    marginBottom: 12,
+    lineHeight: 34,
   },
   description: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
+    maxWidth: 320,
   },
-  footer: {
-    paddingHorizontal: Spacing.containerMargin,
-    paddingBottom: Spacing.xl,
-    gap: Spacing.lg,
+  bottomArea: {
+    paddingHorizontal: Spacing.xl,
+    paddingBottom: Platform.OS === 'android' ? 48 : Spacing.xxl,
+    paddingTop: Spacing.md,
   },
-  dotsRow: {
+  paginationRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 8,
+    marginBottom: Spacing.xl,
   },
   dot: {
-    width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.outlineVariant,
   },
-  activeDot: {
-    width: 24,
-    backgroundColor: Colors.primary,
-  },
-  nextButton: {
-    width: '100%',
-    backgroundColor: Colors.primary,
+  actionButton: {
+    height: 54,
     borderRadius: BorderRadius.md,
-    paddingVertical: 14,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    ...Shadows.button,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  nextButtonText: {
-    ...Typography.titleMd,
-    color: Colors.onPrimary,
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

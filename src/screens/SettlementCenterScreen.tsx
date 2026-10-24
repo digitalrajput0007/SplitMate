@@ -17,6 +17,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { formatCurrency } from '../services/currencyService';
 import { SmartImage } from '../components/SmartImage';
 import {
@@ -180,46 +181,43 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   const totalOwed = useMemo(() => youAreOwed.reduce((sum, d) => sum + d.amount, 0), [youAreOwed]);
   const netBalance = totalOwed - totalOwe;
 
+  const dialog = useDialog();
+
   const handleRecordSettlement = async (debt: GroupDebt) => {
     const isOtherOwesMe = debt.toUserId === currentUid;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Mark as Settled',
       `Confirm that ${formatCurrency(debt.amount)} was paid between ${debt.fromName} and ${debt.toName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            try {
-              await addSettlementToFirestore({
-                groupId: debt.groupId,
-                fromUserId: debt.fromUserId,
-                fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
-                toUserId: debt.toUserId,
-                toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
-                amount: debt.amount,
-                status: isOtherOwesMe ? 'completed' : 'pending',
-              });
+      async () => {
+        try {
+          await addSettlementToFirestore({
+            groupId: debt.groupId,
+            fromUserId: debt.fromUserId,
+            fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
+            toUserId: debt.toUserId,
+            toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
+            amount: debt.amount,
+            status: isOtherOwesMe ? 'completed' : 'pending',
+          });
 
-              if (isOtherOwesMe) {
-                Alert.alert(
-                  'Settled Successfully',
-                  `Balance with ${debt.fromName} in ${debt.groupName} has been marked as settled.`
-                );
-              } else {
-                Alert.alert(
-                  'Settlement Request Sent',
-                  `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
-                );
-              }
-              loadData();
-            } catch (e) {
-              Alert.alert('Error', 'Failed to record settlement.');
-            }
-          },
-        },
-      ]
+          if (isOtherOwesMe) {
+            dialog.showSuccess(
+              'Settled Successfully',
+              `Balance with ${debt.fromName} in ${debt.groupName} has been marked as settled.`
+            );
+          } else {
+            dialog.showSuccess(
+              'Settlement Request Sent',
+              `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
+            );
+          }
+          loadData();
+        } catch (e) {
+          dialog.showError('Error', 'Failed to record settlement.');
+        }
+      },
+      { confirmText: 'Confirm' }
     );
   };
 
@@ -227,13 +225,13 @@ export default function SettlementCenterScreen({ navigation }: Props) {
     try {
       const allowed = await canSendReminder(debt.fromUserId, debt.groupId);
       if (!allowed) {
-        Alert.alert('Reminder Sent', 'Next reminder available in 24 hours.');
+        dialog.showWarning('Reminder Sent', 'Next reminder available in 24 hours.');
         return;
       }
       await sendPaymentReminder(debt.fromUserId, debt.groupId, debt.groupName, debt.amount);
-      Alert.alert('Success', `Reminder sent to ${debt.fromName}`);
+      dialog.showSuccess('Success', `Reminder sent to ${debt.fromName}`);
     } catch (e) {
-      Alert.alert('Error', 'Failed to send reminder.');
+      dialog.showError('Error', 'Failed to send reminder.');
     }
   };
 
