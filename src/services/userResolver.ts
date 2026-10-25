@@ -27,6 +27,12 @@ const activeResolutions = new Map<string, Promise<ResolveUserResult>>();
 let lastNavigatedRoute: string | null = null;
 let lastNavigatedTimestamp = 0;
 
+export function resetResolverNavigationState() {
+  lastNavigatedRoute = null;
+  lastNavigatedTimestamp = 0;
+  activeResolutions.clear();
+}
+
 export interface ResolveOptions {
   navigation?: any;
   fromGoogle?: boolean;

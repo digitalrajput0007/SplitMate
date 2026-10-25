@@ -38,6 +38,7 @@ import {
 } from '../services/firestoreService';
 import { simplifyDebts } from '../services/debtSimplifier';
 import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -942,6 +943,8 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
         )}
+
+        <BannerAdSlot />
       </ScrollView>
 
       {/* Member Filter Bottom Sheet Modal */}

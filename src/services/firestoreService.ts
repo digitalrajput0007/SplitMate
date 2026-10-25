@@ -262,6 +262,7 @@ export interface UserProfile {
   mobile?: string;
   emailVerified?: boolean;
   profileCompleted?: boolean;
+  authProvider?: 'password' | 'google';
   preferences?: {
     groupInvites?: boolean;
     expenseAlerts?: boolean;
@@ -464,6 +465,7 @@ export const saveUserProfileToFirestore = async (profile: Partial<UserProfile> &
       mobile: profile.mobile,
       emailVerified: profile.emailVerified,
       profileCompleted: profile.profileCompleted,
+      authProvider: profile.authProvider,
       updatedAt: serverTimestamp(),
     };
 

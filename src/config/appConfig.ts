@@ -13,7 +13,7 @@ export const ADS_ENABLED = true;
 export const ENABLE_ADS = true;
 export const ADMOB_BANNER_UNIT_ID = 'ca-app-pub-1680182248071758/2952937057';
 export const ADMOB_INTERSTITIAL_UNIT_ID = 'ca-app-pub-1680182248071758/9072367701';
-export const INTERSTITIAL_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes strict cooldown
+export const INTERSTITIAL_COOLDOWN_MS = __DEV__ ? 30 * 1000 : 2 * 60 * 1000; // 30s in dev, 2 min in prod
 
 export const ANDROID_PACKAGE_NAME = 'com.splitmate.newapp';
 export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.splitmate.newapp';

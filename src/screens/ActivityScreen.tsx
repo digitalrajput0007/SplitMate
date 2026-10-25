@@ -27,6 +27,7 @@ import {
 } from '../services/firestoreService';
 import { SmartImage } from '../components/SmartImage';
 import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 
 export default function ActivityScreen() {
   const navigation = useNavigation<any>();
@@ -175,6 +176,7 @@ export default function ActivityScreen() {
             actionLabel="View Groups"
             onActionPress={() => navigation.navigate('GroupsTab')}
           />
+          <BannerAdSlot />
         </ScrollView>
       ) : (
         <FlatList
@@ -182,6 +184,7 @@ export default function ActivityScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderActivityItem}
           ListHeaderComponent={HeaderComponent}
+          ListFooterComponent={<BannerAdSlot />}
           contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
           showsVerticalScrollIndicator={false}
           initialNumToRender={10}

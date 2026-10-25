@@ -189,6 +189,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 
       // 3. Save to Firestore
       if (activeUser?.uid) {
+        const isGoogle = activeUser.providerData.some((p: any) => p.providerId === 'google.com') || route.params?.fromGoogle;
         await saveUserProfileToFirestore({
           uid: activeUser.uid,
           name: name.trim(),
@@ -200,6 +201,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           dob: formattedDob,
           mobile: fullMobile,
           profileCompleted: true,
+          authProvider: isGoogle ? 'google' : 'password',
         });
       }
       setSaving(false);

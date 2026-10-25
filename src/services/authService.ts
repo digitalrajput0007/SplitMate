@@ -31,9 +31,9 @@ import { deletePinHash } from "./secureStorageService";
 import { cleanupUserFromFirestore, clearUserProfileCache, setUserEmailVerifiedInFirestore } from "./firestoreService";
 import { setSentryUserContext, clearSentryUserContext, captureError } from "../config/sentry";
 import { TelemetryService } from "./telemetryService";
-import { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult } from "./userResolver";
+import { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult, resetResolverNavigationState } from "./userResolver";
 
-export { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult };
+export { resolveAuthenticatedUser, isProfileComplete, ResolveUserResult, resetResolverNavigationState };
 
 const functions = getFunctions(app, 'us-central1');
 
@@ -352,6 +352,7 @@ export const signUpWithEmail = async (email: string, pass: string): Promise<User
       {
         email: email.toLowerCase(),
         isVerified: true,
+        authProvider: 'password',
         createdAt: serverTimestamp(),
       },
       { merge: true }
@@ -421,10 +422,13 @@ export const signOutUser = async (): Promise<void> => {
   // 1. Invalidate and clear all cached profile data and active Firestore listeners
   clearUserProfileCache();
 
-  // 2. Clear Sentry user context
+  // 2. Clear resolver state & duplicate navigation tracking
+  resetResolverNavigationState();
+
+  // 3. Clear Sentry user context
   clearSentryUserContext();
 
-  // 3. Clear Google Sign-in session to force fresh picker on next sign-in
+  // 4. Clear Google Sign-in session to force fresh picker on next sign-in
   try {
     if (Platform.OS !== 'web') {
       await GoogleSignin.signOut();
@@ -433,7 +437,7 @@ export const signOutUser = async (): Promise<void> => {
     console.warn('[Auth] Error signing out GoogleSignin:', e);
   }
 
-  // 4. Sign out from Firebase Auth
+  // 5. Sign out from Firebase Auth
   await signOut(auth);
 };
 

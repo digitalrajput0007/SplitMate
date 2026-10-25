@@ -271,6 +271,18 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
         setLoadingProfile(false);
         if (initializing) setInitializing(false);
 
+        // Reset navigation to SignIn screen on sign out
+        if (navigationRef.isReady()) {
+          try {
+            navigationRef.resetRoot({
+              index: 0,
+              routes: [{ name: 'SignIn' as any }],
+            });
+          } catch (e) {
+            // Ignore if navigator is transitioning
+          }
+        }
+
         if (!isInitialized) {
           isInitialized = true;
           onReady?.();

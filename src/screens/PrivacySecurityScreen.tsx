@@ -316,8 +316,15 @@ export default function PrivacySecurityScreen() {
         <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Account Control</Text>
         <View style={[styles.cardGroup, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           <TouchableOpacity
-            style={styles.rowClickable}
+            style={[styles.rowClickable, isGoogleLinked && { opacity: 0.6 }]}
             onPress={() => {
+              if (isGoogleLinked) {
+                dialog.showAlert(
+                  'Password Not Required',
+                  'You signed in using your Google account. Your account authentication is managed securely by Google, so password reset is disabled.'
+                );
+                return;
+              }
               setModalErrorMessage('');
               setCurrentPassword('');
               setNewPassword('');
@@ -330,9 +337,15 @@ export default function PrivacySecurityScreen() {
           >
             <View style={{ flex: 1 }}>
               <Text style={[styles.rowTitle, { color: colors.onSurface }]}>Change Password</Text>
-              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>Update your account password</Text>
+              <Text style={[styles.rowSub, { color: colors.onSurfaceVariant }]}>
+                {isGoogleLinked ? 'Managed via Google (Disabled)' : 'Update your account password'}
+              </Text>
             </View>
-            <MaterialIcons name="chevron-right" size={24} color={colors.onSurfaceVariant} />
+            <MaterialIcons
+              name={isGoogleLinked ? 'lock-outline' : 'chevron-right'}
+              size={24}
+              color={colors.onSurfaceVariant}
+            />
           </TouchableOpacity>
 
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />

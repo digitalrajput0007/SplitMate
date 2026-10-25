@@ -27,8 +27,14 @@ import {
   sendOTPEmailHTTP,
   linkGoogleCredentialToExistingAccount,
   resolveAuthenticatedUser,
+  signOutUser,
 } from '../services/authService';
-import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
+import {
+  getUserProfileFromFirestore,
+  setUserEmailVerifiedInFirestore,
+  saveUserProfileToFirestore,
+  findUserByEmail,
+} from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
@@ -130,6 +136,14 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       if (isSignUp) {
+        // Prevent signing up if already registered with Google
+        const existingUser = await findUserByEmail(trimmedEmail);
+        if (existingUser && existingUser.authProvider === 'google') {
+          setLoading(false);
+          setErrorMessage('This email is already registered using Google Sign-In. Please sign in using "Continue with Google".');
+          return;
+        }
+
         if (ENABLE_OTP) {
           await sendOTPEmailHTTP(trimmedEmail, 'signup');
           setLoading(false);
@@ -149,6 +163,14 @@ export default function SignInScreen({ navigation }: Props) {
         }
         setLoading(false);
       } else {
+        // Check if user is registered with Google
+        const existingUser = await findUserByEmail(trimmedEmail);
+        if (existingUser && existingUser.authProvider === 'google') {
+          setLoading(false);
+          setErrorMessage('You created this account using Google Sign-In. Please use the "Continue with Google" button to sign in.');
+          return;
+        }
+
         const user = await signInWithEmail(trimmedEmail, password);
         setIsUnlocked(true);
         const resolveRes = await resolveAuthenticatedUser(user, { preventNavigation: true });
@@ -191,17 +213,27 @@ export default function SignInScreen({ navigation }: Props) {
 
       if (result.status === 'account_exists_with_different_credential') {
         setLoading(false);
-        setLinkEmail(result.email);
-        setLinkPendingCredential(result.pendingCredential);
-        setLinkGoogleName(result.googleName);
-        setLinkGooglePhoto(result.googlePhoto);
-        setLinkPassword('');
-        setLinkError('');
-        setLinkModalVisible(true);
+        setErrorMessage(
+          'An account with this email was registered using Email & Password. Please sign in with your email and password.'
+        );
         return;
       }
 
       if (result.status === 'success') {
+        const userEmail = result.user.email?.toLowerCase().trim();
+        if (userEmail) {
+          // Check if this user originally registered with password
+          const profile = await getUserProfileFromFirestore(result.user.uid);
+          if (profile && profile.authProvider === 'password') {
+            await signOutUser();
+            setLoading(false);
+            setErrorMessage(
+              'You registered this account using Email & Password. Please sign in using your email and password.'
+            );
+            return;
+          }
+        }
+
         setIsUnlocked(true);
 
         const resolveRes = await resolveAuthenticatedUser(result.user, {
@@ -539,6 +571,16 @@ export default function SignInScreen({ navigation }: Props) {
                     }
                     setResetLoading(true);
                     try {
+                      const existingUser = await findUserByEmail(resetEmail.trim());
+                      if (existingUser && existingUser.authProvider === 'google') {
+                        setResetLoading(false);
+                        dialog.showAlert(
+                          'Google Account',
+                          'This email is registered using Google Sign-In. It does not have a separate password. Please sign in using the "Continue with Google" button.'
+                        );
+                        return;
+                      }
+
                       await resetPassword(resetEmail.trim());
                       setResetSuccessMessage('Password reset email sent! Please check your inbox.');
                     } catch (e: any) {

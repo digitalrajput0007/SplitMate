@@ -104,20 +104,20 @@ export const canShowInterstitial = (): boolean => {
 };
 
 /**
- * Shows the interstitial ad after settle-up if cooldown has elapsed and ad is ready.
+ * Shows an interstitial ad if ready.
  * Always calls onClosed (or falls back immediately) so user flow is never blocked.
  */
-export const showSettleUpInterstitial = async (onClosed?: () => void) => {
+export const showInterstitialAd = async (onClosed?: () => void) => {
   if (!ADS_ENABLED) {
     if (onClosed) onClosed();
     return;
   }
 
-  // Check strict 15-minute cooldown
+  // Check cooldown
   const now = Date.now();
   if (now - lastInterstitialShowTime < INTERSTITIAL_COOLDOWN_MS) {
-    const remainingMins = Math.ceil((INTERSTITIAL_COOLDOWN_MS - (now - lastInterstitialShowTime)) / 60000);
-    console.log(`[AdMob] Interstitial cooldown active (~${remainingMins}m remaining), skipping.`);
+    const remainingSecs = Math.ceil((INTERSTITIAL_COOLDOWN_MS - (now - lastInterstitialShowTime)) / 1000);
+    console.log(`[AdMob] Interstitial cooldown active (~${remainingSecs}s remaining), skipping.`);
     if (onClosed) onClosed();
     return;
   }
@@ -151,11 +151,13 @@ export const showSettleUpInterstitial = async (onClosed?: () => void) => {
       if (onClosed) onClosed();
     }
   } else {
-    // If not ready, attempt preload for next time and continue immediately
+    // If not ready, preload for next time and continue immediately
     preloadInterstitial();
     if (onClosed) onClosed();
   }
 };
+
+export const showSettleUpInterstitial = showInterstitialAd;
 
 export const resetInterstitialSession = () => {
   lastInterstitialShowTime = 0;

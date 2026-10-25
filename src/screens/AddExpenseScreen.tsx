@@ -29,6 +29,7 @@ import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 
@@ -128,7 +129,9 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         });
       }
 
-      navigation.goBack();
+      showInterstitialAd(() => {
+        navigation.goBack();
+      });
     } catch (error: any) {
       console.error('Error adding expense:', error);
       dialog.showError('Error', error.message || 'Failed to save expense.');

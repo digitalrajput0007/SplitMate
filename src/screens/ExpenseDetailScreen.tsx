@@ -37,6 +37,7 @@ import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
 import { ImagePreviewModal } from '../components/ImagePreviewModal';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
@@ -401,6 +402,8 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
           )}
+
+          <BannerAdSlot />
         </ScrollView>
       )}
 

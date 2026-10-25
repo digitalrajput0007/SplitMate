@@ -20,6 +20,7 @@ import { useDialog } from '../context/DialogContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { sendOTPEmailHTTP, resetPassword } from '../services/authService';
 import { ENABLE_OTP } from '../config/appConfig';
+import { findUserByEmail } from '../services/firestoreService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
 
@@ -41,6 +42,17 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
     setLoading(true);
     setSuccessMessage('');
     try {
+      // Check if user is registered with Google
+      const existingUser = await findUserByEmail(trimmedEmail);
+      if (existingUser && existingUser.authProvider === 'google') {
+        setLoading(false);
+        dialog.showAlert(
+          'Google Account',
+          'This email is registered using Google Sign-In. It does not have a separate password. Please sign in using the "Continue with Google" button.'
+        );
+        return;
+      }
+
       if (ENABLE_OTP) {
         // mode 'reset' checks if user exists
         await sendOTPEmailHTTP(trimmedEmail, 'reset');
