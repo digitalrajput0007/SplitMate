@@ -17,9 +17,10 @@ const BANNER_UNIT_ID = __DEV__
 
 interface BannerAdSlotProps {
   size?: BannerAdSize;
+  style?: any;
 }
 
-export function BannerAdSlot({ size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER }: BannerAdSlotProps) {
+export function BannerAdSlot({ size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER, style }: BannerAdSlotProps) {
   const [hasError, setHasError] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -29,7 +30,7 @@ export function BannerAdSlot({ size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER }: B
   }
 
   return (
-    <View style={[styles.container, !isLoaded && styles.hidden]}>
+    <View style={[styles.container, style, !isLoaded && styles.hidden]}>
       <BannerAd
         unitId={BANNER_UNIT_ID}
         size={size}
@@ -54,7 +55,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 10,
+    marginVertical: 4,
     borderRadius: BorderRadius.DEFAULT,
     overflow: 'hidden',
   },

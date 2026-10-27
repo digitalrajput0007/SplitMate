@@ -23,6 +23,7 @@ import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
 import { M3BottomSheet } from '../components/M3BottomSheet';
 import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
 import {
@@ -281,6 +282,9 @@ export default function GroupsScreen() {
                 )}
               </View>
             )}
+
+            {/* Banner Ad blended just below Your Groups section */}
+            <BannerAdSlot style={{ marginVertical: 8 }} />
 
             {/* Joined Groups Section */}
             <TouchableOpacity

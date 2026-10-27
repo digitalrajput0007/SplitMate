@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
 import { formatCurrency } from '../services/currencyService';
 import { SmartImage } from '../components/SmartImage';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 import {
   subscribeToUserGroups,
   getAllUsersFromFirestore,
@@ -385,6 +386,9 @@ export default function SettlementCenterScreen({ navigation }: Props) {
                 {youAreOwed.map(d => renderDebtCard(d, 'owed'))}
               </View>
             )}
+
+            {/* Banner ad blended just below the settlement entries */}
+            <BannerAdSlot style={{ marginVertical: 12 }} />
           </>
         )}
       </ScrollView>

@@ -831,18 +831,18 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                 const dateTimeStr = formatFirestoreDateTime(item.createdAt, item.date);
 
                 return (
-                  <TouchableOpacity
-                    key={item.expenseId || index.toString()}
-                    style={[
-                      styles.expenseCard,
-                      {
-                        backgroundColor: colors.surfaceContainerLowest,
-                        borderColor: colors.outlineVariant,
-                      },
-                    ]}
-                    onPress={() => navigation.navigate('ExpenseDetail', { expense: item })}
-                    activeOpacity={0.7}
-                  >
+                  <View key={item.expenseId || index.toString()}>
+                    <TouchableOpacity
+                      style={[
+                        styles.expenseCard,
+                        {
+                          backgroundColor: colors.surfaceContainerLowest,
+                          borderColor: colors.outlineVariant,
+                        },
+                      ]}
+                      onPress={() => navigation.navigate('ExpenseDetail', { expense: item })}
+                      activeOpacity={0.7}
+                    >
                     <View style={styles.expenseLeft}>
                       <View
                         style={[
@@ -914,7 +914,13 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                       </Text>
                     </View>
                   </TouchableOpacity>
-                );
+
+                  {/* Single banner ad blended in between entries of expenses */}
+                  {index === 2 && (
+                    <BannerAdSlot style={{ marginVertical: 6 }} />
+                  )}
+                </View>
+              );
               })}
             </View>
           )}
@@ -943,8 +949,6 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
           </TouchableOpacity>
         )}
-
-        <BannerAdSlot />
       </ScrollView>
 
       {/* Member Filter Bottom Sheet Modal */}

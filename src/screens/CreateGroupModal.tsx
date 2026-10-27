@@ -32,6 +32,7 @@ import { auth } from '../config/firebase';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { SmartImage } from '../components/SmartImage';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
 
@@ -263,7 +264,9 @@ export default function CreateGroupModal({ navigation }: Props) {
 
       setCreatedGroupId(newId);
       setCreating(false);
-      setCurrentStep(4);
+      showInterstitialAd(() => {
+        setCurrentStep(4);
+      });
     } catch (e: any) {
       setCreating(false);
       Alert.alert('Error', e.message || 'Failed to create group.');

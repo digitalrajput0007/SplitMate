@@ -103,7 +103,7 @@ export default function ActivityScreen() {
     };
   };
 
-  const renderActivityItem = ({ item }: { item: ActivityItem }) => {
+  const renderActivityItem = ({ item, index }: { item: ActivityItem; index: number }) => {
     const actor = getActorInfo(item.actorUid);
     const displayTitle = item.type === 'group' ? item.title.replace(/\s+created$/i, '') : item.title;
 
@@ -116,37 +116,44 @@ export default function ActivityScreen() {
     };
 
     return (
-      <TouchableOpacity
-        style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
-        onPress={handlePress}
-        activeOpacity={0.7}
-      >
-        <View style={styles.actorAvatarContainer}>
-          <SmartImage
-            uri={actor.photo || undefined}
-            thumbnailUri={actor.thumb || undefined}
-            name={actor.name}
-            mode="thumbnail"
-            size={44}
-            fallbackIcon="person"
-          />
-        </View>
-        <View style={styles.feedContent}>
-          <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
-            <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
-            <Text style={{ color: colors.primary, fontWeight: '600' }}>{displayTitle}</Text>
-          </Text>
-          <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
-          <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
-        </View>
-        {item.amount > 0 && (
-          <View style={styles.feedRight}>
-            <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
-              {formatCurrency(item.amount)}
-            </Text>
+      <View key={item.id}>
+        <TouchableOpacity
+          style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+          onPress={handlePress}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actorAvatarContainer}>
+            <SmartImage
+              uri={actor.photo || undefined}
+              thumbnailUri={actor.thumb || undefined}
+              name={actor.name}
+              mode="thumbnail"
+              size={44}
+              fallbackIcon="person"
+            />
           </View>
+          <View style={styles.feedContent}>
+            <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
+              <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>{displayTitle}</Text>
+            </Text>
+            <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
+            <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
+          </View>
+          {item.amount > 0 && (
+            <View style={styles.feedRight}>
+              <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
+                {formatCurrency(item.amount)}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Single banner ad blended in activity */}
+        {index === 2 && (
+          <BannerAdSlot style={{ marginVertical: 8 }} />
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -176,7 +183,6 @@ export default function ActivityScreen() {
             actionLabel="View Groups"
             onActionPress={() => navigation.navigate('GroupsTab')}
           />
-          <BannerAdSlot />
         </ScrollView>
       ) : (
         <FlatList
@@ -184,7 +190,6 @@ export default function ActivityScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderActivityItem}
           ListHeaderComponent={HeaderComponent}
-          ListFooterComponent={<BannerAdSlot />}
           contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
           showsVerticalScrollIndicator={false}
           initialNumToRender={10}

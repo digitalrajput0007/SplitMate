@@ -38,6 +38,7 @@ import { ImagePreviewModal } from '../components/ImagePreviewModal';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
 import { BannerAdSlot } from '../components/BannerAdSlot';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
@@ -165,7 +166,9 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
       async () => {
         try {
           await deleteExpenseFromFirestore(expense.expenseId!);
-          navigation.goBack();
+          showInterstitialAd(() => {
+            navigation.goBack();
+          });
         } catch (error: any) {
           console.error('Error deleting expense:', error);
           dialog.showError('Error', error.message || 'Failed to delete expense.');
@@ -402,8 +405,6 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
           )}
-
-          <BannerAdSlot />
         </ScrollView>
       )}
 
@@ -423,6 +424,8 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
         onFiles={browseFiles}
         title="Attach Receipt"
       />
+
+      <BannerAdSlot style={{ marginVertical: 0 }} />
     </SafeAreaView>
   );
 }

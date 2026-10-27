@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ActivityIndicator, Text, StyleSheet, Platform } from 'react-native';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator, BottomTabBar } from '@react-navigation/bottom-tabs';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../config/firebase';
@@ -52,6 +52,7 @@ import AddExpenseScreen from '../screens/AddExpenseScreen';
 import GroupsScreen from '../screens/GroupsScreen';
 import { OfflineOverlay } from '../components/OfflineOverlay';
 import { AppLoadingScreen } from '../components/AppLoadingScreen';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 
 import { RootStackParamList, MainTabParamList } from './types';
 

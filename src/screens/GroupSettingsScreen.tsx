@@ -49,6 +49,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useDialog } from '../context/DialogContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
 import { GroupTypeOption } from './CreateGroupModal';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupSettings'>;
 
@@ -464,7 +465,9 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           isDeletingRef.current = true;
           try {
             await deleteGroupFromFirestore(groupId);
-            navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+            showInterstitialAd(() => {
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+            });
           } catch (e) {
             isDeletingRef.current = false;
             dialog.showError('Error', 'Failed to delete group.');
@@ -556,7 +559,9 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         try {
           isDeletingRef.current = true;
           await deleteGroupFromFirestore(groupId);
-          navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+          showInterstitialAd(() => {
+            navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+          });
         } catch (error: any) {
           isDeletingRef.current = false;
           dialog.showError('Error', error.message || 'Failed to delete group.');

@@ -32,6 +32,7 @@ import { SmartImage } from '../components/SmartImage';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3BottomSheet } from '../components/M3BottomSheet';
 import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 import { usePairwiseBalances, PairwiseBalanceSummary } from '../hooks/usePairwiseBalances';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -156,7 +157,7 @@ export default function ContactsScreen() {
   }, [myContacts, searchQuery, activeFilter, balancesMap]);
 
   // UI Components
-  const renderContact = useCallback(({ item }: { item: Contact }) => {
+  const renderContact = useCallback(({ item, index }: { item: Contact; index: number }) => {
     const platformUser = item.uid ? platformProfiles[item.uid] : null;
 
     // Priority: 1. Platform Thumbnail/Photo, 2. Local Contact Thumbnail/Photo
@@ -170,52 +171,59 @@ export default function ContactsScreen() {
     const youOwe = total < -0.01;
 
     return (
-      <TouchableOpacity
-        style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
-        onPress={() => setSelectedContactForDetail({ contact: item, summary: balanceSummary || null })}
-        activeOpacity={0.7}
-      >
-        <SmartImage
-          uri={priorityPhoto}
-          thumbnailUri={thumbnailUri}
-          name={platformUser?.name || item.name}
-          mode="thumbnail"
-          size={48}
-          style={{ borderRadius: 24 }}
-        />
-        <View style={styles.contactInfo}>
-          <Text style={[styles.contactName, { color: colors.onSurface }]}>{platformUser?.name || item.name || item.phone}</Text>
-          <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
-          
-          {item.uid && (
-            <View style={styles.balanceBadgeRow}>
-              {isSettled ? (
-                <Text style={[styles.settledText, { color: colors.outline }]}>settled up</Text>
-              ) : owesYou ? (
-                <Text style={[styles.owesYouText, { color: isDark ? '#34D399' : '#059669' }]}>
-                  owes you {formatCurrency(total)}
-                </Text>
-              ) : (
-                <Text style={[styles.youOweText, { color: isDark ? '#F87171' : '#DC2626' }]}>
-                  you owe {formatCurrency(Math.abs(total))}
-                </Text>
-              )}
-            </View>
-          )}
-        </View>
-        <View style={styles.actions}>
-          {!item.uid ? (
-            <TouchableOpacity onPress={() => handleInvite(item.phone, item.name)} style={styles.inviteSmallBtn}>
-              <Text style={[styles.inviteSmallBtnText, { color: colors.primary }]}>Invite</Text>
+      <View key={item.phone || `contact-${index}`}>
+        <TouchableOpacity
+          style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+          onPress={() => setSelectedContactForDetail({ contact: item, summary: balanceSummary || null })}
+          activeOpacity={0.7}
+        >
+          <SmartImage
+            uri={priorityPhoto}
+            thumbnailUri={thumbnailUri}
+            name={platformUser?.name || item.name}
+            mode="thumbnail"
+            size={48}
+            style={{ borderRadius: 24 }}
+          />
+          <View style={styles.contactInfo}>
+            <Text style={[styles.contactName, { color: colors.onSurface }]}>{platformUser?.name || item.name || item.phone}</Text>
+            <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
+            
+            {item.uid && (
+              <View style={styles.balanceBadgeRow}>
+                {isSettled ? (
+                  <Text style={[styles.settledText, { color: colors.outline }]}>settled up</Text>
+                ) : owesYou ? (
+                  <Text style={[styles.owesYouText, { color: isDark ? '#34D399' : '#059669' }]}>
+                    owes you {formatCurrency(total)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.youOweText, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                    you owe {formatCurrency(Math.abs(total))}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+          <View style={styles.actions}>
+            {!item.uid ? (
+              <TouchableOpacity onPress={() => handleInvite(item.phone, item.name)} style={styles.inviteSmallBtn}>
+                <Text style={[styles.inviteSmallBtnText, { color: colors.primary }]}>Invite</Text>
+              </TouchableOpacity>
+            ) : (
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
+            )}
+            <TouchableOpacity onPress={() => handleRemove(item)} style={styles.deleteBtn}>
+              <MaterialIcons name="delete-outline" size={20} color={colors.outline} />
             </TouchableOpacity>
-          ) : (
-            <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
-          )}
-          <TouchableOpacity onPress={() => handleRemove(item)} style={styles.deleteBtn}>
-            <MaterialIcons name="delete-outline" size={20} color={colors.outline} />
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+
+        {/* Banner ad blended after 3 contacts */}
+        {index === 2 && (
+          <BannerAdSlot style={{ marginVertical: 8 }} />
+        )}
+      </View>
     );
   }, [colors, platformProfiles, balancesMap, isDark]);
 

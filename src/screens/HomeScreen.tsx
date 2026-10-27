@@ -354,9 +354,9 @@ export default function HomeScreen() {
                     mode="thumbnail"
                     fallbackIcon={
                       inv.groupType === 'Trip' ? 'flight' :
-                      inv.groupType === 'Family' ? 'home' :
-                      inv.groupType === 'Couple' ? 'favorite' :
-                      inv.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                        inv.groupType === 'Family' ? 'home' :
+                          inv.groupType === 'Couple' ? 'favorite' :
+                            inv.groupType === 'Flatmate' ? 'apartment' : 'groups'
                     }
                     style={{ borderRadius: 21 }}
                   />
@@ -562,6 +562,9 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Banner Ad blended under My Groups */}
+        <BannerAdSlot style={{ marginVertical: 2 }} />
+
         {/* Smart Insight Analytics */}
         <View style={styles.sectionContainer}>
           <SmartInsight insights={monthlyInsights} expenses={[]} settlements={[]} />
@@ -626,8 +629,8 @@ export default function HomeScreen() {
                             item.type === 'expense'
                               ? colors.primary
                               : item.type === 'reminder'
-                              ? colors.warning
-                              : colors.positive,
+                                ? colors.warning
+                                : colors.positive,
                         },
                       ]}
                     />
@@ -657,8 +660,6 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
-
-        <BannerAdSlot />
       </ScrollView>
 
       {/* Dialog for No Groups */}
@@ -702,9 +703,9 @@ export default function HomeScreen() {
                   mode="thumbnail"
                   fallbackIcon={
                     group.groupType === 'Trip' ? 'flight' :
-                    group.groupType === 'Family' ? 'home' :
-                    group.groupType === 'Couple' ? 'favorite' :
-                    group.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                      group.groupType === 'Family' ? 'home' :
+                        group.groupType === 'Couple' ? 'favorite' :
+                          group.groupType === 'Flatmate' ? 'apartment' : 'groups'
                   }
                   style={{ borderRadius: 8 }}
                 />
