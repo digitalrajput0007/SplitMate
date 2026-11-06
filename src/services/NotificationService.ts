@@ -157,7 +157,7 @@ export const NotificationService = {
     // Listener for foreground notifications
     const foregroundSubscription = Notifications.addNotificationReceivedListener(notification => {
       console.log('📩 Foreground Notification:', notification);
-      const notifType = notification.request.content.data?.type || 'general';
+      const notifType = (notification.request.content.data?.type as string) || 'general';
       TelemetryService.trackNotificationReceived(notifType);
     });
 

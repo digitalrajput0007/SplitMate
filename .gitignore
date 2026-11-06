@@ -9,3 +9,4 @@ scratch/
 android/local.properties
 .idea/
 *firebase-adminsdk*.json
+dist/
