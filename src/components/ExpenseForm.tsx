@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../services/currencyService';
@@ -253,27 +252,8 @@ export default function ExpenseForm({
     setCustomPercentages(updated);
   };
 
-  const handlePickReceipt = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow photo library access to attach a receipt.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        onPickReceipt(); // This trigger the parent hook
-      }
-    } catch (error) {
-      console.log('Receipt pick error:', error);
-      Alert.alert('Error', 'Could not select photo');
-    }
+  const handlePickReceipt = () => {
+    onPickReceipt();
   };
 
   const handleRemoveReceipt = () => {
