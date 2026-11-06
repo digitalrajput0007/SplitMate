@@ -22,12 +22,18 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants
 import {
   ExpenseData,
   GroupData,
+  SettlementData,
   getEffectiveSplitDetails,
   formatCurrency,
   subscribeToAcceptedMembers,
   UserProfile,
 } from '../services/firestoreService';
-import { parseFirestoreDate, formatFirestoreDate } from '../utils/dateUtils';
+import {
+  parseFirestoreDate,
+  formatFirestoreDate,
+  getCurrentBillingMonth,
+  getExpenseBillingMonth,
+} from '../utils/dateUtils';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { RootStackParamList } from '../navigation/types';
 
@@ -94,6 +100,7 @@ export default function AnalyticsScreen() {
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>('this_month');
   const [allExpenses, setAllExpenses] = useState<ExpenseData[]>([]);
+  const [allSettlements, setAllSettlements] = useState<SettlementData[]>([]);
   const [groupMembers, setGroupMembers] = useState<UserProfile[]>([]);
   const [expensesLoading, setExpensesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,7 +127,7 @@ export default function AnalyticsScreen() {
     return () => unsub();
   }, [selectedGroupId]);
 
-  // Subscribe to expenses across target groups
+  // Subscribe to expenses and settlements across target groups
   useEffect(() => {
     if (groupsLoading) return;
 
@@ -130,6 +137,7 @@ export default function AnalyticsScreen() {
 
     if (targetGroupIds.length === 0) {
       setAllExpenses([]);
+      setAllSettlements([]);
       setExpensesLoading(false);
       return;
     }
@@ -142,12 +150,15 @@ export default function AnalyticsScreen() {
       chunks.push(targetGroupIds.slice(i, i + 30));
     }
 
-    const chunkResults = new Map<number, ExpenseData[]>();
+    const chunkExpResults = new Map<number, ExpenseData[]>();
+    const chunkSetResults = new Map<number, SettlementData[]>();
     const unsubs: (() => void)[] = [];
 
     chunks.forEach((chunk, idx) => {
       const q = query(collection(db, 'expenses'), where('groupId', 'in', chunk));
-      const unsub = onSnapshot(
+      const setQ = query(collection(db, 'settlements'), where('groupId', 'in', chunk));
+
+      const unsubExp = onSnapshot(
         q,
         (snapshot) => {
           const list: ExpenseData[] = [];
@@ -158,9 +169,9 @@ export default function AnalyticsScreen() {
               list.push({ ...data, expenseId: doc.id });
             }
           });
-          chunkResults.set(idx, list);
+          chunkExpResults.set(idx, list);
 
-          const combined = Array.from(chunkResults.values()).flat();
+          const combined = Array.from(chunkExpResults.values()).flat();
           setAllExpenses(combined);
           setExpensesLoading(false);
           setRefreshing(false);
@@ -171,7 +182,25 @@ export default function AnalyticsScreen() {
           setRefreshing(false);
         }
       );
-      unsubs.push(unsub);
+
+      const unsubSet = onSnapshot(
+        setQ,
+        (snapshot) => {
+          const list: SettlementData[] = [];
+          snapshot.docs.forEach((doc) => {
+            const data = doc.data() as SettlementData;
+            list.push({ ...data, settlementId: doc.id });
+          });
+          chunkSetResults.set(idx, list);
+          setAllSettlements(Array.from(chunkSetResults.values()).flat());
+        },
+        (err) => {
+          console.warn('[AnalyticsScreen] Settlements listener error:', err);
+        }
+      );
+
+      unsubs.push(unsubExp);
+      unsubs.push(unsubSet);
     });
 
     return () => {
@@ -179,36 +208,51 @@ export default function AnalyticsScreen() {
     };
   }, [selectedGroupId, activeGroups, groupsLoading]);
 
-  // Filter expenses by selected date range
-  const filteredExpenses = useMemo(() => {
+  // Canonical month identifiers for bulletproof date range filtering
+  const { currentMonthKey, lastMonthKey, last3MonthsKeys } = useMemo(() => {
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
+    const currentMonthKey = getCurrentBillingMonth();
 
-    return allExpenses.filter((exp) => {
-      const expDate = parseFirestoreDate(exp.createdAt, exp.date);
-      const expYear = expDate.getFullYear();
-      const expMonth = expDate.getMonth();
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
+    const twoMonthsAgoDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const twoMonthsAgoKey = `${twoMonthsAgoDate.getFullYear()}-${String(twoMonthsAgoDate.getMonth() + 1).padStart(2, '0')}`;
+
+    return {
+      currentMonthKey,
+      lastMonthKey,
+      last3MonthsKeys: [currentMonthKey, lastMonthKey, twoMonthsAgoKey],
+    };
+  }, []);
+
+  const matchesDateFilter = useCallback(
+    (item: { billingMonth?: string; date?: string; createdAt?: any }) => {
+      const bMonth = getExpenseBillingMonth(item);
       switch (dateFilter) {
         case 'this_month':
-          return expYear === currentYear && expMonth === currentMonth;
-        case 'last_month': {
-          const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-          const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-          return expYear === lastMonthYear && expMonth === lastMonth;
-        }
-        case 'last_3_months': {
-          // Difference in months within 3
-          const diffMonths = (currentYear - expYear) * 12 + (currentMonth - expMonth);
-          return diffMonths >= 0 && diffMonths < 3;
-        }
+          return bMonth === currentMonthKey;
+        case 'last_month':
+          return bMonth === lastMonthKey;
+        case 'last_3_months':
+          return last3MonthsKeys.includes(bMonth);
         case 'all_time':
         default:
           return true;
       }
-    });
-  }, [allExpenses, dateFilter]);
+    },
+    [dateFilter, currentMonthKey, lastMonthKey, last3MonthsKeys]
+  );
+
+  // Filter expenses by selected date range
+  const filteredExpenses = useMemo(() => {
+    return allExpenses.filter(matchesDateFilter);
+  }, [allExpenses, matchesDateFilter]);
+
+  // Filter settlements by selected date range
+  const filteredSettlements = useMemo(() => {
+    return allSettlements.filter(matchesDateFilter);
+  }, [allSettlements, matchesDateFilter]);
 
   // Overview metrics calculations
   const overviewMetrics = useMemo(() => {
@@ -218,8 +262,14 @@ export default function AnalyticsScreen() {
 
     filteredExpenses.forEach((exp) => {
       const group = groupMap.get(exp.groupId);
-      const effectiveSplits = getEffectiveSplitDetails(exp, group);
+      const joinedAt = group?.membersJoinedAt?.[currentUid];
+      const includeExisting = group?.memberExistingExpensesPreference?.[currentUid] ?? true;
+      const expTime = exp.createdAt?.seconds
+        ? exp.createdAt.seconds * 1000
+        : parseFirestoreDate(exp.createdAt, exp.date).getTime();
+      const isExcludedPreJoin = !includeExisting && joinedAt && expTime < joinedAt;
 
+      const effectiveSplits = getEffectiveSplitDetails(exp, group);
       const expAmount = Number(exp.amount) || 0;
       totalSpending += expAmount;
 
@@ -227,12 +277,21 @@ export default function AnalyticsScreen() {
         youPaid += expAmount;
       }
 
-      if (currentUid && effectiveSplits[currentUid] !== undefined) {
+      if (currentUid && !isExcludedPreJoin && effectiveSplits[currentUid] !== undefined) {
         yourShare += Number(effectiveSplits[currentUid]) || 0;
       }
     });
 
-    const netBalance = Math.round((youPaid - yourShare) * 100) / 100;
+    let userSent = 0;
+    let userReceived = 0;
+    filteredSettlements.forEach((s) => {
+      if (s.status === 'completed' || !s.status) {
+        if (s.fromUserId === currentUid) userSent += Number(s.amount) || 0;
+        if (s.toUserId === currentUid) userReceived += Number(s.amount) || 0;
+      }
+    });
+
+    const netBalance = Math.round((youPaid - yourShare + userSent - userReceived) * 100) / 100;
 
     return {
       totalSpending: Math.round(totalSpending * 100) / 100,
@@ -240,7 +299,7 @@ export default function AnalyticsScreen() {
       yourShare: Math.round(yourShare * 100) / 100,
       netBalance,
     };
-  }, [filteredExpenses, groupMap, currentUid]);
+  }, [filteredExpenses, filteredSettlements, groupMap, currentUid]);
 
   // Monthly trends (Last 6 months)
   const monthlyTrends = useMemo((): MonthlyTrend[] => {
@@ -264,15 +323,20 @@ export default function AnalyticsScreen() {
     }
 
     allExpenses.forEach((exp) => {
-      const expDate = parseFirestoreDate(exp.createdAt, exp.date);
-      const expYear = expDate.getFullYear();
-      const expMonth = expDate.getMonth();
+      const bMonth = getExpenseBillingMonth(exp);
       const group = groupMap.get(exp.groupId);
+      const joinedAt = group?.membersJoinedAt?.[currentUid];
+      const includeExisting = group?.memberExistingExpensesPreference?.[currentUid] ?? true;
+      const expTime = exp.createdAt?.seconds
+        ? exp.createdAt.seconds * 1000
+        : parseFirestoreDate(exp.createdAt, exp.date).getTime();
+      const isExcludedPreJoin = !includeExisting && joinedAt && expTime < joinedAt;
+
       const splits = getEffectiveSplitDetails(exp, group);
       const expAmount = Number(exp.amount) || 0;
-      const userShare = Number(splits[currentUid]) || 0;
+      const userShare = (!isExcludedPreJoin && splits[currentUid]) ? Number(splits[currentUid]) || 0 : 0;
 
-      const target = months.find((m) => m.year === expYear && m.month === expMonth);
+      const target = months.find((m) => m.monthKey === bMonth);
       if (target) {
         target.totalSpend += expAmount;
         target.userShare += userShare;
@@ -421,13 +485,36 @@ export default function AnalyticsScreen() {
       .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
       .slice(0, 3);
 
+    let groupUserSent = 0;
+    let groupUserReceived = 0;
+    filteredSettlements.forEach((s) => {
+      if (s.groupId === selectedGroupId && (s.status === 'completed' || !s.status)) {
+        if (s.fromUserId === currentUid) groupUserSent += Number(s.amount) || 0;
+        if (s.toUserId === currentUid) groupUserReceived += Number(s.amount) || 0;
+      }
+    });
+
+    let groupYouPaid = 0;
+    let groupYourShare = 0;
+    filteredExpenses.forEach((exp) => {
+      if (exp.groupId === selectedGroupId) {
+        if (exp.paidBy === currentUid) groupYouPaid += Number(exp.amount) || 0;
+        const splits = getEffectiveSplitDetails(exp, currentGroup);
+        if (splits[currentUid]) groupYourShare += Number(splits[currentUid]) || 0;
+      }
+    });
+
+    const calculatedGroupBalance = dateFilter === 'all_time'
+      ? (groupBalances[selectedGroupId] ?? Math.round((groupYouPaid - groupYourShare + groupUserSent - groupUserReceived) * 100) / 100)
+      : Math.round((groupYouPaid - groupYourShare + groupUserSent - groupUserReceived) * 100) / 100;
+
     return {
       groupName: currentGroup?.name || 'Group',
-      groupBalance: groupBalances[selectedGroupId] || 0,
+      groupBalance: calculatedGroupBalance,
       memberBreakdown,
       topExpenses,
     };
-  }, [selectedGroupId, groupMap, filteredExpenses, overviewMetrics.totalSpending, groupMembers, currentUid, groupBalances]);
+  }, [selectedGroupId, groupMap, filteredExpenses, filteredSettlements, dateFilter, overviewMetrics.totalSpending, groupMembers, currentUid, groupBalances]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -459,11 +546,24 @@ export default function AnalyticsScreen() {
       {/* Top Header */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) + 8, backgroundColor: colors.surfaceContainerLowest, borderBottomColor: colors.divider }]}>
         <View style={styles.headerTitleRow}>
-          <View>
-            <Text style={[styles.screenTitle, { color: colors.onSurface }]}>Analytics</Text>
-            <Text style={[styles.screenSubtitle, { color: colors.onSurfaceVariant }]}>
-              Insights & Spending Breakdown
-            </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+            {navigation.canGoBack() && (
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                style={styles.headerBackBtn}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
+              </TouchableOpacity>
+            )}
+            <View>
+              <Text style={[styles.screenTitle, { color: colors.onSurface }]}>Analytics</Text>
+              <Text style={[styles.screenSubtitle, { color: colors.onSurfaceVariant }]}>
+                Insights & Spending Breakdown
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
             style={[styles.headerActionBtn, { backgroundColor: colors.primary + '18' }]}
@@ -1236,6 +1336,12 @@ const styles = StyleSheet.create({
     ...Typography.bodySm,
     fontSize: 12,
     marginTop: 2,
+  },
+  headerBackBtn: {
+    padding: 4,
+    marginLeft: -4,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerActionBtn: {
     width: 36,

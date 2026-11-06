@@ -2518,6 +2518,11 @@ export const getEffectiveSplitDetails = (
   groupData?: GroupData
 ): Record<string, number> => {
   const rawSplits = exp.splitDetails || {};
+  const hasRawSplits = Object.keys(rawSplits).length > 0 && Object.values(rawSplits).some((v) => v > 0);
+
+  if (hasRawSplits) {
+    return rawSplits;
+  }
   if (!groupData) return rawSplits;
 
   const memberIds = groupData.memberIds || [];
@@ -2525,14 +2530,14 @@ export const getEffectiveSplitDetails = (
 
   const preferences = groupData.memberExistingExpensesPreference || {};
 
-  // Find all participating members for this expense
+  // For fallback equal split when splitDetails is empty, find participating members
   const participatingUids = memberIds.filter((uid) => {
-    if (uid in rawSplits && rawSplits[uid] > 0) return true;
+
     const pref = preferences[uid] ?? true;
     return pref !== false;
   });
 
-  if (participatingUids.length === 0 || Object.keys(rawSplits).length >= participatingUids.length) {
+  if (participatingUids.length === 0) {
     return rawSplits;
   }
 
