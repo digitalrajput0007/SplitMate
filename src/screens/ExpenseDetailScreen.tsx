@@ -14,9 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { formatCurrency } from '../services/currencyService';
+import { parseFirestoreDate } from '../utils/dateUtils';
 import { auth } from '../config/firebase';
 import {
   updateExpenseInFirestore,
@@ -31,16 +32,24 @@ import {
   ExpenseComment,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
+import { ImagePreviewModal } from '../components/ImagePreviewModal';
+import { useMediaManager } from '../hooks/useMediaManager';
+import { MediaPickerSheet } from '../components/MediaPickerSheet';
+import { BannerAdSlot } from '../components/BannerAdSlot';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ExpenseDetail'>;
 
 export default function ExpenseDetailScreen({ navigation, route }: Props) {
-  const initialExpense: ExpenseData = route.params?.expense;
+  const initialExpense: ExpenseData | undefined = route.params?.expense;
+  const targetExpenseId = route.params?.expenseId || initialExpense?.expenseId;
   const { colors } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
 
-  const [expense, setExpense] = useState<ExpenseData | null>(initialExpense);
+  const [expense, setExpense] = useState<ExpenseData | null>(initialExpense || null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [group, setGroup] = useState<GroupData | null>(null);
@@ -49,14 +58,35 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const [newComment, setNewComment] = useState('');
   const [showComments, setShowComments] = useState(false);
   const [sendingComment, setSendingComment] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
+
+  const {
+    isUploading,
+    progress,
+    isPickerVisible,
+    setIsPickerVisible,
+    takePhoto,
+    pickFromGallery,
+    browseFiles,
+  } = useMediaManager({
+    purpose: 'receipt',
+    id: expense?.groupId || 'temp',
+    onSuccess: (urls) => {
+      if (expense) {
+        setExpense({ ...expense, receiptUrl: urls.original });
+      }
+    },
+  });
 
   useEffect(() => {
-    if (initialExpense?.expenseId) {
-      const unsub = subscribeToExpenseDetail(initialExpense.expenseId, (data) => {
-        setExpense(data);
+    if (targetExpenseId) {
+      const unsub = subscribeToExpenseDetail(targetExpenseId, (data) => {
+        if (data) {
+          setExpense(data);
+        }
       });
 
-      const unsubComments = subscribeToExpenseComments(initialExpense.expenseId, (commentList) => {
+      const unsubComments = subscribeToExpenseComments(targetExpenseId, (commentList) => {
         setComments(commentList);
       });
 
@@ -65,7 +95,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
         unsubComments();
       };
     }
-  }, [initialExpense]);
+  }, [targetExpenseId]);
 
   useEffect(() => {
     if (expense?.groupId) {
@@ -117,11 +147,11 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
     setSaving(true);
     try {
       await updateExpenseInFirestore(expense.expenseId, formData);
-      Alert.alert('Expense Updated', 'The expense details have been updated.');
       setIsEditing(false);
+      dialog.showSuccess('Expense Updated', 'Group expense updated successfully.');
     } catch (error: any) {
       console.error('Error updating expense:', error);
-      Alert.alert('Error', error.message || 'Failed to update expense.');
+      dialog.showError('Error', error.message || 'Failed to update expense.');
     } finally {
       setSaving(false);
     }
@@ -130,26 +160,21 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   const handleDelete = async () => {
     if (!expense?.expenseId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Delete Expense',
       `Are you sure you want to delete "${expense.title}"? Group balances will be recalculated immediately.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteExpenseFromFirestore(expense.expenseId!);
-              Alert.alert('Expense Deleted', 'Expense removed from group records.');
-              navigation.goBack();
-            } catch (error: any) {
-              console.error('Error deleting expense:', error);
-              Alert.alert('Error', error.message || 'Failed to delete expense.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await deleteExpenseFromFirestore(expense.expenseId!);
+          showInterstitialAd(() => {
+            navigation.goBack();
+          });
+        } catch (error: any) {
+          console.error('Error deleting expense:', error);
+          dialog.showError('Error', error.message || 'Failed to delete expense.');
+        }
+      },
+      { confirmText: 'Delete', destructive: true }
     );
   };
 
@@ -179,8 +204,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   };
 
   const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'Recent';
-    const date = new Date(timestamp.seconds * 1000);
+    const date = parseFirestoreDate(timestamp, expense?.date);
     return date.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'long',
@@ -189,8 +213,7 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
   };
 
   const formatDateTime = (timestamp: any) => {
-    if (!timestamp) return 'Just now';
-    const date = new Date(timestamp.seconds * 1000);
+    const date = parseFirestoreDate(timestamp, expense?.date);
     return date.toLocaleString('en-IN', {
       day: 'numeric',
       month: 'short',
@@ -223,9 +246,13 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           <ExpenseForm
             members={members}
             initialData={expense}
+            onPickReceipt={() => setIsPickerVisible(true)}
+            onRemoveReceipt={() => setExpense(expense ? { ...expense, receiptUrl: '' } : null)}
             onSubmit={handleUpdate}
             submitting={saving}
             submitLabel="Update Expense"
+            isUploading={isUploading}
+            progress={progress}
           />
         </View>
       ) : (
@@ -272,7 +299,13 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Receipt</Text>
             {expense.receiptUrl ? (
-              <Image source={{ uri: expense.receiptUrl }} style={styles.receiptImage} />
+              <TouchableOpacity onPress={() => setShowImagePreview(true)} activeOpacity={0.9}>
+                <Image source={{ uri: expense.receiptUrl }} style={styles.receiptImage} />
+                <View style={[styles.previewBadge, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                  <MaterialIcons name="fullscreen" size={20} color="#FFF" />
+                  <Text style={styles.previewText}>Click to preview</Text>
+                </View>
+              </TouchableOpacity>
             ) : (
               <View style={[styles.placeholderBox, { backgroundColor: colors.surfaceContainerLow, borderStyle: 'dashed', borderColor: colors.outlineVariant }]}>
                 <MaterialIcons name="receipt" size={32} color={colors.outline} />
@@ -320,12 +353,12 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
 
           {/* 7.5 Comments Section */}
           {showComments && (
-            <View style={styles.commentsContainer}>
-              <View style={[styles.commentInputRow, { borderBottomColor: colors.divider }]}>
+            <View style={[styles.commentsContainer, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+              <View style={[styles.commentInputRow, { borderBottomColor: colors.outlineVariant }]}>
                 <TextInput
                   style={[styles.commentInput, { color: colors.onSurface, backgroundColor: colors.surfaceContainerLow }]}
                   placeholder="Add a comment..."
-                  placeholderTextColor={colors.outline}
+                  placeholderTextColor={colors.onSurfaceVariant}
                   value={newComment}
                   onChangeText={setNewComment}
                   multiline
@@ -335,23 +368,23 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
                   onPress={handleAddComment}
                   disabled={sendingComment || !newComment.trim()}
                 >
-                  {sendingComment ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={18} color="#fff" />}
+                  {sendingComment ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <MaterialIcons name="send" size={18} color={colors.onPrimary} />}
                 </TouchableOpacity>
               </View>
 
               <View style={styles.commentList}>
                 {comments.length === 0 ? (
-                  <Text style={[styles.noCommentsText, { color: colors.outline }]}>No comments yet.</Text>
+                  <Text style={[styles.noCommentsText, { color: colors.onSurfaceVariant }]}>No comments yet.</Text>
                 ) : (
                   comments.map((c) => (
-                    <View key={c.commentId} style={styles.commentItem}>
+                    <View key={c.commentId} style={[styles.commentItem, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderWidth: 1 }]}>
                       <View style={styles.commentHeader}>
-                        <Text style={[styles.commentUser, { color: colors.onSurface }]}>{c.userName}</Text>
-                        <Text style={[styles.commentTime, { color: colors.outline }]}>
-                          {c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                        <Text style={[styles.commentUser, { color: colors.primary }]}>{c.userName}</Text>
+                        <Text style={[styles.commentTime, { color: colors.onSurfaceVariant }]}>
+                          {parseFirestoreDate(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Text>
                       </View>
-                      <Text style={[styles.commentText, { color: colors.onSurfaceVariant }]}>{c.text}</Text>
+                      <Text style={[styles.commentText, { color: colors.onSurface, marginTop: 4 }]}>{c.text}</Text>
                     </View>
                   ))
                 )}
@@ -374,6 +407,25 @@ export default function ExpenseDetailScreen({ navigation, route }: Props) {
           )}
         </ScrollView>
       )}
+
+      {expense.receiptUrl && (
+        <ImagePreviewModal
+          visible={showImagePreview}
+          imageUrl={expense.receiptUrl}
+          onClose={() => setShowImagePreview(false)}
+        />
+      )}
+
+      <MediaPickerSheet
+        visible={isPickerVisible}
+        onDismiss={() => setIsPickerVisible(false)}
+        onCamera={takePhoto}
+        onGallery={pickFromGallery}
+        onFiles={browseFiles}
+        title="Attach Receipt"
+      />
+
+      <BannerAdSlot style={{ marginVertical: 0 }} />
     </SafeAreaView>
   );
 }
@@ -469,6 +521,21 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
     marginTop: 4,
   },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    gap: 4,
+  },
+  previewText: {
+    ...Typography.labelMd,
+    color: '#FFF',
+  },
   placeholderBox: {
     width: '100%',
     height: 100,
@@ -501,23 +568,20 @@ const styles = StyleSheet.create({
   actionChipText: { ...Typography.labelLg },
   commentsContainer: {
     padding: Spacing.md,
-    backgroundColor: '#FFFFFF', // Use static color to avoid ReferenceError if Colors fails
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#EEEEEE',
-    marginTop: -16,
+    marginTop: Spacing.md,
   },
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingBottom: 16,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEEEEE',
   },
   commentInput: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 40,
@@ -531,11 +595,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   commentList: {
-    paddingTop: 16,
-    gap: 16,
+    paddingTop: 12,
+    gap: 10,
   },
   commentItem: {
-    gap: 2,
+    padding: 10,
+    borderRadius: 12,
   },
   commentHeader: {
     flexDirection: 'row',
@@ -569,4 +634,5 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   deleteBtnText: { ...Typography.titleMd, fontWeight: '700' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

@@ -18,12 +18,19 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { GroupCard } from '../components/GroupCard';
+import { parseFirestoreDate } from '../utils/dateUtils';
 import { M3SearchBar } from '../components/M3SearchBar';
 import { M3Chip } from '../components/M3Chip';
 import { M3BottomSheet } from '../components/M3BottomSheet';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { formatCurrency } from '../services/currencyService';
-import { UserProfile, getAllUsersFromFirestore, subscribeAllUserProfiles } from '../services/firestoreService';
+import {
+  UserProfile,
+  getAllUsersFromFirestore,
+  subscribeToUserProfile
+} from '../services/firestoreService';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -56,15 +63,35 @@ export default function GroupsScreen() {
   const [joinedExpanded, setJoinedExpanded] = useState(true);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
 
-  // Listen to all users for real-time GroupCard avatars
+  // Listen to needed user profiles for GroupCard avatars
   React.useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      const uMap = new Map<string, UserProfile>();
-      users.forEach((u) => uMap.set(u.uid, u));
-      setAllUsersMap(uMap);
+    if (groups.length === 0 && archivedGroups.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    [...groups, ...archivedGroups].forEach(g => {
+      if (g.memberIds) {
+        g.memberIds.forEach((uid: string) => uidsToFetch.add(uid));
+      }
     });
-    return () => unsub();
-  }, []);
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!allUsersMap.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setAllUsersMap(prev => {
+              const next = new Map(prev);
+              next.set(uid, profile);
+              return next;
+            });
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [groups, archivedGroups]);
 
   const toggleOwned = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -91,7 +118,7 @@ export default function GroupsScreen() {
       if (activeFilter === 'You Are Owed') if (balance <= 0.05) return false;
       if (activeFilter === 'Settled') if (Math.abs(balance) > 0.05) return false;
 
-      if (activeType && g.groupType !== activeType) return false;
+      if (activeType && (g.groupType || '').toLowerCase() !== activeType.toLowerCase()) return false;
 
       return true;
     };
@@ -104,11 +131,11 @@ export default function GroupsScreen() {
       joined: filteredActive.filter(g => g.createdBy !== currentUser?.uid),
       archived: filteredArchived,
     };
-  }, [groups, archivedGroups, searchQuery, activeFilter, groupBalances, currentUser?.uid]);
+  }, [groups, archivedGroups, searchQuery, activeFilter, activeType, groupBalances, currentUser?.uid]);
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
 
-  const renderGroupCard = (item: any, isOwner: boolean) => {
+  const renderGroupCard = React.useCallback((item: any, isOwner: boolean) => {
     const myShare = groupBalances[item.groupId] || 0;
     let balanceLabel: 'owed' | 'owe' | 'settled' = 'settled';
     let balanceAmount = 'Settled up';
@@ -130,8 +157,8 @@ export default function GroupsScreen() {
       };
     });
 
-    const lastActivityText = item.createdAt
-      ? `Updated ${new Date(item.createdAt.seconds * 1000).toLocaleDateString()}`
+    const lastActivityText = (item.updatedAt || item.createdAt)
+      ? `Updated ${parseFirestoreDate(item.updatedAt || item.createdAt).toLocaleDateString()}`
       : undefined;
 
     return (
@@ -154,7 +181,7 @@ export default function GroupsScreen() {
         }
       />
     );
-  };
+  }, [groupBalances, allUsersMap, navigation]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -209,6 +236,18 @@ export default function GroupsScreen() {
       >
         {loading && groups.length === 0 ? (
           <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
+        ) : owned.length === 0 && joined.length === 0 && archived.length === 0 ? (
+          <EmptyStateIllustration
+            type="groups"
+            title={searchQuery ? 'No Matching Groups' : 'No Groups Yet'}
+            description={
+              searchQuery
+                ? `No groups found matching "${searchQuery}". Try a different keyword or create one.`
+                : 'Create a group for your trip, flatmates, or friends to start splitting expenses in 1 tap.'
+            }
+            actionLabel="Create Group"
+            onActionPress={() => navigation.navigate('CreateGroup')}
+          />
         ) : (
           <>
             {/* Your Groups Section */}
@@ -232,14 +271,20 @@ export default function GroupsScreen() {
                 {owned.length > 0 ? (
                   owned.map(g => renderGroupCard(g, true))
                 ) : (
-                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
-                    <Text style={[styles.emptyText, { color: colors.outline }]}>
-                      You haven't created any groups yet.
-                    </Text>
-                  </View>
+                  <EmptyStateIllustration
+                    type="groups"
+                    compact
+                    title="No created groups"
+                    description="You haven't created any groups yet. Tap below to start one."
+                    actionLabel="Create Group"
+                    onActionPress={() => navigation.navigate('CreateGroup')}
+                  />
                 )}
               </View>
             )}
+
+            {/* Banner Ad blended just below Your Groups section */}
+            <BannerAdSlot style={{ marginVertical: 8 }} />
 
             {/* Joined Groups Section */}
             <TouchableOpacity
@@ -262,11 +307,12 @@ export default function GroupsScreen() {
                 {joined.length > 0 ? (
                   joined.map(g => renderGroupCard(g, false))
                 ) : (
-                  <View style={[styles.emptyBox, { borderColor: colors.divider }]}>
-                    <Text style={[styles.emptyText, { color: colors.outline }]}>
-                      You haven't joined any groups yet.
-                    </Text>
-                  </View>
+                  <EmptyStateIllustration
+                    type="groups"
+                    compact
+                    title="No joined groups"
+                    description="Groups you get invited to or join with a link will appear here."
+                  />
                 )}
               </View>
             )}

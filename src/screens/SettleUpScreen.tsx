@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import { getCurrencyConfig, formatCurrency } from '../services/currencyService';
@@ -21,7 +21,7 @@ import {
   subscribeToGroupSettlements,
   addSettlementToFirestore,
   subscribeToGroupDetail,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   sendPaymentReminder,
   canSendReminder,
   ExpenseData,
@@ -35,17 +35,25 @@ import {
   showSettleUpInterstitial,
 } from '../services/adMobService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { SmartImage } from '../components/SmartImage';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  getExpenseBillingMonth,
+  formatBillingMonthLabel,
+  getCurrentBillingMonth,
+} from '../utils/dateUtils';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SettleUp'>;
 
 export default function SettleUpScreen({ navigation, route }: Props) {
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
 
   const groupId = route.params?.groupId || 'goa_trip';
+  const billingMonth = route.params?.billingMonth;
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [expenses, setExpenses] = useState<ExpenseData[]>([]);
@@ -54,33 +62,34 @@ export default function SettleUpScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
+  const groupOwnerRef = useRef<string | null>(null);
 
   useEffect(() => {
     initializeInterstitialAd();
+  }, []);
+
+  useEffect(() => {
+    if (!groupId) return;
 
     // 1. Subscribe to Group Detail (for Photo and Name)
     const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
-      setGroup(data);
-    });
-
-    // 2. Subscribe to ALL profiles for real-time resolution
-    const unsubProfiles = subscribeAllUserProfiles((allUsers) => {
-      const profiles: Record<string, { name: string; paymentHandle?: string; photoUrl?: string; photoThumbnailUrl?: string }> = {};
-
-      allUsers.forEach((user) => {
-        profiles[user.uid] = {
-          name: user.uid === currentUid ? 'You' : user.name,
-          paymentHandle: user.paymentHandle || '',
-          photoUrl: user.photoUrl || '',
-          photoThumbnailUrl: user.photoThumbnailUrl || '',
-        };
-      });
-
-      if (!profiles[currentUid]) {
-        profiles[currentUid] = { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' };
+      if (data) {
+        setGroup(data);
+        if (data.createdBy) groupOwnerRef.current = data.createdBy;
+      } else {
+        const isOwner = groupOwnerRef.current === currentUid;
+        if (isOwner) {
+          navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+        } else {
+          dialog.showError(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            () => {
+              navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+            }
+          );
+        }
       }
-
-      setMemberProfiles(profiles);
     });
 
     const unsubExp = subscribeToGroupExpenses(groupId, (data) => setExpenses(data));
@@ -91,26 +100,75 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
     return () => {
       unsubGroup();
-      unsubProfiles();
       unsubExp();
       unsubSet();
     };
-  }, [groupId, currentUid]);
+  }, [groupId]);
+
+  useEffect(() => {
+    if (!group?.memberIds || group.memberIds.length === 0) return;
+
+    const unsubs: (() => void)[] = [];
+    group.memberIds.forEach(uid => {
+      const unsub = subscribeToUserProfile(uid, (user) => {
+        if (user) {
+          setMemberProfiles(prev => ({
+            ...prev,
+            [uid]: {
+              name: uid === currentUid ? 'You' : user.name,
+              paymentHandle: user.paymentHandle || '',
+              photoUrl: user.photoUrl || '',
+              photoThumbnailUrl: user.photoThumbnailUrl || '',
+            }
+          }));
+        }
+      });
+      unsubs.push(unsub);
+    });
+
+    // Ensure current user is in profiles even if not in group yet
+    setMemberProfiles(prev => {
+      if (prev[currentUid]) return prev;
+      return {
+        ...prev,
+        [currentUid]: { name: 'You', paymentHandle: '', photoUrl: '', photoThumbnailUrl: '' }
+      };
+    });
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
+  }, [group?.memberIds.join(','), currentUid]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!billingMonth || billingMonth === 'ALL') return expenses;
+    return expenses.filter((e) => getExpenseBillingMonth(e) === billingMonth);
+  }, [expenses, billingMonth]);
+
+  const filteredSettlements = useMemo(() => {
+    if (!billingMonth || billingMonth === 'ALL') return settlements;
+    return settlements.filter((s) => (s.billingMonth || getExpenseBillingMonth(s)) === billingMonth);
+  }, [settlements, billingMonth]);
 
   const simplifiedDebts = useMemo(() => {
-    return simplifyDebts(expenses, settlements, memberProfiles);
-  }, [expenses, settlements, memberProfiles]);
+    const raw = simplifyDebts(filteredExpenses, filteredSettlements, memberProfiles, group?.memberExistingExpensesPreference);
+    const activeMemberIds = group?.memberIds || [];
+    if (activeMemberIds.length === 0) return [];
+    return raw.filter(
+      (d) => activeMemberIds.includes(d.fromUserId) && activeMemberIds.includes(d.toUserId)
+    );
+  }, [filteredExpenses, filteredSettlements, memberProfiles, group?.memberIds, group?.memberExistingExpensesPreference]);
 
-  const totalGroupExpense = expenses.reduce((acc, exp) => acc + exp.amount, 0);
-  const userTotalPaid = expenses
+  const totalGroupExpense = filteredExpenses.reduce((acc, exp) => acc + exp.amount, 0);
+  const userTotalPaid = filteredExpenses
     .filter((e) => e.paidBy === currentUid)
     .reduce((acc, e) => acc + e.amount, 0);
-  const userTotalShare = expenses.reduce((acc, e) => acc + (e.splitDetails?.[currentUid] || 0), 0);
+  const userTotalShare = filteredExpenses.reduce((acc, e) => acc + (e.splitDetails?.[currentUid] || 0), 0);
 
-  const userReceived = settlements
+  const userReceived = filteredSettlements
     .filter((s) => s.toUserId === currentUid && (s.status === 'completed' || !s.status))
     .reduce((acc, s) => acc + s.amount, 0);
-  const userSent = settlements
+  const userSent = filteredSettlements
     .filter((s) => s.fromUserId === currentUid && (s.status === 'completed' || !s.status))
     .reduce((acc, s) => acc + s.amount, 0);
 
@@ -118,42 +176,58 @@ export default function SettleUpScreen({ navigation, route }: Props) {
 
   const handlePayViaUPI = async (debt: SimplifiedDebt) => {
     if (!debt.toPaymentHandle) {
-      Alert.alert('No UPI ID', 'This user has not added a UPI ID yet.');
+      dialog.showWarning('No UPI ID', 'This user has not added a UPI ID yet.');
       return;
     }
 
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(debt.toPaymentHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;
+    const cleanHandle = debt.toPaymentHandle.trim();
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(cleanHandle)}&pn=${encodeURIComponent(debt.toName)}&am=${debt.amount.toFixed(2)}&cu=INR&tn=SplitMate%20Settlement`;
+
+    console.log('Attempting to open UPI URL:', upiUrl);
 
     try {
-      const canOpen = await Linking.canOpenURL(upiUrl);
-      if (canOpen) {
-        await Linking.openURL(upiUrl);
-      } else {
-        Alert.alert(
-          'Pay via UPI',
-          `Payee: ${debt.toName}\nUPI VPA: ${debt.toPaymentHandle}\nAmount: ${formatCurrency(debt.amount)}\n\n(No UPI app detected)`
-        );
-      }
+      // Bypassing canOpenURL check as it can be unreliable on modern Android/iOS
+      // without explicit manifest/plist queries.
+      await Linking.openURL(upiUrl);
     } catch (e) {
-      Alert.alert('Error', 'Could not open UPI app.');
+      console.log('UPI Error:', e);
+      dialog.showAlert(
+        'Pay via UPI',
+        `Payee: ${debt.toName}\nUPI ID: ${cleanHandle}\nAmount: ${formatCurrency(debt.amount)}\n\n(No UPI app detected or could not open automatically)`
+      );
     }
   };
 
   const handleRecordSettlement = async (debt: SimplifiedDebt) => {
+    const isOtherOwesMe = debt.toUserId === currentUid;
+
     setSettlingId(debt.id);
     try {
       await addSettlementToFirestore({
         groupId: groupId,
         fromUserId: debt.fromUserId,
+        fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
         toUserId: debt.toUserId,
+        toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
         amount: debt.amount,
-        status: 'completed',
+        status: isOtherOwesMe ? 'completed' : 'pending',
+        billingMonth: billingMonth && billingMonth !== 'ALL' ? billingMonth : getCurrentBillingMonth(),
       });
       
-      Alert.alert('Success', 'Settlement recorded.');
+      if (isOtherOwesMe) {
+        dialog.showSuccess(
+          'Settled Successfully',
+          `Balance with ${debt.fromName} has been marked as settled.`
+        );
+      } else {
+        dialog.showSuccess(
+          'Settlement Request Sent',
+          `A settlement request has been sent to ${debt.toName}. The balance will be marked settled once they confirm receipt.`
+        );
+      }
       showSettleUpInterstitial();
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to record settlement.');
+      dialog.showError('Error', 'Failed to record settlement.');
     } finally {
       setSettlingId(null);
     }
@@ -164,14 +238,14 @@ export default function SettleUpScreen({ navigation, route }: Props) {
     try {
       const allowed = await canSendReminder(debt.fromUserId, groupId);
       if (!allowed) {
-        Alert.alert('Reminder Sent', 'Next reminder available in 24 hours.');
+        dialog.showWarning('Reminder Sent', 'Next reminder available in 24 hours.');
         return;
       }
 
       await sendPaymentReminder(debt.fromUserId, groupId, group?.name || 'Group', debt.amount);
-      Alert.alert('Reminder Sent', `Notification sent to ${debt.fromName}.`);
+      dialog.showSuccess('Reminder Sent', `Notification sent to ${debt.fromName}.`);
     } catch (error: any) {
-      Alert.alert('Error', 'Could not send reminder.');
+      dialog.showError('Error', 'Could not send reminder.');
     } finally {
       setRemindingId(null);
     }
@@ -191,12 +265,27 @@ export default function SettleUpScreen({ navigation, route }: Props) {
             name={group?.name}
             size={40}
             mode="full"
-            fallbackIcon={group?.groupType === 'Trip' ? 'flight' : 'groups'}
+            fallbackIcon={
+              group?.groupType === 'Trip' ? 'flight' :
+              group?.groupType === 'Family' ? 'home' :
+              group?.groupType === 'Couple' ? 'favorite' :
+              group?.groupType === 'Flatmate' ? 'apartment' : 'groups'
+            }
             style={styles.headerGroupAvatar}
           />
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.topBarTitle, { color: colors.onBackground }]}>Settle Up</Text>
-            <Text style={[styles.groupSubtitle, { color: colors.onSurfaceVariant }]}>{group?.name || 'Loading...'}</Text>
+            <Text style={[styles.groupSubtitle, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+              {group?.name || 'Loading...'}
+            </Text>
+            {billingMonth && billingMonth !== 'ALL' && (
+              <View style={[styles.monthBadgeHeader, { backgroundColor: colors.primaryContainer }]}>
+                <Ionicons name="calendar-outline" size={11} color={colors.primary} />
+                <Text style={[styles.monthBadgeHeaderText, { color: colors.primary }]}>
+                  Settling balances for {formatBillingMonthLabel(billingMonth)}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={{ width: 48 }} />
@@ -205,7 +294,16 @@ export default function SettleUpScreen({ navigation, route }: Props) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Settlement Summary Card */}
         <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-          <Text style={[styles.summaryTitle, { color: colors.onSurfaceVariant }]}>Group Summary</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={[styles.summaryTitle, { color: colors.onSurfaceVariant }]}>
+              {billingMonth && billingMonth !== 'ALL' ? `${formatBillingMonthLabel(billingMonth)} Summary` : 'Group Summary'}
+            </Text>
+            {billingMonth && billingMonth !== 'ALL' && (
+              <View style={[styles.monthBadge, { backgroundColor: colors.primaryContainer }]}>
+                <Text style={[styles.monthBadgeText, { color: colors.primary }]}>{formatBillingMonthLabel(billingMonth)}</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.summaryGrid}>
             <View style={styles.summaryItem}>
               <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Total Expense</Text>
@@ -396,4 +494,29 @@ const styles = StyleSheet.create({
   secondaryAction: { flex: 1, height: 40, borderRadius: BorderRadius.lg, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   actionTxt: { ...Typography.labelMd, fontWeight: '700' },
   secondaryActionTxt: { ...Typography.labelMd, fontWeight: '600' },
+  monthBadgeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
+    marginTop: 2,
+    alignSelf: 'flex-start',
+  },
+  monthBadgeHeaderText: {
+    ...Typography.bodySm,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  monthBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+  },
+  monthBadgeText: {
+    ...Typography.labelMd,
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });

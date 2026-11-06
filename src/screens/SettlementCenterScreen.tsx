@@ -13,16 +13,18 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { formatCurrency } from '../services/currencyService';
 import { SmartImage } from '../components/SmartImage';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 import {
   subscribeToUserGroups,
   getAllUsersFromFirestore,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   GroupData,
   ExpenseData,
   SettlementData,
@@ -53,18 +55,46 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
 
+  // Listen to needed profiles for global settlements
   useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      setAllUsers(users);
-      const uMap: Record<string, UserProfile> = {};
-      users.forEach(u => uMap[u.uid] = u);
-      setMemberProfiles(uMap);
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
+
+    // Trigger initial data fetch immediately
+    loadData();
+
+    const unsubGroups = subscribeToUserGroups(currentUid, (groups) => {
+      if (groups.length === 0) {
+        setAllDebts([]);
+        setLoading(false);
+        return;
+      }
+
+      const uidsToFetch = new Set<string>();
+      groups.forEach(g => {
+        if (g.memberIds) g.memberIds.forEach((uid: string) => uidsToFetch.add(uid));
+      });
+
+      uidsToFetch.forEach(uid => {
+        subscribeToUserProfile(uid, (profile) => {
+          setMemberProfiles(prev => ({
+            ...prev,
+            [uid]: profile || { uid, name: 'User', email: '' }
+          }));
+        });
+      });
     });
-    return () => unsub();
-  }, []);
+
+    return () => unsubGroups();
+  }, [currentUid]);
 
   const loadData = async () => {
-    if (!currentUid) return;
+    if (!currentUid) {
+      setLoading(false);
+      return;
+    }
 
     try {
       // 1. Fetch active groups
@@ -110,9 +140,14 @@ export default function SettlementCenterScreen({ navigation }: Props) {
 
         const groupDebts = simplifyDebts(groupExps, groupSets, profiles);
 
-        // Add group metadata and filter for current user
+        const activeMemberIds = group.memberIds || [];
+        // Add group metadata and filter for current user & active members only
         groupDebts.forEach(debt => {
-          if (debt.fromUserId === currentUid || debt.toUserId === currentUid) {
+          if (
+            (debt.fromUserId === currentUid || debt.toUserId === currentUid) &&
+            activeMemberIds.includes(debt.fromUserId) &&
+            activeMemberIds.includes(debt.toUserId)
+          ) {
             aggregated.push({
               ...debt,
               groupId: group.groupId,
@@ -132,9 +167,7 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   };
 
   useEffect(() => {
-    if (Object.keys(memberProfiles).length > 0) {
-      loadData();
-    }
+    loadData();
   }, [memberProfiles]);
 
   const onRefresh = () => {
@@ -145,30 +178,47 @@ export default function SettlementCenterScreen({ navigation }: Props) {
   const youOwe = useMemo(() => allDebts.filter(d => d.fromUserId === currentUid), [allDebts]);
   const youAreOwed = useMemo(() => allDebts.filter(d => d.toUserId === currentUid), [allDebts]);
 
+  const totalOwe = useMemo(() => youOwe.reduce((sum, d) => sum + d.amount, 0), [youOwe]);
+  const totalOwed = useMemo(() => youAreOwed.reduce((sum, d) => sum + d.amount, 0), [youAreOwed]);
+  const netBalance = totalOwed - totalOwe;
+
+  const dialog = useDialog();
+
   const handleRecordSettlement = async (debt: GroupDebt) => {
-    Alert.alert(
+    const isOtherOwesMe = debt.toUserId === currentUid;
+
+    dialog.showConfirm(
       'Mark as Settled',
       `Confirm that ${formatCurrency(debt.amount)} was paid between ${debt.fromName} and ${debt.toName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            try {
-              await addSettlementToFirestore({
-                groupId: debt.groupId,
-                fromUserId: debt.fromUserId,
-                toUserId: debt.toUserId,
-                amount: debt.amount,
-                status: 'completed',
-              });
-              loadData();
-            } catch (e) {
-              Alert.alert('Error', 'Failed to record settlement.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await addSettlementToFirestore({
+            groupId: debt.groupId,
+            fromUserId: debt.fromUserId,
+            fromName: memberProfiles[debt.fromUserId]?.name || debt.fromName || 'Member',
+            toUserId: debt.toUserId,
+            toName: memberProfiles[debt.toUserId]?.name || debt.toName || 'Member',
+            amount: debt.amount,
+            status: isOtherOwesMe ? 'completed' : 'pending',
+          });
+
+          if (isOtherOwesMe) {
+            dialog.showSuccess(
+              'Settled Successfully',
+              `Balance with ${debt.fromName} in ${debt.groupName} has been marked as settled.`
+            );
+          } else {
+            dialog.showSuccess(
+              'Settlement Request Sent',
+              `A settlement request has been sent to ${debt.toName}. The balance will be updated once confirmed.`
+            );
+          }
+          loadData();
+        } catch (e) {
+          dialog.showError('Error', 'Failed to record settlement.');
+        }
+      },
+      { confirmText: 'Confirm' }
     );
   };
 
@@ -176,13 +226,13 @@ export default function SettlementCenterScreen({ navigation }: Props) {
     try {
       const allowed = await canSendReminder(debt.fromUserId, debt.groupId);
       if (!allowed) {
-        Alert.alert('Reminder Sent', 'Next reminder available in 24 hours.');
+        dialog.showWarning('Reminder Sent', 'Next reminder available in 24 hours.');
         return;
       }
       await sendPaymentReminder(debt.fromUserId, debt.groupId, debt.groupName, debt.amount);
-      Alert.alert('Success', `Reminder sent to ${debt.fromName}`);
+      dialog.showSuccess('Success', `Reminder sent to ${debt.fromName}`);
     } catch (e) {
-      Alert.alert('Error', 'Failed to send reminder.');
+      dialog.showError('Error', 'Failed to send reminder.');
     }
   };
 
@@ -282,6 +332,47 @@ export default function SettlementCenterScreen({ navigation }: Props) {
           </View>
         ) : (
           <>
+            <View style={[styles.summaryCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+              <View style={styles.summaryTopRow}>
+                <View>
+                  <Text style={[styles.summaryLabel, { color: colors.onSurfaceVariant }]}>Net Settlement Position</Text>
+                  <Text style={[
+                    styles.summaryNetValue,
+                    { color: netBalance > 0 ? colors.positive : netBalance < 0 ? colors.error : colors.onSurface }
+                  ]}>
+                    {netBalance > 0 ? `+${formatCurrency(netBalance)}` : netBalance < 0 ? `-${formatCurrency(Math.abs(netBalance))}` : formatCurrency(0)}
+                  </Text>
+                </View>
+                <View style={[
+                  styles.badgePill,
+                  { backgroundColor: netBalance >= 0 ? colors.positiveContainer : colors.errorContainer }
+                ]}>
+                  <MaterialIcons
+                    name={netBalance >= 0 ? "arrow-downward" : "arrow-upward"}
+                    size={14}
+                    color={netBalance >= 0 ? colors.positiveText : colors.error}
+                  />
+                  <Text style={[styles.badgePillText, { color: netBalance >= 0 ? colors.positiveText : colors.error }]}>
+                    {netBalance > 0 ? "You're Owed Net" : netBalance < 0 ? "You Owe Net" : "All Clear"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.summaryDivider, { backgroundColor: colors.outlineVariant }]} />
+
+              <View style={styles.summaryStatsRow}>
+                <View style={styles.summaryStatItem}>
+                  <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Total you are owed</Text>
+                  <Text style={[styles.statValue, { color: colors.positive }]}>+{formatCurrency(totalOwed)}</Text>
+                </View>
+                <View style={[styles.statDivider, { backgroundColor: colors.outlineVariant }]} />
+                <View style={styles.summaryStatItem}>
+                  <Text style={[styles.statLabel, { color: colors.onSurfaceVariant }]}>Total you owe</Text>
+                  <Text style={[styles.statValue, { color: colors.error }]}>-{formatCurrency(totalOwe)}</Text>
+                </View>
+              </View>
+            </View>
+
             {youOwe.length > 0 && (
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.error }]}>YOU OWE</Text>
@@ -295,6 +386,9 @@ export default function SettlementCenterScreen({ navigation }: Props) {
                 {youAreOwed.map(d => renderDebtCard(d, 'owed'))}
               </View>
             )}
+
+            {/* Banner ad blended just below the settlement entries */}
+            <BannerAdSlot style={{ marginVertical: 12 }} />
           </>
         )}
       </ScrollView>
@@ -321,6 +415,66 @@ const styles = StyleSheet.create({
   emptySub: { ...Typography.bodyMd, textAlign: 'center' },
   section: { gap: Spacing.md },
   sectionTitle: { ...Typography.labelLg, fontWeight: '800', letterSpacing: 1 },
+  summaryCard: {
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    gap: Spacing.md,
+    ...Shadows.card,
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  summaryNetValue: {
+    fontSize: 26,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+  },
+  badgePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  summaryDivider: {
+    height: 1,
+    width: '100%',
+  },
+  summaryStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summaryStatItem: {
+    flex: 1,
+    gap: 2,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  statValue: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    marginHorizontal: Spacing.md,
+  },
   card: {
     borderRadius: BorderRadius.xl,
     padding: Spacing.md,

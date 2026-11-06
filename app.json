@@ -2,27 +2,39 @@
   "expo": {
     "name": "SplitMate",
     "slug": "splitmate",
-    "version": "1.0.0",
+    "version": "1.0.33",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#24389C"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "versionCode": 33,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#24389C"
+        "foregroundImage": "./assets/foreground_layer.png",
+        "backgroundColor": "#FFFFFF",
+        "monochromeImage": "./assets/foreground_layer.png"
       },
-      "package": "com.splitmate.app",
+      "package": "com.splitmate.newapp",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
+        "CAMERA",
         "READ_CONTACTS",
-        "WRITE_CONTACTS"
+        "WRITE_CONTACTS",
+        "com.google.android.gms.permission.AD_ID"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -30,16 +42,51 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/withLargeNotificationIcon.js",
       "expo-asset",
       "@react-native-google-signin/google-signin",
       "expo-localization",
       "@react-native-community/datetimepicker",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0065F2"
+        }
+      ],
+      [
         "expo-contacts",
         {
           "contactsPermission": "Allow SplitMate to access your contacts to easily add friends and split expenses."
         }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "fyndra-labs",
+          "project": "splitmate"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-1680182248071758~7059703023"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": false,
+          "cameraPermission": "Allow SplitMate to access your camera to take receipt photos.",
+          "microphonePermission": false
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "583abcc3-c499-4f06-98e3-53a052843ccd"
+      }
+    },
+    "owner": "hunter0007"
   }
 }

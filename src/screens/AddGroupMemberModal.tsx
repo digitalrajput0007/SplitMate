@@ -16,15 +16,17 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
 import {
-  UserProfile,
+  Contact,
   getSavedUserContactsFromFirestore,
-  getAllUsersFromFirestore,
+  findUserByPhone,
   subscribeToGroupExpenses,
   addMemberToGroupWithPreference,
   ExpenseData,
+  UserProfile,
   formatCurrency,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { shareApp } from '../config/appConfig';
 
 interface AddGroupMemberModalProps {
   visible: boolean;
@@ -35,9 +37,8 @@ interface AddGroupMemberModalProps {
   onMemberAdded: () => void;
 }
 
-interface CombinedContact extends UserProfile {
+interface CombinedContact extends Contact {
   isRegistered: boolean;
-  isSavedContact: boolean;
 }
 
 export function AddGroupMemberModal({
@@ -53,7 +54,7 @@ export function AddGroupMemberModal({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [allPlatformUsers, setAllPlatformUsers] = useState<UserProfile[]>([]);
-  const [savedContacts, setSavedContacts] = useState<UserProfile[]>([]);
+  const [savedContacts, setSavedContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<CombinedContact | null>(null);
 
@@ -67,12 +68,8 @@ export function AddGroupMemberModal({
 
       const loadData = async () => {
         try {
-          const [platformUsers, saved] = await Promise.all([
-            getAllUsersFromFirestore(),
-            getSavedUserContactsFromFirestore(currentUser.uid),
-          ]);
-          setAllPlatformUsers(platformUsers);
-          setSavedContacts(saved);
+          const saved = await getSavedUserContactsFromFirestore(currentUser.uid);
+          setSavedContacts(saved as any);
         } catch (e) {
           console.log('Error loading members data:', e);
         } finally {
@@ -94,36 +91,58 @@ export function AddGroupMemberModal({
     if (!searchQuery.trim()) {
       // Show saved contacts by default
       return savedContacts
-        .filter(c => !existingMemberIds.includes(c.uid))
-        .map(c => ({ ...c, isRegistered: true, isSavedContact: true } as CombinedContact));
+        .filter(c => !c.uid || !existingMemberIds.includes(c.uid))
+        .map(c => ({ ...c, isRegistered: !!c.uid, isSavedContact: true } as CombinedContact));
     }
 
     const query = searchQuery.toLowerCase();
 
-    // 1. Search in platform users
-    const platformMatches = allPlatformUsers
-      .filter(u =>
-        !existingMemberIds.includes(u.uid) &&
-        u.uid !== currentUser?.uid &&
-        (u.name.toLowerCase().includes(query) ||
-         u.email.toLowerCase().includes(query) ||
-         (u.mobile && u.mobile.includes(query)))
+    return savedContacts
+      .filter(c =>
+        !existingMemberIds.includes(c.uid || '') &&
+        c.uid !== currentUser?.uid &&
+        (c.name.toLowerCase().includes(query) ||
+         (c.phone && c.phone.includes(query)) ||
+         (c.email && c.email.toLowerCase().includes(query)))
       )
-      .map(u => ({
-        ...u,
-        isRegistered: true,
-        isSavedContact: savedContacts.some(sc => sc.uid === u.uid)
+      .map(c => ({
+        ...c,
+        isRegistered: !!c.uid,
       } as CombinedContact));
+  }, [searchQuery, savedContacts, existingMemberIds, currentUser]);
 
-    return platformMatches;
-  }, [searchQuery, allPlatformUsers, savedContacts, existingMemberIds, currentUser]);
+  const handleSearchByPhone = async () => {
+    if (searchQuery.length < 10) return;
+    setLoading(true);
+    try {
+      const user = await findUserByPhone(searchQuery);
+      if (user && !existingMemberIds.includes(user.uid)) {
+        // Automatically add to list if found and not in group
+        const newContact: Contact = {
+          name: user.name,
+          phone: user.mobile || '',
+          uid: user.uid,
+          photoUrl: user.photoUrl,
+        };
+        setSavedContacts(prev => [newContact, ...prev]);
+        setSelectedUser({ ...newContact, isRegistered: true } as CombinedContact);
+      }
+    } catch (e) {
+      console.log('Phone search error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const totalExistingExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
   const nextMemberCount = existingMemberIds.length + 1;
   const estimatedSharePerUser = totalExistingExpenses > 0 ? totalExistingExpenses / nextMemberCount : 0;
 
   const handleConfirmAdd = async () => {
-    if (!selectedUser) return;
+    if (!selectedUser || !selectedUser.uid) {
+      Alert.alert('Error', 'Only users registered on SplitMate can be added to groups currently.');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -145,12 +164,7 @@ export function AddGroupMemberModal({
   };
 
   const handleInvite = async () => {
-    try {
-      const shareMessage = `Join me on SplitMate to split bills & track group expenses! Download here: https://splitmate.app`;
-      await Share.share({ message: shareMessage });
-    } catch (error) {
-      console.log('Error sharing invite:', error);
-    }
+    await shareApp(`Join me on SplitMate to split bills & track group expenses!`);
   };
 
   if (!visible) return null;
@@ -179,6 +193,7 @@ export function AddGroupMemberModal({
               placeholderTextColor={colors.outline}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearchByPhone}
             />
             {!!searchQuery && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -201,10 +216,10 @@ export function AddGroupMemberModal({
                   </View>
                 ) : (
                   filteredResults.map((u) => {
-                    const isSelected = selectedUser?.uid === u.uid;
+                    const isSelected = selectedUser?.phone === u.phone;
                     return (
                       <TouchableOpacity
-                        key={u.uid}
+                        key={u.phone}
                         style={[
                           styles.contactRow,
                           { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
@@ -224,11 +239,13 @@ export function AddGroupMemberModal({
                         <View style={{ flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                             <Text style={[styles.contactName, { color: colors.onSurface }]} numberOfLines={1}>{u.name}</Text>
-                            <View style={[styles.badge, { backgroundColor: colors.positiveContainer }]}>
-                              <Text style={[styles.badgeText, { color: colors.positiveText }]}>On SplitMate</Text>
-                            </View>
+                            {u.uid && (
+                              <View style={[styles.badge, { backgroundColor: colors.positiveContainer }]}>
+                                <Text style={[styles.badgeText, { color: colors.positiveText }]}>On SplitMate</Text>
+                              </View>
+                            )}
                           </View>
-                          <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{u.mobile || u.email}</Text>
+                          <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{u.phone || u.email}</Text>
                         </View>
                         <MaterialIcons
                           name={isSelected ? 'radio-button-checked' : 'radio-button-unchecked'}
@@ -314,7 +331,7 @@ export function AddGroupMemberModal({
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
               <Text style={[styles.addSubmitText, { color: colors.onPrimary }]}>
-                {selectedUser ? `Add ${selectedUser.name.split(' ')[0]}` : 'Select a person'}
+                {selectedUser ? `Add ${(selectedUser.name || 'Member').split(' ')[0]}` : 'Select a person'}
               </Text>
             )}
           </TouchableOpacity>

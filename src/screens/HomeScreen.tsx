@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   ActivityIndicator,
+  InteractionManager,
+  Animated,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +22,12 @@ import { M3Dialog } from '../components/M3Dialog';
 import { M3BottomSheet } from '../components/M3BottomSheet';
 import { SmartImage } from '../components/SmartImage';
 import { SmartInsight } from '../components/SmartInsight';
-import { auth, db } from '../config/firebase';
+import { BalanceCard } from '../components/BalanceCard';
+import { SectionHeader } from '../components/SectionHeader';
+import { EmptyState } from '../components/EmptyState';
+import { GroupCard } from '../components/GroupCard';
+import AppLogo from '../components/AppLogo';
+import { auth } from '../config/firebase';
 import { formatCurrency } from '../services/currencyService';
 import {
   acceptGroupInvitation,
@@ -27,7 +35,7 @@ import {
   subscribeUserActivityFeed,
   subscribeUserMonthlyInsights,
   subscribeToNotifications,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   UserProfile,
   ActivityItem,
   SettlementData,
@@ -35,11 +43,12 @@ import {
   AppNotification,
   GroupInvitation,
   markNotificationAsRead,
-  addSettlementToFirestore,
+  confirmSettlementInFirestore,
+  rejectSettlementInFirestore,
+  processDueRecurringExpenses,
 } from '../services/firestoreService';
 import { useUserGroups } from '../hooks/useUserGroups';
 import { useHomeActions } from '../hooks/useHomeActions';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -47,7 +56,7 @@ export default function HomeScreen() {
   const { colors, isDark } = useTheme();
 
   const currentUser = auth.currentUser;
-  const { groups, loading: groupsLoading } = useUserGroups();
+  const { groups, groupBalances, loading: groupsLoading } = useUserGroups();
   const { actionState, invites, reminders, pendingConfirmations, balance } = useHomeActions(groups.length);
 
   const [firstName, setFirstName] = useState('');
@@ -64,55 +73,94 @@ export default function HomeScreen() {
     largestExpense: { title: 'None', amount: 0 },
     activeGroupsCount: 0,
   });
-
   const [showNoGroupsDialog, setShowNoGroupsDialog] = useState(false);
   const [showSelectGroupSheet, setShowSelectGroupSheet] = useState(false);
 
-  // Listen to all users for real-time profile pictures
+  // Trigger background process for due recurring expenses idempotently
   useEffect(() => {
-    const unsub = subscribeAllUserProfiles((users) => {
-      const uMap = new Map<string, UserProfile>();
-      users.forEach((u) => uMap.set(u.uid, u));
-      setAllUsersMap(uMap);
+    if (currentUser) {
+      processDueRecurringExpenses().catch((e) =>
+        console.warn('[Recurring] Background process error:', e)
+      );
+    }
+  }, [currentUser?.uid]);
+
+  // Listen to needed user profiles for activity feed
+  useEffect(() => {
+    if (recentActivities.length === 0 && unreadNotifications.length === 0 && pendingConfirmations.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    recentActivities.forEach(a => {
+      if (a.actorUid) uidsToFetch.add(a.actorUid);
+      if (a.targetUid) uidsToFetch.add(a.targetUid);
     });
-    return () => unsub();
-  }, []);
+    unreadNotifications.forEach(n => {
+      if (n.senderUid) uidsToFetch.add(n.senderUid);
+    });
+    pendingConfirmations.forEach(s => {
+      if (s.fromUserId) uidsToFetch.add(s.fromUserId);
+    });
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!allUsersMap.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setAllUsersMap(prev => {
+              const next = new Map(prev);
+              next.set(uid, profile);
+              return next;
+            });
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [recentActivities, unreadNotifications, pendingConfirmations]);
 
   // Dashboard Subscriptions
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const unsubActivity = subscribeUserActivityFeed(groups.map(g => g.groupId), (activities) => {
-      setRecentActivities(activities.slice(0, 5));
-    });
+    let unsubActivity: (() => void) | undefined;
+    let unsubNotifications: (() => void) | undefined;
+    let unsubInsights: (() => void) | undefined;
+    let unsubProfile: (() => void) | undefined;
 
-    const unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
-      setUnreadNotifications(notifList.filter(n => !n.read));
-    });
+    const task = InteractionManager.runAfterInteractions(() => {
+      unsubActivity = subscribeUserActivityFeed(groups.map(g => g.groupId), (activities) => {
+        setRecentActivities(activities.slice(0, 5));
+      });
 
-    const unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);
+      unsubNotifications = subscribeToNotifications(currentUser.uid, (notifList) => {
+        setUnreadNotifications(notifList.filter(n => !n.isRead && !n.read));
+      });
 
-    const unsubProfile = onSnapshot(doc(db, 'users', currentUser.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as UserProfile;
-        if (data.name) setFirstName(data.name.split(' ')[0]);
-        setUserPhoto(data.photoUrl || '');
-        setUserPhotoThumb(data.photoThumbnailUrl || '');
-      }
+      unsubInsights = subscribeUserMonthlyInsights(currentUser.uid, setMonthlyInsights);
+
+      unsubProfile = subscribeToUserProfile(currentUser.uid, (data) => {
+        if (data) {
+          if (data.name) setFirstName(data.name.split(' ')[0]);
+          setUserPhoto(data.photoUrl || '');
+          setUserPhotoThumb(data.photoThumbnailUrl || '');
+        }
+      });
     });
 
     return () => {
-      unsubActivity();
-      unsubNotifications();
-      unsubInsights();
-      unsubProfile();
+      task.cancel();
+      if (unsubActivity) unsubActivity();
+      if (unsubNotifications) unsubNotifications();
+      if (unsubInsights) unsubInsights();
+      if (unsubProfile) unsubProfile();
     };
-  }, [currentUser, groups.length]);
+  }, [currentUser?.uid, groups.length]);
 
   const handleActionCTA = () => {
     switch (actionState.priority) {
       case 'INVITATION':
-        // Scroll to invitations or open a modal (invitations are elevated now)
         break;
       case 'REMINDER':
       case 'OWE':
@@ -140,21 +188,23 @@ export default function HomeScreen() {
   };
 
   const handleConfirmPayment = async (s: SettlementData) => {
+    if (!s.settlementId) return;
     try {
-      await addSettlementToFirestore({
-        groupId: s.groupId,
-        fromUserId: s.fromUserId,
-        toUserId: s.toUserId,
-        amount: s.amount,
-        status: 'completed',
-      });
+      await confirmSettlementInFirestore(s.settlementId);
+      Alert.alert('Settlement Confirmed', 'The balance has been updated.');
     } catch (e) {
       console.log('Error confirming settlement:', e);
     }
   };
 
   const handleDismissReminder = async (n: AppNotification) => {
-    await markNotificationAsRead(n.notificationId);
+    const id = n.id || n.notificationId;
+    if (!id) {
+      console.warn('[Home] Cannot dismiss reminder: missing ID', n);
+      return;
+    }
+    setUnreadNotifications((prev) => prev.filter((item) => (item.id || item.notificationId) !== id));
+    await markNotificationAsRead(id);
   };
 
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) : 20) + Spacing.xs;
@@ -170,162 +220,183 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
+      <RNStatusBar
+        backgroundColor={colors.background}
+        barStyle={isDark ? 'light-content' : 'dark-content'}
+        translucent
+      />
 
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header Greeting - Action Oriented */}
+        {/* Sky-Blue Header */}
         <View style={styles.header}>
           <View style={styles.userInfo}>
-            <SmartImage
-              uri={userPhoto || undefined}
-              thumbnailUri={userPhotoThumb || undefined}
-              name={firstName}
-              size={48}
-              mode="thumbnail"
-              fallbackIcon="person"
-              style={styles.profilePic}
-            />
-            <View>
-              <Text style={[styles.greetingLabel, { color: colors.onSurfaceVariant }]}>{getGreeting()}</Text>
-              <Text style={[styles.userName, { color: colors.primary }]}>{firstName}</Text>
-              <TouchableOpacity onPress={handleActionCTA} style={styles.dynamicLine}>
-                <View style={[styles.statusDot, { backgroundColor: (actionState.priority === 'OWE' || actionState.priority === 'REMINDER') ? '#E11D48' : '#10B981' }]} />
-                <Text style={[styles.pendingText, { color: colors.onSurfaceVariant }]}>
-                  {actionState.message}
-                </Text>
-                <MaterialIcons name="chevron-right" size={14} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={styles.notifBtn}
-            onPress={() => navigation.navigate('Notifications')}
-          >
-            <View style={[styles.notifIconContainer, { backgroundColor: colors.surfaceContainerLow }]}>
-              <Ionicons name="notifications-outline" size={24} color={colors.onSurface} />
-              {hasUnreadNotifications && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{unreadNotifications.length}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Total Balance Card */}
-        <View style={[styles.netBalanceCard, { backgroundColor: colors.primary }]}>
-          <View style={styles.netBalanceHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={[styles.netBalanceLabel, { color: colors.onPrimary, opacity: 0.8 }]}>NET BALANCE</Text>
-              <MaterialIcons name="info-outline" size={14} color={colors.onPrimary} />
-            </View>
-            <TouchableOpacity style={styles.walletIconBtn} onPress={() => navigation.navigate('PaymentMethods')}>
-              <Ionicons name="wallet-outline" size={20} color={colors.onPrimary} />
+            <TouchableOpacity
+              onPress={() => navigation.navigate('MainTabs', { screen: 'AccountTab' })}
+              activeOpacity={0.8}
+            >
+              <SmartImage
+                uri={userPhoto || undefined}
+                thumbnailUri={userPhotoThumb || undefined}
+                name={firstName || 'User'}
+                size={46}
+                mode="thumbnail"
+                fallbackIcon="person"
+                style={styles.profilePic}
+              />
             </TouchableOpacity>
-          </View>
 
-          <View style={styles.amountDisplay}>
-            <Text style={[styles.plusSign, { color: colors.onPrimary }]}>
-              {balance.totalBalance >= 0 ? '+' : ''}
-            </Text>
-            <Text style={[styles.totalAmount, { color: colors.onPrimary }]}>
-              {formatCurrency(balance.totalBalance)}
-            </Text>
-          </View>
-
-          <View style={styles.balanceBreakdown}>
-            <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You are owed</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
-                {formatCurrency(balance.youAreOwed)}
+            <View>
+              <View style={styles.brandRow}>
+                <AppLogo size={16} />
+                <Text style={[styles.brandTagline, { color: colors.primary }]}>SplitMate</Text>
+              </View>
+              <Text style={[styles.greetingTitle, { color: colors.onSurface }]}>
+                {getGreeting()} {firstName || 'Friend'}
               </Text>
-            </View>
-            <View style={[styles.breakdownBox, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
-              <Text style={[styles.breakdownLabel, { color: colors.onPrimary, opacity: 0.8 }]}>You owe</Text>
-              <Text style={[styles.breakdownValue, { color: colors.onPrimary }]}>
-                {formatCurrency(balance.youOwe)}
-              </Text>
+              {actionState.message ? (
+                <TouchableOpacity onPress={handleActionCTA} style={styles.statusPill}>
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor:
+                          actionState.priority === 'OWE' || actionState.priority === 'REMINDER'
+                            ? colors.error
+                            : colors.positive,
+                      },
+                    ]}
+                  />
+                  <Text style={[styles.statusText, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                    {actionState.message}
+                  </Text>
+                  <MaterialIcons name="chevron-right" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.settleUpBtn, { backgroundColor: '#FFFFFF' }]}
-            onPress={() => navigation.navigate('SettlementCenter')}
-            activeOpacity={0.9}
+            style={[styles.notifBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+            onPress={() => navigation.navigate('Notifications')}
+            activeOpacity={0.7}
           >
-            <Ionicons name="list-outline" size={20} color={colors.primary} />
-            <Text style={[styles.settleUpText, { color: colors.primary }]}>View Settlements</Text>
+            <Ionicons name="notifications-outline" size={22} color={colors.onSurface} />
+            {hasUnreadNotifications && (
+              <View style={[styles.notifBadge, { backgroundColor: colors.error }]}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadNotifications.length > 9 ? '9+' : unreadNotifications.length}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Action Buttons Row */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionItem} onPress={handleAddExpensePress}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="add" size={24} color={colors.primary} />
+        {/* Sky-Blue Financial Overview Card */}
+        <BalanceCard
+          totalBalance={balance.totalBalance}
+          youAreOwed={balance.youAreOwed}
+          youOwe={balance.youOwe}
+          onSettlePress={() => navigation.navigate('SettlementCenter')}
+          onWalletPress={() => navigation.navigate('PaymentMethods')}
+        />
+
+        {/* Quick Actions Row */}
+        <View style={styles.quickActionsRow}>
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: colors.surfaceContainerLowest,
+                borderColor: colors.divider,
+              },
+            ]}
+            onPress={handleAddExpensePress}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Add Expense, Split a bill"
+          >
+            <View style={[styles.quickActionIconCircle, { backgroundColor: colors.primary + '18' }]}>
+              <MaterialIcons name="add-circle" size={26} color={colors.primary} />
             </View>
-            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Add{"\n"}Expense</Text>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Add Expense</Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Split a bill</Text>
+            </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('CreateGroup')}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="group-add" size={24} color={colors.primary} />
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: colors.surfaceContainerLowest,
+                borderColor: colors.divider,
+              },
+            ]}
+            onPress={() => navigation.navigate('CreateGroup')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Create Group, Start new pool"
+          >
+            <View style={[styles.quickActionIconCircle, { backgroundColor: colors.secondary + '18' }]}>
+              <MaterialIcons name="group-add" size={26} color={colors.secondary} />
             </View>
-            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Create{"\n"}Group</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('InviteContacts')}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="person-add" size={24} color={colors.primary} />
+            <View style={styles.quickActionTextContainer}>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Create Group</Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Start new pool</Text>
             </View>
-            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Invite{"\n"}Friends</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionItem} onPress={() => navigation.navigate('PaymentMethods')}>
-            <View style={[styles.actionIconCircle, { backgroundColor: '#E0E7FF' }]}>
-              <MaterialIcons name="payment" size={24} color={colors.primary} />
-            </View>
-            <Text style={[styles.actionLabel, { color: colors.onSurface }]}>Payment{"\n"}Methods</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Pending Invitations */}
+        {/* Actionable Alerts (Invitations, Reminders, Confirmations) */}
         {invites.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Pending Invitations</Text>
-            </View>
+          <View style={styles.sectionContainer}>
+            <SectionHeader title="Pending Invitations" subtitle={`${invites.length} pending`} />
             <View style={{ gap: Spacing.sm }}>
               {invites.map((inv) => (
-                <View key={inv.invitationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                <View
+                  key={inv.invitationId}
+                  style={[
+                    styles.alertCard,
+                    { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                  ]}
+                >
                   <SmartImage
                     uri={inv.groupPhotoUrl}
                     thumbnailUri={inv.groupPhotoThumbnailUrl}
                     name={inv.groupName}
-                    size={40}
+                    size={42}
                     mode="thumbnail"
-                    fallbackIcon="groups"
-                    style={{ borderRadius: 8 }}
+                    fallbackIcon={
+                      inv.groupType === 'Trip' ? 'flight' :
+                        inv.groupType === 'Family' ? 'home' :
+                          inv.groupType === 'Couple' ? 'favorite' :
+                            inv.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                    }
+                    style={{ borderRadius: 21 }}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>{inv.groupName}</Text>
-                    <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>Invited by {inv.invitedByName}</Text>
+                    <Text style={[styles.alertTitle, { color: colors.onSurface }]} numberOfLines={1}>
+                      {inv.groupName}
+                    </Text>
+                    <Text style={[styles.alertSub, { color: colors.onSurfaceVariant }]}>
+                      Invited by {inv.invitedByName}
+                    </Text>
                   </View>
-                  <View style={styles.invitationActions}>
+                  <View style={styles.alertActions}>
                     <TouchableOpacity
-                      style={[styles.actionIconBtn, { backgroundColor: colors.surfaceContainerLow }]}
+                      style={[styles.alertActionBtn, { backgroundColor: colors.surfaceContainerLow }]}
                       onPress={() => declineGroupInvitation(inv.invitationId!, inv.groupId)}
                     >
-                      <Ionicons name="close" size={20} color={colors.onSurface} />
+                      <Ionicons name="close" size={18} color={colors.onSurface} />
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.actionIconBtn, { backgroundColor: colors.primary }]}
+                      style={[styles.alertActionBtn, { backgroundColor: colors.primary }]}
                       onPress={() => acceptGroupInvitation(inv.invitationId!, inv.groupId)}
                     >
-                      <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -334,41 +405,56 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Settlement Reminders */}
         {reminders.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Settlement Reminders</Text>
-            </View>
+          <View style={styles.sectionContainer}>
+            <SectionHeader title="Settlement Reminders" subtitle={`${reminders.length} reminder(s)`} />
             <View style={{ gap: Spacing.sm }}>
               {reminders.map((rem) => {
-                const sender = allUsersMap.get(rem.senderUid);
+                const senderUid = rem.data?.senderUid || (rem as any).senderUid;
+                const sender = senderUid ? allUsersMap.get(senderUid) : undefined;
+                const senderName = sender?.name || (rem as any).senderName || rem.data?.senderName || 'A friend';
+                const senderPhoto = sender?.photoUrl || rem.data?.senderPhotoUrl;
+                const displayAmount = (rem as any).amount || rem.data?.amount || 0;
+                const displayGroupName = (rem as any).groupName || rem.data?.groupName || 'a group';
+
                 return (
-                  <View key={rem.notificationId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                  <View
+                    key={rem.id || rem.notificationId}
+                    style={[
+                      styles.alertCard,
+                      { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                    ]}
+                  >
                     <SmartImage
-                      uri={sender?.photoUrl}
-                      thumbnailUri={sender?.photoThumbnailUrl}
-                      name={sender?.name}
-                      size={40}
+                      uri={senderPhoto}
+                      name={senderName}
+                      size={42}
                       mode="thumbnail"
-                      style={{ borderRadius: 20 }}
+                      style={{ borderRadius: 21 }}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>{formatCurrency(rem.amount || 0)} for {rem.groupName}</Text>
-                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>From {sender?.name || 'Friend'}</Text>
+                      <Text style={[styles.alertTitle, { color: colors.onSurface }]}>
+                        <Text style={{ fontWeight: 'bold' }}>{senderName}</Text> sent reminder
+                      </Text>
+                      <Text style={[styles.alertSub, { color: colors.onSurfaceVariant }]}>
+                        To settle {formatCurrency(displayAmount)} in {displayGroupName}
+                      </Text>
                     </View>
-                    <View style={styles.invitationActions}>
+                    <View style={styles.alertActions}>
                       <TouchableOpacity
-                        style={[styles.actionIconBtn, { backgroundColor: colors.surfaceContainerLow }]}
+                        style={[styles.alertActionBtn, { backgroundColor: colors.surfaceContainerLow }]}
                         onPress={() => handleDismissReminder(rem)}
                       >
-                        <MaterialIcons name="close" size={20} color={colors.onSurface} />
+                        <Ionicons name="close" size={18} color={colors.onSurface} />
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={[styles.actionIconBtn, { backgroundColor: colors.primary }]}
-                        onPress={() => navigation.navigate('SettleUp', { groupId: rem.groupId })}
+                        style={[styles.alertActionBtn, { backgroundColor: colors.primary }]}
+                        onPress={() => {
+                          handleDismissReminder(rem);
+                          navigation.navigate('SettleUp', { groupId: rem.groupId || rem.data?.groupId });
+                        }}
                       >
-                        <MaterialIcons name="payments" size={20} color="#FFFFFF" />
+                        <MaterialIcons name="payments" size={18} color="#FFFFFF" />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -378,30 +464,62 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Needs Attention */}
         {pendingConfirmations.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Needs Attention</Text>
-            </View>
+          <View style={styles.sectionContainer}>
+            <SectionHeader title="Needs Attention" subtitle="Confirm payments received" />
             <View style={{ gap: Spacing.sm }}>
               {pendingConfirmations.map((s) => {
                 const fromUser = allUsersMap.get(s.fromUserId);
+                const fromName = fromUser?.name || 'A friend';
+                const fromPhoto = fromUser?.photoUrl;
+                const fromPhotoThumb = fromUser?.photoThumbnailUrl;
+
                 return (
-                  <View key={s.settlementId} style={[styles.invitationCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                    <View style={[styles.invitationIconCircle, { backgroundColor: colors.secondaryContainer }]}>
-                      <MaterialIcons name="check-circle" size={20} color={colors.onSecondaryContainer} />
-                    </View>
+                  <View
+                    key={s.settlementId}
+                    style={[
+                      styles.alertCard,
+                      { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                    ]}
+                  >
+                    <SmartImage
+                      uri={fromPhoto}
+                      thumbnailUri={fromPhotoThumb}
+                      name={fromName}
+                      size={42}
+                      mode="thumbnail"
+                      fallbackIcon="person"
+                      style={{ borderRadius: 21 }}
+                    />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.invitationTitle, { color: colors.onSurface }]}>Confirm Receipt</Text>
-                      <Text style={[styles.invitationSub, { color: colors.onSurfaceVariant }]}>{fromUser?.name || 'Friend'} paid you {formatCurrency(s.amount)}</Text>
+                      <Text style={[styles.alertTitle, { color: colors.onSurface }]}>Payment Received</Text>
+                      <Text style={[styles.alertSub, { color: colors.onSurfaceVariant }]}>
+                        <Text style={{ fontWeight: 'bold', color: colors.onSurface }}>{fromName}</Text> paid you{' '}
+                        {formatCurrency(s.amount)}
+                      </Text>
                     </View>
-                    <TouchableOpacity
-                      style={[styles.reviewBtn, { backgroundColor: colors.primary }]}
-                      onPress={() => handleConfirmPayment(s)}
-                    >
-                      <Text style={styles.reviewBtnText}>Confirm</Text>
-                    </TouchableOpacity>
+                    <View style={styles.alertActions}>
+                      <TouchableOpacity
+                        style={[styles.alertActionBtn, { backgroundColor: colors.error }]}
+                        onPress={async () => {
+                          if (s.settlementId) {
+                            try {
+                              await rejectSettlementInFirestore(s.settlementId);
+                            } catch (e) {
+                              console.error('Error rejecting settlement:', e);
+                            }
+                          }
+                        }}
+                      >
+                        <Ionicons name="close" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.alertActionBtn, { backgroundColor: colors.positive }]}
+                        onPress={() => handleConfirmPayment(s)}
+                      >
+                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -409,26 +527,85 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Smart Insight Card */}
-        <View style={styles.section}>
+        {/* Groups Preview Section */}
+        <View style={styles.sectionContainer}>
+          <SectionHeader
+            title="My Groups"
+            actionText={groups.length > 0 ? 'See All' : undefined}
+            onActionPress={() => navigation.navigate('MainTabs', { screen: 'GroupsTab' })}
+          />
+
+          {groupsLoading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: Spacing.md }} />
+          ) : groups.length === 0 ? (
+            <EmptyState
+              icon="group-add"
+              title="No Groups Yet"
+              description="Create a group with flatmates, travel buddies, or friends to start sharing expenses seamlessly."
+              actionLabel="Create a Group"
+              onActionPress={() => navigation.navigate('CreateGroup')}
+            />
+          ) : (
+            <View style={{ gap: Spacing.xs }}>
+              {groups.slice(0, 3).map((group) => {
+                const bal = groupBalances[group.groupId] || 0;
+                const balLabel = bal > 0 ? 'owed' : bal < 0 ? 'owe' : 'settled';
+                const balFormatted = formatCurrency(Math.abs(bal));
+
+                return (
+                  <GroupCard
+                    key={group.groupId}
+                    name={group.name}
+                    groupPhotoUrl={group.photoUrl}
+                    groupPhotoThumbnailUrl={group.photoThumbnailUrl}
+                    groupType={group.groupType as any}
+                    members={(group.memberIds || []).map((uid: string) => {
+                      const u = allUsersMap.get(uid);
+                      return { name: u?.name || 'Member', uri: u?.photoUrl, thumbnailUri: u?.photoThumbnailUrl };
+                    })}
+                    balanceLabel={balLabel}
+                    balanceAmount={balFormatted}
+                    onPress={() =>
+                      navigation.navigate('GroupDetail', {
+                        groupId: group.groupId,
+                        groupName: group.name,
+                      })
+                    }
+                    role={group.createdBy === currentUser?.uid ? 'owner' : 'member'}
+                  />
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* Banner Ad blended under My Groups */}
+        <BannerAdSlot style={{ marginVertical: 2 }} />
+
+        {/* Smart Insight Analytics */}
+        <View style={styles.sectionContainer}>
           <SmartInsight insights={monthlyInsights} expenses={[]} settlements={[]} />
         </View>
 
-        {/* Recent Activity */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.onBackground }]}>Recent Activity</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('ActivityTab')}>
-              <Text style={[styles.viewAllLink, { color: colors.onSurfaceVariant }]}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={[styles.activityList, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider, borderWidth: 1 }]}>
-            {recentActivities.length === 0 ? (
-              <View style={{ padding: Spacing.md, alignItems: 'center' }}>
-                <Text style={{ color: colors.outline }}>No recent activity</Text>
-              </View>
-            ) : (
-              recentActivities.map((item) => {
+        {/* Recent Activity Section */}
+        <View style={styles.sectionContainer}>
+          <SectionHeader
+            title="Recent Activity"
+            actionText={recentActivities.length > 0 ? 'See All' : undefined}
+            onActionPress={() => navigation.navigate('MainTabs', { screen: 'ActivityTab' })}
+          />
+
+          {recentActivities.length === 0 ? (
+            <EmptyState
+              icon="receipt"
+              title="No Recent Activity"
+              description="When you or your group members add expenses or settlements, they will appear here in real time."
+              actionLabel="Add Expense"
+              onActionPress={handleAddExpensePress}
+            />
+          ) : (
+            <View style={{ gap: Spacing.xs }}>
+              {recentActivities.map((item) => {
                 const actor = allUsersMap.get(item.actorUid);
                 const target = item.targetUid ? allUsersMap.get(item.targetUid) : null;
                 const actorName = item.actorUid === currentUser?.uid ? 'You' : actor?.name || 'Member';
@@ -441,33 +618,68 @@ export default function HomeScreen() {
                 else if (item.type === 'group') actionText = 'created';
                 else if (item.type === 'reminder') actionText = `sent a reminder to ${targetName} for`;
 
+                const displayTitle = item.type === 'group' ? item.title.replace(/\s+created$/i, '') : item.title;
+
+                const handleActivityPress = () => {
+                  if (item.type === 'expense' && item.id) {
+                    navigation.navigate('ExpenseDetail', { expenseId: item.id });
+                  } else if (item.type === 'group' && item.id) {
+                    navigation.navigate('GroupDetail', { groupId: item.id, groupName: displayTitle });
+                  }
+                };
+
                 return (
-                  <View key={item.id} style={styles.activityItem}>
-                    <View style={[styles.activityDot, { backgroundColor: item.type === 'expense' ? '#3B82F6' : item.type === 'reminder' ? '#F59E0B' : '#10B981' }]} />
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.activityRowCard,
+                      { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                    ]}
+                    onPress={handleActivityPress}
+                    activeOpacity={0.7}
+                  >
+                    <View
+                      style={[
+                        styles.activityDot,
+                        {
+                          backgroundColor:
+                            item.type === 'expense'
+                              ? colors.primary
+                              : item.type === 'reminder'
+                                ? colors.warning
+                                : colors.positive,
+                        },
+                      ]}
+                    />
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.activityTitle, { color: colors.onSurface }]}>
-                        <Text style={{ fontWeight: 'bold' }}>{actorName}</Text> {actionText} <Text style={{ fontWeight: 'bold' }}>{item.title}</Text>
+                        <Text style={{ fontWeight: '700' }}>{actorName}</Text> {actionText}{' '}
+                        <Text style={{ fontWeight: '700' }}>{displayTitle}</Text>
                       </Text>
                       <Text style={[styles.activitySub, { color: colors.onSurfaceVariant }]}>
-                        {item.date} • {item.groupName}
+                        {item.date} {item.groupName ? `• ${item.groupName}` : ''}
                       </Text>
                     </View>
                     {item.amount > 0 && item.type !== 'reminder' && (
-                      <Text style={[styles.activityAmount, { color: isNegative ? '#B91C1C' : '#15803D' }]}>
-                        {isNegative ? '-' : '+'}{formatCurrency(item.amount)}
+                      <Text
+                        style={[
+                          styles.activityAmount,
+                          { color: isNegative ? colors.error : colors.positive },
+                        ]}
+                      >
+                        {isNegative ? '-' : '+'}
+                        {formatCurrency(item.amount)}
                       </Text>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 );
-              })
-            )}
-          </View>
+              })}
+            </View>
+          )}
         </View>
-
-        <BannerAdSlot />
       </ScrollView>
 
-      {/* Case 1: No Groups Dialog */}
+      {/* Dialog for No Groups */}
       <M3Dialog
         visible={showNoGroupsDialog}
         title="No Groups Found"
@@ -480,7 +692,7 @@ export default function HomeScreen() {
         onDismiss={() => setShowNoGroupsDialog(false)}
       />
 
-      {/* Case 3: Select Group Bottom Sheet */}
+      {/* Select Group Bottom Sheet */}
       <M3BottomSheet
         visible={showSelectGroupSheet}
         onDismiss={() => setShowSelectGroupSheet(false)}
@@ -506,7 +718,12 @@ export default function HomeScreen() {
                   name={group.name}
                   size={40}
                   mode="thumbnail"
-                  fallbackIcon={group.groupType === 'Trip' ? 'flight' : 'groups'}
+                  fallbackIcon={
+                    group.groupType === 'Trip' ? 'flight' :
+                      group.groupType === 'Family' ? 'home' :
+                        group.groupType === 'Couple' ? 'favorite' :
+                          group.groupType === 'Flatmate' ? 'apartment' : 'groups'
+                  }
                   style={{ borderRadius: 8 }}
                 />
                 <View>
@@ -520,7 +737,7 @@ export default function HomeScreen() {
           ))}
 
           <TouchableOpacity
-            style={[styles.sheetAddBtn, { borderColor: colors.primary }]}
+            style={[styles.sheetAddBtn, { borderColor: colors.primary, backgroundColor: colors.surfaceContainerLow }]}
             onPress={() => {
               setShowSelectGroupSheet(false);
               navigation.navigate('CreateGroup');
@@ -536,10 +753,12 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+  },
   scroll: {
     paddingHorizontal: Spacing.containerMargin,
-    paddingBottom: 40,
+    paddingBottom: 100,
     gap: Spacing.lg,
   },
   header: {
@@ -551,281 +770,209 @@ const styles = StyleSheet.create({
   userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    flex: 1,
   },
   profilePic: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: '#38BDF8',
   },
-  greetingLabel: {
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  brandTagline: {
     ...Typography.bodySm,
-    opacity: 0.7,
+    fontSize: 11,
+    fontFamily: Typography.fontFamilySemiBold,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
-  userName: {
-    ...Typography.headlineSm,
-    fontWeight: 'bold',
+  greetingTitle: {
+    ...Typography.titleMd,
+    fontWeight: '700',
+    lineHeight: 20,
   },
-  dynamicLine: {
+  statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     marginTop: 2,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
-  pendingText: {
-    ...Typography.labelMd,
-    fontWeight: '600',
+  statusText: {
+    ...Typography.bodySm,
+    fontSize: 11,
+    maxWidth: 200,
   },
   notifBtn: {
-    width: 48,
-    height: 48,
-  },
-  notifIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    ...Shadows.card,
   },
   notifBadge: {
     position: 'absolute',
-    top: 10,
-    right: 10,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#E11D48',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 2,
   },
   notifBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  netBalanceCard: {
-    borderRadius: BorderRadius.xxl,
-    padding: Spacing.xl,
-    gap: Spacing.lg,
-    ...Shadows.cardElevated,
-  },
-  netBalanceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  netBalanceLabel: {
-    ...Typography.labelMd,
-    letterSpacing: 1,
-  },
-  walletIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  amountDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  plusSign: {
-    fontSize: 24,
-    fontWeight: '300',
-  },
-  totalAmount: {
-    fontSize: 36,
-    fontWeight: 'bold',
-  },
-  balanceBreakdown: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  breakdownBox: {
-    flex: 1,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    gap: 4,
-  },
-  breakdownLabel: {
-    ...Typography.bodySm,
     fontSize: 10,
-  },
-  breakdownValue: {
-    ...Typography.titleMd,
-    fontWeight: 'bold',
-  },
-  settleUpBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 52,
-    borderRadius: BorderRadius.xl,
-    gap: 8,
-  },
-  settleUpText: {
-    ...Typography.titleMd,
-    fontWeight: 'bold',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.xs,
-  },
-  actionItem: {
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  actionIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.card,
-  },
-  actionLabel: {
-    ...Typography.labelMd,
-    textAlign: 'center',
-    lineHeight: 14,
-  },
-  section: {
-    gap: Spacing.md,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    ...Typography.titleMd,
-    fontWeight: 'bold',
-  },
-  viewAllLink: {
-    ...Typography.labelMd,
-  },
-  invitationCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    gap: Spacing.md,
-    ...Shadows.card,
-  },
-  invitationIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  invitationTitle: {
-    ...Typography.titleSm,
-    fontWeight: 'bold',
-  },
-  invitationSub: {
-    ...Typography.bodySm,
-    fontSize: 11,
-  },
-  invitationActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  actionIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  reviewBtnText: {
-    color: '#FFFFFF',
-    ...Typography.labelMd,
     fontWeight: '700',
   },
-  activityList: {
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.md,
-    gap: Spacing.lg,
+  quickActionsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
-  activityItem: {
+  quickActionCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    minHeight: 64,
+    gap: Spacing.sm,
+    ...Shadows.card,
+  },
+  quickActionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickActionTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  quickActionTitle: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  quickActionSubtitle: {
+    ...Typography.bodySm,
+    fontSize: 12,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  sectionContainer: {
+    gap: Spacing.xs,
+  },
+  alertCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    gap: Spacing.sm,
+    ...Shadows.card,
+  },
+  alertTitle: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  alertSub: {
+    ...Typography.bodySm,
+    fontSize: 12,
+    marginTop: 1,
+  },
+  alertActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  alertActionBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   activityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   activityTitle: {
-    ...Typography.bodySm,
+    ...Typography.bodyMd,
+    fontSize: 13,
   },
   activitySub: {
     ...Typography.bodySm,
-    fontSize: 10,
+    fontSize: 11,
+    marginTop: 2,
   },
   activityAmount: {
     ...Typography.titleSm,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   sheetContent: {
+    padding: Spacing.md,
     gap: Spacing.sm,
-    paddingBottom: 20,
   },
   sheetItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
   },
   sheetItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
-    flex: 1,
+    gap: Spacing.sm,
   },
   sheetItemName: {
     ...Typography.titleSm,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   sheetItemSub: {
     ...Typography.bodySm,
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 12,
   },
   sheetAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderRadius: BorderRadius.lg,
-    gap: 8,
+    gap: 6,
+    marginTop: Spacing.xs,
   },
   sheetAddText: {
-    ...Typography.titleSm,
-    fontWeight: '700',
+    ...Typography.labelLg,
+    fontWeight: '600',
   },
 });

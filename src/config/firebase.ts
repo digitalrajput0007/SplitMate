@@ -3,9 +3,9 @@ import {
   initializeAuth, 
   getAuth, 
   Auth,
-  // @ts-ignore
-  getReactNativePersistence 
 } from 'firebase/auth';
+import * as FirebaseAuth from 'firebase/auth';
+const getReactNativePersistence = (FirebaseAuth as any).getReactNativePersistence;
 import { 
   initializeFirestore, 
   memoryLocalCache, 
@@ -13,7 +13,9 @@ import {
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
+// Firebase configuration for SplitMate
 export const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY || "AIzaSyB2fCMYGgRHXYOiiESoQeqg9F_BIS2pS60",
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN || "splitmate-d2d66.firebaseapp.com",
@@ -28,21 +30,27 @@ export const WEB_CLIENT_ID = "563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps
 // Initialize Firebase App
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Firebase Auth with React Native AsyncStorage Persistence
+// Initialize Firebase Auth with Platform-specific Persistence
 let auth: Auth;
 try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage)
-  });
+  if (Platform.OS === 'web') {
+    auth = getAuth(app);
+  } else {
+    // Fast native persistence via AsyncStorage
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+  }
 } catch (e) {
   auth = getAuth(app);
 }
 
-// Initialize Firestore Database
+// Initialize Firestore Database with Memory Cache and Auto-Detect Long Polling for robust network streams
 let db: any;
 try {
   db = initializeFirestore(app, {
     localCache: memoryLocalCache(),
+    experimentalAutoDetectLongPolling: true,
   });
 } catch (e) {
   db = getFirestore(app);

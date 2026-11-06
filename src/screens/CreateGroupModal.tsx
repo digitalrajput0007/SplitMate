@@ -13,26 +13,26 @@ import {
   Platform,
   Switch,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Contacts from 'expo-contacts';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import {
   createGroupInFirestore,
-  getAllUsersFromFirestore,
   getSavedUserContactsFromFirestore,
+  Contact,
   UserProfile,
 } from '../services/firestoreService';
 import { auth } from '../config/firebase';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateGroup'>;
 
@@ -60,6 +60,7 @@ const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeo
 export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const AVATAR_COLORS = React.useMemo(() => [
     { bg: colors.primaryContainer, text: colors.onPrimaryContainer },
@@ -98,11 +99,20 @@ export default function CreateGroupModal({ navigation }: Props) {
   });
 
   // Conditional Fields
+  const [enableTripDates, setEnableTripDates] = useState(false);
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [endDate, setEndDate] = useState<Date>(new Date());
   const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
   const [familyName, setFamilyName] = useState('');
   const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
+  const [enableFamilyReminder, setEnableFamilyReminder] = useState(false);
+  const [familyReminderDate, setFamilyReminderDate] = useState<Date>(new Date());
+  const [showFamilyReminderPicker, setShowFamilyReminderPicker] = useState(false);
+  const [enableBalanceAlert, setEnableBalanceAlert] = useState(false);
+  const [balanceAlertThreshold, setBalanceAlertThreshold] = useState('2000');
+  const [enableFlatmateSettleReminder, setEnableFlatmateSettleReminder] = useState(false);
+  const [flatmateReminderDate, setFlatmateReminderDate] = useState<Date>(new Date());
+  const [showFlatmateReminderPicker, setShowFlatmateReminderPicker] = useState(false);
 
   // Screen 2: Contacts & Member Selection State
   const [allContacts, setAllContacts] = useState<ContactItem[]>([]);
@@ -123,16 +133,15 @@ export default function CreateGroupModal({ navigation }: Props) {
     try {
       const list: ContactItem[] = [];
 
-      // 1. Fetch only saved user contacts from Firestore (added contacts on platform)
       if (currentUser?.uid) {
-        const savedUsers = await getSavedUserContactsFromFirestore(currentUser.uid);
-        savedUsers.forEach((u, idx) => {
+        const savedContacts = await getSavedUserContactsFromFirestore(currentUser.uid);
+        savedContacts.forEach((u, idx) => {
           const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
           list.push({
-            id: u.uid,
+            id: u.phone,
             name: u.name,
-            subText: u.mobile ? `+91 ${u.mobile}` : u.email,
-            phoneNumber: u.mobile,
+            subText: u.phone,
+            phoneNumber: u.phone,
             photoUrl: u.photoUrl,
             uid: u.uid,
             initial: u.name.charAt(0).toUpperCase(),
@@ -226,8 +235,15 @@ export default function CreateGroupModal({ navigation }: Props) {
       const selectedContactsList = allContacts.filter((c) => selectedIds.has(c.id));
       const memberUids = selectedContactsList.map((c) => c.uid || c.id);
 
-      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
-      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
+      const hasTripDates = groupType === 'Trip' && enableTripDates;
+      const formattedStart = hasTripDates ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = hasTripDates ? endDate.toISOString().split('T')[0] : undefined;
+      const hasFamilyReminder = groupType === 'Family' && enableFamilyReminder;
+      const formattedReminder = hasFamilyReminder ? familyReminderDate.toISOString().split('T')[0] : undefined;
+      const hasCoupleBalanceAlert = groupType === 'Couple' && enableBalanceAlert;
+      const alertThresholdNum = hasCoupleBalanceAlert ? parseFloat(balanceAlertThreshold) || 2000 : undefined;
+      const hasFlatmateReminder = groupType === 'Flatmate' && enableFlatmateSettleReminder;
+      const formattedFlatmateReminder = hasFlatmateReminder ? flatmateReminderDate.toISOString().split('T')[0] : undefined;
 
       const newId = await createGroupInFirestore(groupName.trim(), memberUids, {
         groupType,
@@ -235,15 +251,22 @@ export default function CreateGroupModal({ navigation }: Props) {
         photoThumbnailUrl: groupPhotoThumb || undefined,
         photoMetadata: groupPhotoMetadata || undefined,
         familyName: groupType === 'Family' && familyName.trim() ? familyName.trim() : undefined,
-        setupMonthlySplit: groupType === 'Flatmate' ? setupMonthlySplit : undefined,
-        enableDates: groupType === 'Trip',
+        enableDates: hasTripDates,
         startDate: formattedStart,
         endDate: formattedEnd,
+        enableSettleReminder: hasFamilyReminder,
+        settleReminderDate: formattedReminder,
+        enableBalanceAlert: hasCoupleBalanceAlert,
+        balanceAlertThreshold: alertThresholdNum,
+        enableFlatmateSettleReminder: hasFlatmateReminder,
+        flatmateReminderDate: formattedFlatmateReminder,
       });
 
       setCreatedGroupId(newId);
       setCreating(false);
-      setCurrentStep(4);
+      showInterstitialAd(() => {
+        setCurrentStep(4);
+      });
     } catch (e: any) {
       setCreating(false);
       Alert.alert('Error', e.message || 'Failed to create group.');
@@ -291,11 +314,11 @@ export default function CreateGroupModal({ navigation }: Props) {
               style={[styles.stitchSecondaryBtn, { borderColor: colors.primary }]}
               activeOpacity={0.85}
               onPress={() => {
-                navigation.replace('InviteContacts');
+                navigation.navigate('Contacts');
               }}
             >
-              <MaterialIcons name="person-add" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.stitchSecondaryBtnText, { color: colors.primary }]}>Invite more people</Text>
+              <MaterialIcons name="contacts" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.stitchSecondaryBtnText, { color: colors.primary }]}>View Contacts</Text>
             </TouchableOpacity>
 
             {/* Tertiary Action */}
@@ -317,11 +340,6 @@ export default function CreateGroupModal({ navigation }: Props) {
           onCamera={takePhoto}
           onGallery={pickFromGallery}
           onFiles={browseFiles}
-        />
-
-        <MediaUploadOverlay
-          visible={isUploading}
-          progress={progress}
         />
       </SafeAreaView>
     );
@@ -359,14 +377,21 @@ export default function CreateGroupModal({ navigation }: Props) {
 
             <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-            {/* Row 1: Name */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md }}>
-              <View>
+            {/* Row 1: Name & Avatar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: Spacing.md }}>
+              <SmartImage
+                uri={groupPhoto || undefined}
+                thumbnailUri={groupPhotoThumb || undefined}
+                name={groupName}
+                size={44}
+                fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
+              />
+              <View style={{ flex: 1 }}>
                 <Text style={{ ...Typography.labelMd, color: colors.onSurfaceVariant, textTransform: 'uppercase' }}>GROUP NAME</Text>
                 <Text style={{ ...Typography.titleMd, color: colors.onSurface, marginTop: 2 }}>{groupName || 'Group'}</Text>
               </View>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryContainer, alignItems: 'center', justifyContent: 'center' }}>
-                <MaterialIcons name="check-circle" size={24} color={colors.primary} />
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <MaterialIcons name="check" size={20} color="#FFFFFF" />
               </View>
             </View>
 
@@ -471,7 +496,7 @@ export default function CreateGroupModal({ navigation }: Props) {
         </View>
 
         {/* Main Content */}
-        <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md }}>
+        <View style={{ flex: 1, paddingHorizontal: Spacing.containerMargin, paddingTop: Spacing.md, paddingBottom: 130 + Math.max(insets.bottom, 16) }}>
           {/* Search Field */}
           <View style={[styles.searchBox, { borderColor: colors.outline, backgroundColor: colors.surfaceContainerLow }]}>
             <MaterialIcons name="search" size={20} color={colors.outline} style={{ marginRight: 8 }} />
@@ -532,13 +557,13 @@ export default function CreateGroupModal({ navigation }: Props) {
                   {/* Integrated Invite row */}
                   <TouchableOpacity
                     style={styles.integratedInviteRow}
-                    onPress={() => navigation.navigate('InviteContacts')}
+                    onPress={() => navigation.navigate('ContactSync')}
                     activeOpacity={0.8}
                   >
                     <View style={[styles.dottedPhoneCircle, { borderColor: colors.primary }]}>
                       <MaterialIcons name="person-add" size={20} color={colors.primary} />
                     </View>
-                    <Text style={[styles.integratedInviteText, { color: colors.onSurface }]}>Invite new members</Text>
+                    <Text style={[styles.integratedInviteText, { color: colors.onSurface }]}>Add or Sync Contacts</Text>
                   </TouchableOpacity>
 
                   {showPhoneInvite && (
@@ -575,7 +600,7 @@ export default function CreateGroupModal({ navigation }: Props) {
         </View>
 
         {/* Bottom Action Area with Pill Badge + Full-width Create Group Button */}
-        <View style={styles.bottomActionAreaCenter}>
+        <View style={[styles.bottomActionAreaCenter, { backgroundColor: colors.background, paddingBottom: Math.max(insets.bottom, 16) + Spacing.sm }]}>
           <View style={[styles.countPillBadge, { backgroundColor: colors.primaryFixed }]}>
             <Text style={[styles.countPillText, { color: colors.onPrimaryFixed }]}>
               {selectedIds.size} {selectedIds.size === 1 ? 'member' : 'members'} selected
@@ -609,22 +634,31 @@ export default function CreateGroupModal({ navigation }: Props) {
       </View>
 
       {/* Main Content */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.basicsMainContent}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.basicsMainContent, { paddingBottom: 120 + Math.max(insets.bottom, 16) }]}>
         {/* Photo Upload */}
         <View style={styles.photoUploadCenter}>
           <TouchableOpacity
             style={[styles.photoCircleContainer, { backgroundColor: colors.surfaceContainerHighest, borderColor: colors.outlineVariant }]}
             onPress={() => setIsPickerVisible(true)}
             activeOpacity={0.8}
+            disabled={isUploading}
           >
-            <SmartImage
-              uri={groupPhoto || undefined}
-              thumbnailUri={groupPhotoThumb || undefined}
-              name={groupName}
-              size={80}
-              fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
-            />
-            <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+            <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+              <SmartImage
+                uri={groupPhoto || undefined}
+                thumbnailUri={groupPhotoThumb || undefined}
+                name={groupName}
+                size={80}
+                fallbackIcon={GROUP_TYPES.find(t => t.id === groupType)?.icon || 'groups'}
+              />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
+            </View>
+            <View style={[styles.photoAddBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surface }]}>
               <MaterialIcons name="add" size={12} color={colors.onPrimary} />
             </View>
           </TouchableOpacity>
@@ -676,33 +710,48 @@ export default function CreateGroupModal({ navigation }: Props) {
         {/* Conditional Fields for Selected Group Type (Rendered BELOW Group Type) */}
         {groupType === 'Trip' && (
           <View style={styles.inputGroup}>
-            <View style={styles.datesRow}>
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
-                  onPress={() => setPickerMode('start')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableTripDates ? 12 : 0 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Add trip dates?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Set start and end dates for your trip</Text>
               </View>
-
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
-                  onPress={() => setPickerMode('end')}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-              </View>
+              <Switch
+                value={enableTripDates}
+                onValueChange={setEnableTripDates}
+                trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
             </View>
 
-            {pickerMode && (
+            {enableTripDates && (
+              <View style={styles.datesRow}>
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                    onPress={() => setPickerMode('start')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                    onPress={() => setPickerMode('end')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {enableTripDates && pickerMode && (
               <DateTimePicker
                 value={pickerMode === 'start' ? startDate : endDate}
                 mode="date"
@@ -715,12 +764,10 @@ export default function CreateGroupModal({ navigation }: Props) {
                   if (selected && event.type !== 'dismissed') {
                     if (pickerMode === 'start') {
                       setStartDate(selected);
-                      // If start date is after end date, adjust end date to match
                       if (selected > endDate) {
                         setEndDate(selected);
                       }
                     } else {
-                      // If end date is before start date, adjust end date to start date
                       if (selected < startDate) {
                         setEndDate(startDate);
                       } else {
@@ -742,36 +789,146 @@ export default function CreateGroupModal({ navigation }: Props) {
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
             <TextInput
-              style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }]}
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest, marginBottom: 12 }]}
               placeholder="e.g., The Sharma Household"
               placeholderTextColor={colors.outline}
               value={familyName}
               onChangeText={setFamilyName}
             />
+
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFamilyReminder ? 12 : 0 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Enable Settle Up Reminder?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Send reminder notification to all family members on a date</Text>
+              </View>
+              <Switch
+                value={enableFamilyReminder}
+                onValueChange={setEnableFamilyReminder}
+                trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            {enableFamilyReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                  onPress={() => setShowFamilyReminderPicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(familyReminderDate)}</Text>
+                  <MaterialIcons name="notifications-active" size={16} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {enableFamilyReminder && showFamilyReminderPicker && (
+              <DateTimePicker
+                value={familyReminderDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(event, selected) => {
+                  if (Platform.OS === 'android') setShowFamilyReminderPicker(false);
+                  if (selected && event.type !== 'dismissed') {
+                    setFamilyReminderDate(selected);
+                  }
+                  if (Platform.OS === 'ios') setShowFamilyReminderPicker(false);
+                }}
+              />
+            )}
+          </View>
+        )}
+
+        {groupType === 'Couple' && (
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableBalanceAlert ? 12 : 0 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Set balance alert?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Alert the group when someone's balance reaches a set amount</Text>
+              </View>
+              <Switch
+                value={enableBalanceAlert}
+                onValueChange={setEnableBalanceAlert}
+                trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            {enableBalanceAlert && (
+              <View style={{ gap: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Alert threshold amount (₹)</Text>
+                <TextInput
+                  style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }]}
+                  placeholder="e.g., 2000"
+                  placeholderTextColor={colors.outline}
+                  keyboardType="numeric"
+                  value={balanceAlertThreshold}
+                  onChangeText={setBalanceAlertThreshold}
+                />
+              </View>
+            )}
           </View>
         )}
 
         {groupType === 'Flatmate' && (
-          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
-              <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFlatmateSettleReminder ? 12 : 0 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Remind to settle up?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Trigger monthly notification to members who owe balance</Text>
+              </View>
+              <Switch
+                value={enableFlatmateSettleReminder}
+                onValueChange={setEnableFlatmateSettleReminder}
+                trackColor={{ false: colors.outlineVariant, true: colors.primary }}
+                thumbColor="#FFFFFF"
+              />
             </View>
-            <Switch
-              value={setupMonthlySplit}
-              onValueChange={setSetupMonthlySplit}
-              trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
-              thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
-            />
+
+            {enableFlatmateSettleReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+                  onPress={() => setShowFlatmateReminderPicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(flatmateReminderDate)}</Text>
+                  <MaterialIcons name="notifications-active" size={16} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {enableFlatmateSettleReminder && showFlatmateReminderPicker && (
+              <DateTimePicker
+                value={flatmateReminderDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(event, selected) => {
+                  if (Platform.OS === 'android') setShowFlatmateReminderPicker(false);
+                  if (selected && event.type !== 'dismissed') {
+                    setFlatmateReminderDate(selected);
+                  }
+                  if (Platform.OS === 'ios') setShowFlatmateReminderPicker(false);
+                }}
+              />
+            )}
           </View>
         )}
       </ScrollView>
 
       {/* Bottom Action Area */}
-      <View style={[styles.bottomActionArea, { borderTopColor: colors.divider }]}>
-        <TouchableOpacity style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary }]} onPress={handleBasicsNext}>
-          <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>Next</Text>
-          <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />
+      <View style={[styles.bottomActionArea, { backgroundColor: colors.background, borderTopColor: colors.divider, paddingBottom: Math.max(insets.bottom, 16) + Spacing.sm }]}>
+        <TouchableOpacity 
+          style={[styles.bottomPrimaryBtn, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]} 
+          onPress={handleBasicsNext}
+          disabled={isUploading}
+        >
+          <Text style={[styles.bottomPrimaryBtnText, { color: colors.onPrimary }]}>
+            {isUploading ? 'Uploading Image...' : 'Next'}
+          </Text>
+          {!isUploading && <MaterialIcons name="arrow-forward" size={20} color={colors.onPrimary} />}
         </TouchableOpacity>
       </View>
 
@@ -782,11 +939,6 @@ export default function CreateGroupModal({ navigation }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={groupPhoto ? () => { setGroupPhoto(null); setGroupPhotoThumb(null); } : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

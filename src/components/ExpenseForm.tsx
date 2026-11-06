@@ -12,12 +12,21 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ImagePicker from 'expo-image-picker';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { formatCurrency } from '../services/currencyService';
 import { Image } from 'react-native';
 import { SmartImage } from './SmartImage';
+import { ImagePreviewModal } from './ImagePreviewModal';
+import { Switch } from 'react-native';
+import { getExpenseBillingMonth, getCurrentBillingMonth } from '../utils/dateUtils';
+
+export interface RecurringConfig {
+  isRecurring: boolean;
+  frequency: 'weekly' | 'monthly' | 'yearly';
+  startDate: string; // 'YYYY-MM-DD'
+  endDate: string | null; // 'YYYY-MM-DD' | null
+}
 
 export interface ExpenseFormData {
   title: string;
@@ -27,8 +36,10 @@ export interface ExpenseFormData {
   splitDetails: Record<string, number>;
   category: string;
   date?: string;
+  billingMonth?: string; // 'YYYY-MM'
   notes?: string;
   receiptUrl?: string;
+  recurringConfig?: RecurringConfig;
 }
 
 interface Member {
@@ -41,11 +52,14 @@ interface Member {
 interface ExpenseFormProps {
   members: Member[];
   initialData?: Partial<ExpenseFormData>;
+  initialBillingMonth?: string;
   onPickReceipt: () => void;
   onRemoveReceipt: () => void;
   onSubmit: (data: ExpenseFormData) => void;
   submitting?: boolean;
   submitLabel?: string;
+  isUploading?: boolean;
+  progress?: number;
 }
 
 export const CATEGORIES = ['🍕 Food', '🚕 Travel', '🏠 Rent', '🎬 Fun', '🛒 Shopping', '💊 Health', '📦 Other'];
@@ -58,23 +72,43 @@ const SPLIT_TYPES = [
 export default function ExpenseForm({
   members,
   initialData,
+  initialBillingMonth,
   onPickReceipt,
   onRemoveReceipt,
   onSubmit,
   submitting = false,
   submitLabel = 'Save Expense',
+  isUploading = false,
+  progress = 0,
 }: ExpenseFormProps) {
   const { colors } = useTheme();
 
-  const [description, setDescription] = useState(initialData?.title || '');
-  const [amount, setAmount] = useState(initialData?.amount?.toString() || '');
-  const [displayAmount, setDisplayAmount] = useState('');
-
-  useEffect(() => {
-    if (initialData?.amount) {
-      handleAmountChange(initialData.amount.toString());
+  const formatAmountForDisplay = (text: string) => {
+    if (!text) return '';
+    const cleanText = text.replace(/[^0-9.]/g, '');
+    const parts = cleanText.split('.');
+    if (parts.length > 2) return '';
+    if (parts[1] && parts[1].length > 2) parts[1] = parts[1].slice(0, 2);
+    const rawValue = parts.join('.');
+    if (rawValue === '') return '';
+    
+    let integerPart = parts[0];
+    const decimalPart = parts.length > 1 ? '.' + parts[1] : '';
+    if (integerPart.length > 3) {
+      let lastThree = integerPart.substring(integerPart.length - 3);
+      let otherParts = integerPart.substring(0, integerPart.length - 3);
+      if (otherParts !== '') {
+        otherParts = otherParts.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+        integerPart = otherParts + ',' + lastThree;
+      }
     }
-  }, [initialData?.amount]);
+    return integerPart + decimalPart;
+  };
+
+  const [description, setDescription] = useState(initialData?.title || '');
+  const initialAmountStr = initialData?.amount?.toString() || '';
+  const [amount, setAmount] = useState(initialAmountStr);
+  const [displayAmount, setDisplayAmount] = useState(formatAmountForDisplay(initialAmountStr));
 
   const handleAmountChange = (text: string) => {
     // Remove everything except numbers and one decimal point
@@ -123,13 +157,57 @@ export default function ExpenseForm({
   const [selectedCategory, setSelectedCategory] = useState(initialData?.category || '🍕 Food');
   const [splitType, setSplitType] = useState<'equal' | 'exact' | 'percentage'>(initialData?.splitType || 'equal');
   const [paidByUserId, setPaidByUserId] = useState<string>(initialData?.paidBy || members[0]?.uid || '');
-  const [date, setDate] = useState<Date>(initialData?.date ? new Date(initialData.date) : new Date());
+
+  const getInitialDate = (): Date => {
+    if (initialData?.date) {
+      const d = new Date(initialData.date);
+      if (!isNaN(d.getTime())) return d;
+    }
+    const targetMonth = initialBillingMonth || initialData?.billingMonth;
+    if (targetMonth && targetMonth !== 'ALL' && targetMonth !== getCurrentBillingMonth()) {
+      const parts = targetMonth.split('-');
+      if (parts.length === 2) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        if (!isNaN(year) && !isNaN(month)) {
+          return new Date(year, month, 1);
+        }
+      }
+    }
+    return new Date();
+  };
+
+  const [date, setDate] = useState<Date>(getInitialDate);
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
 
-  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>({});
-  const [customPercentages, setCustomPercentages] = useState<Record<string, string>>({});
-  const [manuallyEdited, setManuallyEdited] = useState<Set<string>>(new Set());
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
+  const [startDate, setStartDate] = useState<Date>(getInitialDate);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
+
+  const [customAmounts, setCustomAmounts] = useState<Record<string, string>>(() => {
+    if (initialData?.splitType === 'exact' && initialData.splitDetails) {
+      return Object.fromEntries(Object.entries(initialData.splitDetails).map(([k, v]) => [k, v.toString()]));
+    }
+    return {};
+  });
+  
+  const [customPercentages, setCustomPercentages] = useState<Record<string, string>>(() => {
+    if (initialData?.splitType === 'percentage' && initialData.splitDetails && initialData.amount) {
+      return Object.fromEntries(Object.entries(initialData.splitDetails).map(([k, v]) => [k, ((v / initialData.amount!) * 100).toFixed(2).replace(/\.00$/, '')]));
+    }
+    return {};
+  });
+  const [manuallyEdited, setManuallyEdited] = useState<Set<string>>(() => {
+    if (initialData?.splitDetails && initialData.splitType !== 'equal') {
+      return new Set(Object.keys(initialData.splitDetails));
+    }
+    return new Set();
+  });
 
   const handleCustomAmountChange = (uid: string, val: string) => {
     const cleanVal = val.replace(/[^0-9.]/g, '');
@@ -174,31 +252,12 @@ export default function ExpenseForm({
     setCustomPercentages(updated);
   };
 
-  const handlePickReceipt = async () => {
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Please allow photo library access to attach a receipt.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        onPickReceipt(); // This trigger the parent hook
-      }
-    } catch (error) {
-      console.log('Receipt pick error:', error);
-      Alert.alert('Error', 'Could not select photo');
-    }
+  const handlePickReceipt = () => {
+    onPickReceipt();
   };
 
   const handleRemoveReceipt = () => {
-    setReceiptImage(null);
+    onRemoveReceipt();
   };
 
   const parsedAmount = parseFloat(amount) || 0;
@@ -286,6 +345,14 @@ export default function ExpenseForm({
     const splitDetails = calculateSplitDetails();
     if (!splitDetails) return;
 
+    const formatDateStr = (d: Date): string => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const resolvedBillingMonth = getExpenseBillingMonth({ date: date.toISOString() });
     const data: ExpenseFormData = {
       title: description.trim(),
       amount: parsedAmount,
@@ -294,8 +361,17 @@ export default function ExpenseForm({
       splitDetails,
       category: selectedCategory,
       date: date.toISOString(),
+      billingMonth: resolvedBillingMonth,
       notes: notes.trim(),
       receiptUrl: initialData?.receiptUrl || '',
+      recurringConfig: isRecurring
+        ? {
+            isRecurring: true,
+            frequency,
+            startDate: formatDateStr(startDate),
+            endDate: endDate ? formatDateStr(endDate) : null,
+          }
+        : undefined,
     };
 
     onSubmit(data);
@@ -306,10 +382,15 @@ export default function ExpenseForm({
   };
 
   return (
-    <ScrollView style={styles.form} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={[styles.form, { backgroundColor: colors.background }]}
+      contentContainerStyle={{ backgroundColor: colors.background }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       {/* Amount Input */}
-      <View style={[styles.amountCard, { backgroundColor: colors.primaryContainer }]}>
-        <Text style={[styles.amountLabel, { color: colors.onPrimaryContainer }]}>Total Amount</Text>
+      <View style={[styles.amountCard, { backgroundColor: colors.primary }]}>
+        <Text style={[styles.amountLabel, { color: '#E0F2FE' }]}>Total Amount</Text>
         <View style={styles.amountInputRow}>
           <Text style={[styles.amountCurrency, { color: colors.onPrimary }]}>₹</Text>
           <TextInput
@@ -317,7 +398,7 @@ export default function ExpenseForm({
             value={displayAmount}
             onChangeText={handleAmountChange}
             placeholder="0"
-            placeholderTextColor="rgba(255,255,255,0.4)"
+            placeholderTextColor="rgba(255,255,255,0.6)"
             keyboardType="decimal-pad"
             autoFocus={!initialData?.amount}
           />
@@ -504,9 +585,25 @@ export default function ExpenseForm({
       {/* Receipt */}
       <View style={styles.field}>
         <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Receipt (Optional)</Text>
-        {initialData?.receiptUrl ? (
+        {isUploading ? (
+          <View style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary, borderWidth: 1.5, opacity: 0.85 }]}>
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 6 }} />
+            <Text style={{ color: colors.primary, fontWeight: '600', ...Typography.labelMd }}>
+              Uploading Receipt... {progress}%
+            </Text>
+            <View style={{ width: '80%', height: 4, borderRadius: 2, backgroundColor: colors.outlineVariant, marginTop: 8, overflow: 'hidden' }}>
+              <View style={{ width: `${progress}%`, height: '100%', backgroundColor: colors.primary }} />
+            </View>
+          </View>
+        ) : initialData?.receiptUrl ? (
           <View style={styles.receiptContainer}>
-            <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />
+            <TouchableOpacity onPress={() => setShowImagePreview(true)} activeOpacity={0.9} style={{ flex: 1 }}>
+              <Image source={{ uri: initialData.receiptUrl }} style={styles.receiptPreview} />
+              <View style={[styles.previewBadge, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                <MaterialIcons name="fullscreen" size={16} color="#FFF" />
+                <Text style={styles.previewText}>Preview</Text>
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.removeReceiptBtn, { backgroundColor: colors.error }]}
               onPress={onRemoveReceipt}
@@ -516,28 +613,172 @@ export default function ExpenseForm({
           </View>
         ) : (
           <TouchableOpacity
-            style={[styles.receiptPlaceholder, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.outlineVariant, borderStyle: 'dashed' }]}
+            style={[
+              styles.receiptPlaceholder, 
+              { 
+                backgroundColor: colors.surfaceContainerLow, 
+                borderColor: colors.outlineVariant, 
+                borderStyle: 'dashed',
+                opacity: isUploading ? 0.6 : 1
+              }
+            ]}
             onPress={onPickReceipt}
+            disabled={isUploading}
           >
-            <MaterialIcons name="photo-camera" size={24} color={colors.primary} />
-            <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, ...Typography.labelMd }}>Add Receipt Image</Text>
+            <MaterialIcons name="photo-camera" size={24} color={isUploading ? colors.outline : colors.primary} />
+            <Text style={{ color: isUploading ? colors.outline : colors.onSurfaceVariant, marginTop: 4, ...Typography.labelMd }}>Add Receipt Image</Text>
           </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Recurring Expense Section */}
+      <View style={[styles.field, styles.recurringCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+        <View style={styles.recurringRow}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={[styles.recurringTitle, { color: colors.onSurface }]}>Make this a recurring expense</Text>
+            <Text style={[styles.recurringSub, { color: colors.onSurfaceVariant }]}>
+              Automatically create future expenses on schedule
+            </Text>
+          </View>
+          <Switch
+            value={isRecurring}
+            onValueChange={setIsRecurring}
+            trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryContainer }}
+            thumbColor={isRecurring ? colors.primary : colors.outline}
+          />
+        </View>
+
+        {isRecurring && (
+          <View style={styles.recurringConfigSection}>
+            <View style={[styles.recurringDivider, { backgroundColor: colors.divider }]} />
+
+            {/* Frequency Pills */}
+            <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant, marginTop: 4 }]}>Repeat Frequency</Text>
+            <View style={styles.frequencyRow}>
+              {(['weekly', 'monthly', 'yearly'] as const).map((freq) => (
+                <TouchableOpacity
+                  key={freq}
+                  style={[
+                    styles.freqPill,
+                    {
+                      backgroundColor: frequency === freq ? colors.primaryContainer : colors.surfaceContainerLow,
+                      borderColor: frequency === freq ? colors.primary : colors.outlineVariant,
+                    },
+                  ]}
+                  onPress={() => setFrequency(freq)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.freqText,
+                      {
+                        color: frequency === freq ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                        fontWeight: frequency === freq ? '700' : '500',
+                      },
+                    ]}
+                  >
+                    {freq.charAt(0).toUpperCase() + freq.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Start Date & End Date Row */}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>Start Date</Text>
+                <TouchableOpacity
+                  style={[styles.textInput, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLow, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 }]}
+                  onPress={() => setShowStartDatePicker(true)}
+                >
+                  <Text style={{ color: colors.onSurface, fontSize: 13 }}>{formatDateShort(startDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.primary} />
+                </TouchableOpacity>
+                {showStartDatePicker && (
+                  <DateTimePicker
+                    value={startDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                      setShowStartDatePicker(false);
+                      if (selectedDate) setStartDate(selectedDate);
+                    }}
+                  />
+                )}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>End Date (Optional)</Text>
+                <TouchableOpacity
+                  style={[styles.textInput, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLow, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 }]}
+                  onPress={() => setShowEndDatePicker(true)}
+                >
+                  <Text style={{ color: endDate ? colors.onSurface : colors.outline, fontSize: 13 }}>
+                    {endDate ? formatDateShort(endDate) : 'No End Date'}
+                  </Text>
+                  {endDate ? (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setEndDate(null);
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialIcons name="cancel" size={16} color={colors.outline} />
+                    </TouchableOpacity>
+                  ) : (
+                    <MaterialIcons name="calendar-today" size={16} color={colors.outline} />
+                  )}
+                </TouchableOpacity>
+                {showEndDatePicker && (
+                  <DateTimePicker
+                    value={endDate || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    minimumDate={startDate}
+                    onChange={(event, selectedDate) => {
+                      setShowEndDatePicker(false);
+                      if (selectedDate) setEndDate(selectedDate);
+                    }}
+                  />
+                )}
+              </View>
+            </View>
+
+            {/* Summary Text Box */}
+            <View style={[styles.summaryBox, { backgroundColor: colors.primaryContainer }]}>
+              <MaterialIcons name="repeat" size={18} color={colors.primary} />
+              <Text style={[styles.summaryText, { color: colors.onPrimaryContainer }]}>
+                {`Repeats ${frequency} starting ${formatDateShort(startDate)}${endDate ? ` until ${formatDateShort(endDate)}` : ''}`}
+              </Text>
+            </View>
+          </View>
         )}
       </View>
 
       {/* Submit Button */}
       <TouchableOpacity
-        style={[styles.submitBtn, { backgroundColor: colors.primary }, submitting && { opacity: 0.6 }]}
+        style={[styles.submitBtn, { backgroundColor: colors.primary }, (submitting || isUploading) && { opacity: 0.6 }]}
         onPress={handlePressSubmit}
         activeOpacity={0.85}
-        disabled={submitting}
+        disabled={submitting || isUploading}
       >
         {submitting ? (
           <ActivityIndicator color={colors.onPrimary} size="small" />
         ) : (
-          <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>{submitLabel}</Text>
+          <Text style={[styles.submitBtnText, { color: colors.onPrimary }]}>
+            {isUploading ? 'Uploading Receipt...' : submitLabel}
+          </Text>
         )}
       </TouchableOpacity>
+
+      {initialData?.receiptUrl && (
+        <ImagePreviewModal
+          visible={showImagePreview}
+          imageUrl={initialData.receiptUrl}
+          onClose={() => setShowImagePreview(false)}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -655,6 +896,22 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
+  previewBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    gap: 4,
+  },
+  previewText: {
+    ...Typography.labelMd,
+    fontSize: 10,
+    color: '#FFF',
+  },
   removeReceiptBtn: {
     position: 'absolute',
     top: 8,
@@ -680,4 +937,61 @@ const styles = StyleSheet.create({
     ...Shadows.button,
   },
   submitBtnText: { ...Typography.titleMd, fontWeight: '700' },
+  recurringCard: {
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    marginTop: Spacing.xs,
+  },
+  recurringRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  recurringTitle: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  recurringSub: {
+    ...Typography.labelMd,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  recurringConfigSection: {
+    marginTop: 8,
+  },
+  recurringDivider: {
+    height: 1,
+    marginVertical: 10,
+  },
+  frequencyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 6,
+  },
+  freqPill: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freqText: {
+    ...Typography.labelMd,
+  },
+  summaryBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: BorderRadius.md,
+    marginTop: 12,
+  },
+  summaryText: {
+    ...Typography.labelMd,
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
 });

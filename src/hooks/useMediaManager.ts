@@ -76,7 +76,11 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
         onSuccess({
           original: originalUrl,
           thumbnail: thumbUrl,
-          metadata: { ...original, thumbnailSize: thumbnail.fileSize, createdAt: Date.now() }
+          metadata: {
+            ...original,
+            thumbnailSize: thumbnail.fileSize || 0, // Ensure no undefined
+            createdAt: Date.now()
+          }
         });
       }
 
@@ -146,13 +150,6 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
     }
   };
 
-  const browseFiles = async () => {
-    Alert.alert(
-      'Feature Unavailable',
-      'The File Browser requires a native rebuild to enable document picking.'
-    );
-  };
-
   return {
     isUploading,
     progress,
@@ -160,7 +157,7 @@ export function useMediaManager({ purpose, id, onSuccess, previousUrls }: UseMed
     setIsPickerVisible,
     takePhoto,
     pickFromGallery,
-    browseFiles,
+    browseFiles: pickFromGallery,
     removeMedia,
   };
 }

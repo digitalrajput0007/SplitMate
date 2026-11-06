@@ -41,21 +41,19 @@ export function useHomeActions(groupCount: number) {
     const unsubInvites = subscribeToPendingInvitations(currentUser.uid, setInvites);
     const unsubBalance = subscribeUserBalanceSummary(currentUser.uid, setBalance);
     const unsubPending = subscribeToUserPendingSettlements(currentUser.uid, (sets) => {
-      // Filter for settlements where I am the recipient (I need to confirm them)
       setPendingConfirmations(sets.filter(s => s.toUserId === currentUser.uid));
     });
     const unsubNotifs = subscribeToNotifications(currentUser.uid, (notifs) => {
-      // Filter for unread reminders sent to me
-      setReminders(notifs.filter(n => n.type === 'payment_reminder' && !n.read));
+      setReminders(notifs.filter(n => (n.type === 'payment_reminder' || n.type === 'REMINDER') && !n.isRead && !n.read));
     });
 
     return () => {
-      unsubInvites();
-      unsubBalance();
-      unsubPending();
-      unsubNotifs();
+      if (unsubInvites) unsubInvites();
+      if (unsubBalance) unsubBalance();
+      if (unsubPending) unsubPending();
+      if (unsubNotifs) unsubNotifs();
     };
-  }, [currentUser]);
+  }, [currentUser?.uid]);
 
   const actionState = useMemo((): HomeActionState => {
     // 1. Pending Group Invitation
@@ -78,7 +76,17 @@ export function useHomeActions(groupCount: number) {
       };
     }
 
-    // 3. User Owes Money
+    // 3. Pending Settlement Confirmation
+    if (pendingConfirmations.length > 0) {
+      return {
+        priority: 'CONFIRMATION',
+        message: 'Payment Awaiting Confirmation',
+        subMessage: 'A friend recorded a payment to you.',
+        cta: 'Review'
+      };
+    }
+
+    // 4. User Owes Money
     if (balance.youOwe > 0.05) {
       return {
         priority: 'OWE',
@@ -88,23 +96,13 @@ export function useHomeActions(groupCount: number) {
       };
     }
 
-    // 4. User Is Owed Money
+    // 5. User Is Owed Money
     if (balance.youAreOwed > 0.05) {
       return {
         priority: 'OWED',
         message: 'You are Owed',
         subMessage: `Friends owe you ${balance.youAreOwed.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}`,
         cta: 'View Settlements'
-      };
-    }
-
-    // 5. Pending Settlement Confirmation
-    if (pendingConfirmations.length > 0) {
-      return {
-        priority: 'CONFIRMATION',
-        message: 'Payment Awaiting Confirmation',
-        subMessage: 'A friend recorded a payment to you.',
-        cta: 'Review'
       };
     }
 

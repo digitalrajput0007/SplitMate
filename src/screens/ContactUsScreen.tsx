@@ -20,7 +20,7 @@ export default function ContactUsScreen() {
   const { colors, isDark } = useTheme();
 
   const handleEmailPress = () => {
-    Linking.openURL('mailto:support@splitmate.app?subject=Support%20Request').catch(() => {
+    Linking.openURL('mailto:support@fyndralabs.com?subject=Support%20Request').catch(() => {
       Alert.alert('Error', 'Unable to open email client.');
     });
   };
@@ -57,7 +57,7 @@ export default function ContactUsScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.optionTitle, { color: colors.onSurface }]}>Email Support</Text>
-            <Text style={[styles.optionSub, { color: colors.onSurfaceVariant }]}>support@splitmate.app</Text>
+            <Text style={[styles.optionSub, { color: colors.onSurfaceVariant }]}>support@fyndralabs.com</Text>
           </View>
           <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
         </TouchableOpacity>

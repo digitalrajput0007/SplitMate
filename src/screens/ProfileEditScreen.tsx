@@ -14,7 +14,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
@@ -22,15 +22,16 @@ import { updateUserProfile } from '../services/authService';
 import { getUserProfileFromFirestore, saveUserProfileToFirestore } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileEdit'>;
 
 export default function ProfileEditScreen({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
 
   const [name, setName] = useState(currentUser?.displayName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -85,8 +86,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
   }, []);
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Validation Error', 'Full Name cannot be empty');
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      dialog.showWarning('Validation Error', 'Full Name cannot be empty');
+      return;
+    }
+
+    if (!/^[A-Za-z]+(?:\s[A-Za-z]+)*$/.test(trimmedName)) {
+      dialog.showWarning(
+        'Invalid Name',
+        'Name can only contain letters and spaces. Numbers, dots, and special characters are not allowed.'
+      );
       return;
     }
 
@@ -104,13 +114,15 @@ export default function ProfileEditScreen({ navigation }: Props) {
           photoUrl,
           photoThumbnailUrl,
           photoMetadata,
+          profileCompleted: true,
         });
 
-        Alert.alert('Success', 'Profile updated successfully');
-        navigation.goBack();
+        dialog.showSuccess('Success', 'Profile updated successfully', () => {
+          navigation.goBack();
+        });
       }
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update profile');
+      dialog.showError('Error', e.message || 'Failed to update profile');
     } finally {
       setSaving(false);
     }
@@ -122,7 +134,7 @@ export default function ProfileEditScreen({ navigation }: Props) {
   };
 
   const getInitials = (userName: string) => {
-    return userName
+    return (userName || '')
       .trim()
       .split(' ')
       .filter(Boolean)
@@ -149,33 +161,37 @@ export default function ProfileEditScreen({ navigation }: Props) {
         <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
-            <TouchableOpacity onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
-              <SmartImage
-                uri={photoUrl}
-                thumbnailUri={photoThumbnailUrl}
-                name={name}
-                size={80}
-                fallbackIcon="person"
-              />
-              <View style={[styles.cameraBadge, { backgroundColor: colors.primary, borderColor: colors.surfaceContainerLowest }]}>
+            <TouchableOpacity 
+              onPress={() => setIsPickerVisible(true)} 
+              activeOpacity={0.8} 
+              style={{ position: 'relative' }}
+              disabled={isUploading}
+            >
+              <View style={{ borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+                <SmartImage
+                  uri={photoUrl}
+                  thumbnailUri={photoThumbnailUrl}
+                  name={name}
+                  size={80}
+                  fallbackIcon="person"
+                />
+                {isUploading && (
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.cameraBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surfaceContainerLowest }]}>
                 <MaterialIcons name="photo-camera" size={14} color={colors.onPrimary} />
               </View>
             </TouchableOpacity>
 
-            <View style={styles.photoActions}>
-              <TouchableOpacity onPress={() => setIsPickerVisible(true)}>
-                <Text style={[styles.avatarHint, { color: colors.primary }]}>Change Photo</Text>
+            {photoUrl ? (
+              <TouchableOpacity onPress={handleRemovePhoto} style={{ marginTop: 8 }} disabled={isUploading}>
+                <Text style={[styles.avatarHint, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
-
-              {photoUrl ? (
-                <>
-                  <View style={[styles.actionDivider, { backgroundColor: colors.divider }]} />
-                  <TouchableOpacity onPress={handleRemovePhoto}>
-                    <Text style={[styles.avatarHint, { color: colors.error }]}>Remove</Text>
-                  </TouchableOpacity>
-                </>
-              ) : null}
-            </View>
+            ) : null}
           </View>
 
           {/* Form Fields */}
@@ -199,15 +215,17 @@ export default function ProfileEditScreen({ navigation }: Props) {
           />
 
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            style={[styles.button, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
             onPress={handleSave}
             activeOpacity={0.85}
-            disabled={saving}
+            disabled={saving || isUploading}
           >
             {saving ? (
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>Save Changes</Text>
+              <Text style={[styles.buttonText, { color: colors.onPrimary }]}>
+                {isUploading ? 'Uploading Image...' : 'Save Changes'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -220,11 +238,6 @@ export default function ProfileEditScreen({ navigation }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         onRemove={photoUrl ? removeMedia : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

@@ -8,24 +8,69 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { useTheme } from '../context/ThemeContext';
-import { signUpWithEmail, signInWithEmail, signInWithGoogle, resetPassword } from '../services/authService';
-import { getUserProfileFromFirestore, setUserEmailVerifiedInFirestore } from '../services/firestoreService';
+import { useDialog } from '../context/DialogContext';
+import { useSecurity } from '../context/SecurityContext';
+import {
+  signUpWithEmail,
+  signInWithEmail,
+  signInWithGoogle,
+  resetPassword,
+  sendOTPEmailHTTP,
+  linkGoogleCredentialToExistingAccount,
+  resolveAuthenticatedUser,
+  signOutUser,
+} from '../services/authService';
+import {
+  getUserProfileFromFirestore,
+  setUserEmailVerifiedInFirestore,
+  saveUserProfileToFirestore,
+  findUserByEmail,
+} from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import AppLogo from '../components/AppLogo';
 import { Alert, Modal } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import { ENABLE_OTP } from '../config/appConfig';
+import { AuthCredential } from 'firebase/auth';
+
+function GoogleLogoSvg({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        fill="#4285F4"
+        d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+      />
+      <Path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.26v3.15C3.25 21.3 7.31 24 12 24z"
+      />
+      <Path
+        fill="#FBBC05"
+        d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.26C.46 8.17 0 9.99 0 12s.46 3.83 1.26 5.42l4.02-3.15z"
+      />
+      <Path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.25 2.7 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+      />
+    </Svg>
+  );
+}
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
 export default function SignInScreen({ navigation }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
+  const { setIsUnlocked } = useSecurity();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,6 +83,34 @@ export default function SignInScreen({ navigation }: Props) {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState('');
 
+  // Account Linking Modal State
+  const [linkModalVisible, setLinkModalVisible] = useState(false);
+  const [linkEmail, setLinkEmail] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
+  const [linkPendingCredential, setLinkPendingCredential] = useState<AuthCredential | null>(null);
+  const [linkGoogleName, setLinkGoogleName] = useState<string | undefined>();
+  const [linkGooglePhoto, setLinkGooglePhoto] = useState<string | undefined>();
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkError, setLinkError] = useState('');
+
+  const isPasswordValid = (pass: string) => {
+    return (
+      pass.length >= 8 &&
+      /[0-9]/.test(pass) &&
+      /[A-Za-z]/.test(pass) &&
+      /[^A-Za-z0-9]/.test(pass)
+    );
+  };
+
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[A-Za-z]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score; // 0 to 4
+  };
+
   const handleContinueWithEmail = async () => {
     setErrorMessage('');
     const trimmedEmail = email.trim();
@@ -46,54 +119,78 @@ export default function SignInScreen({ navigation }: Props) {
       return;
     }
 
-    if (isSignUp && password !== confirmPassword) {
-      setErrorMessage('Passwords do not match.');
-      return;
+    if (isSignUp) {
+      if (!isPasswordValid(password)) {
+        setErrorMessage(
+          'Password must be at least 8 characters long and include numbers, letters, and special characters.'
+        );
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setErrorMessage('Passwords do not match.');
+        return;
+      }
     }
 
     setLoading(true);
     try {
       if (isSignUp) {
-        const user = await signUpWithEmail(trimmedEmail, password);
-        setLoading(false);
-        navigation.navigate('EmailVerification', { email: user.email || trimmedEmail });
-      } else {
-        const user = await signInWithEmail(trimmedEmail, password);
-        setLoading(false);
+        // Prevent signing up if already registered with Google
+        const existingUser = await findUserByEmail(trimmedEmail);
+        if (existingUser && existingUser.authProvider === 'google') {
+          setLoading(false);
+          setErrorMessage('This email is already registered using Google Sign-In. Please sign in using "Continue with Google".');
+          return;
+        }
 
-        // Fetch profile with fast race, fallback immediately if delayed
-        getUserProfileFromFirestore(user.uid).then((prof) => {
-          if (prof && prof.name && prof.paymentHandle) {
-            navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-          } else {
-            navigation.reset({
-              index: 0,
-              routes: [
-                {
-                  name: 'ProfileSetup',
-                  params: {
-                    displayName: user.displayName || undefined,
-                    photoURL: user.photoURL || undefined,
-                  },
-                },
-              ],
-            });
-          }
-        }).catch(() => {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'ProfileSetup' }],
+        if (ENABLE_OTP) {
+          await sendOTPEmailHTTP(trimmedEmail, 'signup');
+          setLoading(false);
+          navigation.navigate('EmailVerificationOTP', {
+            email: trimmedEmail,
+            password: password
           });
-        });
+          return;
+        }
+
+        // Direct Firebase Sign-up Fallback (If ENABLE_OTP is false)
+        const user = await signUpWithEmail(trimmedEmail, password);
+        setIsUnlocked(true);
+        const resolveRes = await resolveAuthenticatedUser(user, { preventNavigation: true });
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        }
+        setLoading(false);
+      } else {
+        // Check if user is registered with Google
+        const existingUser = await findUserByEmail(trimmedEmail);
+        if (existingUser && existingUser.authProvider === 'google') {
+          setLoading(false);
+          setErrorMessage('You created this account using Google Sign-In. Please use the "Continue with Google" button to sign in.');
+          return;
+        }
+
+        const user = await signInWithEmail(trimmedEmail, password);
+        setIsUnlocked(true);
+        const resolveRes = await resolveAuthenticatedUser(user, { preventNavigation: true });
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        }
+        setLoading(false);
       }
     } catch (err: any) {
       setLoading(false);
       console.log('Firebase Auth Error:', err);
       let message = err.message || 'An error occurred during authentication.';
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+      if (
+        err.code === 'auth/email-already-in-use' ||
+        message.toLowerCase().includes('already exists') ||
+        message.toLowerCase().includes('bad request')
+      ) {
+        message = 'An account with this email already exists. Please sign in instead.';
+      } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
         message = 'Invalid email or password.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        message = 'An account with this email already exists.';
       } else if (err.code === 'auth/weak-password') {
         message = 'Password should be at least 6 characters.';
       } else if (err.code === 'auth/invalid-email') {
@@ -108,235 +205,453 @@ export default function SignInScreen({ navigation }: Props) {
     setLoading(true);
     try {
       const result = await signInWithGoogle();
-      setLoading(false);
       
-      // Google users are automatically verified
-      await setUserEmailVerifiedInFirestore(result.user.uid);
+      if (!result || result.status === 'cancelled') {
+        setLoading(false);
+        return;
+      }
 
-      const prof = await getUserProfileFromFirestore(result.user.uid);
-      if (prof && prof.name && prof.paymentHandle) {
-        navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
-      } else {
-        navigation.navigate('ProfileSetup', {
-          displayName: result.googleName || result.user.displayName || undefined,
-          photoURL: result.googlePhoto || result.user.photoURL || undefined,
-          fromGoogle: true
+      if (result.status === 'account_exists_with_different_credential') {
+        setLoading(false);
+        setErrorMessage(
+          'An account with this email was registered using Email & Password. Please sign in with your email and password.'
+        );
+        return;
+      }
+
+      if (result.status === 'success') {
+        const userEmail = result.user.email?.toLowerCase().trim();
+        if (userEmail) {
+          // Check if this user originally registered with password
+          const profile = await getUserProfileFromFirestore(result.user.uid);
+          if (profile && profile.authProvider === 'password') {
+            await signOutUser();
+            setLoading(false);
+            setErrorMessage(
+              'You registered this account using Email & Password. Please sign in using your email and password.'
+            );
+            return;
+          }
+        }
+
+        setIsUnlocked(true);
+
+        const resolveRes = await resolveAuthenticatedUser(result.user, {
+          preventNavigation: true,
+          fromGoogle: true,
+          googleName: result.googleName,
+          googlePhoto: result.googlePhoto,
         });
+
+        // Fire Firestore profile verification sync asynchronously in background after profile is resolved
+        setUserEmailVerifiedInFirestore(result.user.uid).catch((e) => {
+          console.warn('Background Google user verification/profile sync error:', e);
+        });
+
+        if (resolveRes.status === 'error') {
+          setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        }
+        setLoading(false);
       }
     } catch (err: any) {
       setLoading(false);
       console.log('Google Auth Error:', err);
-      if (err.code !== 'SIGN_IN_CANCELLED' && err.message !== 'Sign in action cancelled') {
-        navigation.navigate('ProfileSetup', { fromGoogle: true });
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled') {
+        return;
+      }
+      setErrorMessage(err.message || 'Failed to authenticate with Google. Please try again.');
+    }
+  };
+
+  const handleLinkAccountSubmit = async () => {
+    if (!linkPassword) {
+      setLinkError('Please enter your account password.');
+      return;
+    }
+    if (!linkPendingCredential) {
+      setLinkError('Missing pending Google credential. Please try signing in again.');
+      return;
+    }
+
+    setLinkLoading(true);
+    setLinkError('');
+    try {
+      const { user } = await linkGoogleCredentialToExistingAccount(
+        linkEmail,
+        linkPassword,
+        linkPendingCredential
+      );
+      setIsUnlocked(true);
+      setLinkModalVisible(false);
+
+      const resolveRes = await resolveAuthenticatedUser(user, {
+        preventNavigation: true,
+        fromGoogle: true,
+        googleName: linkGoogleName,
+        googlePhoto: linkGooglePhoto,
+      });
+
+      if (resolveRes.status === 'error') {
+        setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate servers.');
+      }
+      setLinkLoading(false);
+    } catch (err: any) {
+      setLinkLoading(false);
+      console.error('[Auth] Account linking error:', err);
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setLinkError('Incorrect password. Please enter the password you used when creating your account.');
+      } else if (err.code === 'auth/credential-already-in-use') {
+        setLinkError('This Google account is already linked to another SplitMate account.');
+      } else {
+        setLinkError(err.message || 'Failed to link Google account. Please try again.');
       }
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1, backgroundColor: colors.background }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Card */}
-        <View style={styles.card}>
-          {/* Brand Section */}
-          <View style={styles.brandSection}>
-            <View style={styles.logoBox}>
-              <AppLogo size={44} />
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Card */}
+          <View style={[styles.card, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            {/* Brand Section */}
+            <View style={styles.brandSection}>
+              <View style={[styles.logoBox, { backgroundColor: colors.primaryContainer }]}>
+                <AppLogo size={44} />
+              </View>
+              <View style={[styles.brandTag, { backgroundColor: colors.primaryContainer }]}>
+                <Text style={[styles.brandTagText, { color: colors.primary }]}>FYNDRA LABS</Text>
+                <Text style={[styles.brandDot, { color: colors.primary }]}>•</Text>
+                <Text style={[styles.brandTagSub, { color: colors.primary }]}>Spend, Split, Settle.</Text>
+              </View>
+              <Text style={[styles.heading, { color: colors.onSurface }]}>
+                {isSignUp ? 'Create account' : 'Welcome back'}
+              </Text>
+              <Text style={[styles.subheading, { color: colors.onSurfaceVariant }]}>
+                {isSignUp
+                  ? 'Start splitting smarter with your friends today.'
+                  : 'Sign in to manage your group expenses.'}
+              </Text>
             </View>
-            <Text style={styles.heading}>
-              {isSignUp ? 'Create account' : 'Welcome back'}
-            </Text>
-            <Text style={styles.subheading}>
-              {isSignUp
-                ? 'Start splitting smarter today.'
-                : 'Sign in to manage your group expenses.'}
-            </Text>
-          </View>
 
-          {/* Error Banner */}
-          {!!errorMessage && (
-            <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
-              <MaterialIcons name="error-outline" size={18} color={colors.error} />
-              <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
-            </View>
-          )}
+            {/* Error Banner */}
+            {!!errorMessage && (
+              <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+                <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{errorMessage}</Text>
+              </View>
+            )}
 
-          {/* Google Sign-In Button */}
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={handleGoogleSignIn}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            <View style={styles.googleIconBox}>
-              <Text style={styles.googleIconText}>G</Text>
-            </View>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Inputs */}
-          <OutlinedInput
-            label="Email Address"
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <OutlinedInput
-            label="Password"
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="••••••••"
-            secureTextEntry
-          />
-
-          {!isSignUp && (
+            {/* Google Sign-In Button */}
             <TouchableOpacity
-              style={styles.forgotBtn}
-              onPress={() => {
-                setResetEmail(email);
-                setResetSuccessMessage('');
-                setResetModalVisible(true);
-              }}
+              style={[styles.googleButton, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
+              onPress={handleGoogleSignIn}
+              activeOpacity={0.85}
+              disabled={loading}
             >
-              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
+              <GoogleLogoSvg size={20} />
+              <Text style={[styles.googleButtonText, { color: colors.onSurface }]}>Continue with Google</Text>
             </TouchableOpacity>
-          )}
 
-          {isSignUp && (
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+              <Text style={[styles.dividerText, { color: colors.outline }]}>or</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.outlineVariant }]} />
+            </View>
+
+            {/* Inputs */}
             <OutlinedInput
-              label="Confirm Password"
-              value={confirmPassword}
+              label="Email Address"
+              value={email}
               onChangeText={(text) => {
-                setConfirmPassword(text);
+                setEmail(text);
+                if (errorMessage) setErrorMessage('');
+              }}
+              placeholder="Enter your email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <OutlinedInput
+              label="Password"
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
                 if (errorMessage) setErrorMessage('');
               }}
               placeholder="••••••••"
               secureTextEntry
             />
-          )}
 
-          {/* Primary Action Button */}
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.primary }, loading && styles.disabledButton]}
-            onPress={handleContinueWithEmail}
-            activeOpacity={0.85}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.onPrimary} size="small" />
-            ) : (
-              <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
-                {isSignUp ? 'Create Account' : 'Continue with Email'}
-              </Text>
-            )}
-          </TouchableOpacity>
+            {isSignUp && password.length > 0 && (() => {
+              const score = getPasswordStrength(password);
+              const hasMinLen = password.length >= 8;
+              const hasNum = /[0-9]/.test(password);
+              const hasAlpha = /[A-Za-z]/.test(password);
+              const hasSpec = /[^A-Za-z0-9]/.test(password);
 
-          {/* Toggle Sign-In / Sign-Up */}
-          <TouchableOpacity
-            style={styles.toggleRow}
-            onPress={() => {
-              setIsSignUp(!isSignUp);
-              setPassword('');
-              setConfirmPassword('');
-              setErrorMessage('');
-            }}
-          >
-            <Text style={styles.toggleText}>
-              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <Text style={styles.toggleLink}>
-                {isSignUp ? 'Sign In' : 'Sign Up'}
-              </Text>
-            </Text>
-          </TouchableOpacity>
+              const getBarColor = () => {
+                if (score <= 1) return colors.error || '#EF4444';
+                if (score <= 3) return colors.tertiary || '#F59E0B';
+                return colors.primary || '#10B981';
+              };
 
-          {/* Legal Footnote */}
-          <Text style={styles.legal}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.legalLink}>Terms</Text>
-            {' & '}
-            <Text style={styles.legalLink}>Privacy Policy</Text>
-          </Text>
-        </View>
-      </ScrollView>
+              return (
+                <View style={styles.passwordStrengthContainer}>
+                  {/* Progress Bar */}
+                  <View style={[styles.progressBarTrack, { backgroundColor: colors.surfaceContainerHigh || '#E5E7EB' }]}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        {
+                          width: `${(score / 4) * 100}%`,
+                          backgroundColor: getBarColor(),
+                        },
+                      ]}
+                    />
+                  </View>
 
-      {/* Forgot Password Modal */}
-      <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.resetCard}>
-            <Text style={styles.resetTitle}>Reset Password</Text>
-            <Text style={styles.resetSub}>Enter your registered email address to receive a password reset link.</Text>
+                  {/* Requirements checklist */}
+                  <View style={styles.requirementsContainer}>
+                    <Text style={[styles.reqText, { color: hasMinLen ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasMinLen ? '✓' : '•'} At least 8 characters
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasAlpha ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasAlpha ? '✓' : '•'} Contains a letter
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasNum ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasNum ? '✓' : '•'} Contains a number
+                    </Text>
+                    <Text style={[styles.reqText, { color: hasSpec ? (colors.primary || '#10B981') : colors.onSurfaceVariant }]}>
+                      {hasSpec ? '✓' : '•'} Contains a special character
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
 
-            {!!resetSuccessMessage && (
-              <View style={styles.resetSuccessBox}>
-                <Text style={styles.resetSuccessText}>{resetSuccessMessage}</Text>
-              </View>
-            )}
-
-            <OutlinedInput
-              label="Email Address"
-              value={resetEmail}
-              onChangeText={setResetEmail}
-              placeholder="name@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
+            {!isSignUp && (
               <TouchableOpacity
-                style={[styles.sendBtn, resetLoading && styles.disabledButton]}
-                disabled={resetLoading}
-                onPress={async () => {
-                  if (!resetEmail.trim()) {
-                    Alert.alert('Email Required', 'Please enter your email address.');
-                    return;
-                  }
-                  setResetLoading(true);
-                  try {
-                    await resetPassword(resetEmail.trim());
-                    setResetSuccessMessage('Password reset email sent! Please check your inbox.');
-                  } catch (e: any) {
-                    Alert.alert('Reset Failed', e.message || 'Unable to send reset link.');
-                  } finally {
-                    setResetLoading(false);
+                style={styles.forgotBtn}
+                onPress={() => {
+                  if (ENABLE_OTP) {
+                    navigation.navigate('ForgotPassword', { email });
+                  } else {
+                    setResetEmail(email);
+                    setResetSuccessMessage('');
+                    setResetModalVisible(true);
                   }
                 }}
               >
-                {resetLoading ? (
-                  <ActivityIndicator color={Colors.onPrimary} size="small" />
-                ) : (
-                  <Text style={styles.sendText}>Send Link</Text>
-                )}
+                <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot Password?</Text>
               </TouchableOpacity>
-            </View>
+            )}
+
+            {isSignUp && (
+              <OutlinedInput
+                label="Confirm Password"
+                value={confirmPassword}
+                onChangeText={(text) => {
+                  setConfirmPassword(text);
+                  if (errorMessage) setErrorMessage('');
+                }}
+                placeholder="••••••••"
+                secureTextEntry
+              />
+            )}
+
+            {/* Primary Action Button */}
+            {(() => {
+              const isSubmitDisabled = loading || !email.trim() || !password || (isSignUp && (!confirmPassword || !isPasswordValid(password) || password !== confirmPassword));
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary },
+                    isSubmitDisabled && styles.disabledButton,
+                  ]}
+                  onPress={handleContinueWithEmail}
+                  activeOpacity={0.85}
+                  disabled={isSubmitDisabled}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>
+                      {isSignUp ? 'Create Account' : 'Login'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Toggle Sign-In / Sign-Up */}
+            <TouchableOpacity
+              style={styles.toggleRow}
+              onPress={() => {
+                setIsSignUp(!isSignUp);
+                setPassword('');
+                setConfirmPassword('');
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.toggleText, { color: colors.onSurfaceVariant }]}>
+                {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
+                <Text style={[styles.toggleLink, { color: colors.primary }]}>
+                  {isSignUp ? 'Sign In' : 'Sign Up'}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+
+            {/* Legal Footnote */}
+            <Text style={[styles.legal, { color: colors.outline }]}>
+              By continuing, you agree to our{' '}
+              <Text
+                style={[styles.legalLink, { color: colors.primary }]}
+                onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms')}
+              >
+                Terms
+              </Text>
+              {' & '}
+              <Text
+                style={[styles.legalLink, { color: colors.primary }]}
+                onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/privacy')}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
+          </View>
+        </ScrollView>
+
+        {/* Forgot Password Modal */}
+        <Modal visible={resetModalVisible} transparent animationType="fade" onRequestClose={() => setResetModalVisible(false)}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setResetModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+              <Text style={[styles.resetTitle, { color: colors.onSurface }]}>Reset Password</Text>
+              <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>Enter your registered email address to receive a password reset link.</Text>
+
+              {!!resetSuccessMessage && (
+                <View style={[styles.resetSuccessBox, { backgroundColor: colors.positiveContainer, borderColor: colors.positive }]}>
+                  <Text style={[styles.resetSuccessText, { color: colors.positiveText }]}>{resetSuccessMessage}</Text>
+                </View>
+              )}
+
+              <OutlinedInput
+                label="Email Address"
+                value={resetEmail}
+                onChangeText={setResetEmail}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setResetModalVisible(false)}>
+                  <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: colors.primary },
+                    (resetLoading || !resetEmail.trim() || !resetEmail.includes('@')) && styles.disabledButton,
+                  ]}
+                  disabled={resetLoading || !resetEmail.trim() || !resetEmail.includes('@')}
+                  onPress={async () => {
+                    if (!resetEmail.trim()) {
+                      dialog.showWarning('Email Required', 'Please enter your email address.');
+                      return;
+                    }
+                    setResetLoading(true);
+                    try {
+                      const existingUser = await findUserByEmail(resetEmail.trim());
+                      if (existingUser && existingUser.authProvider === 'google') {
+                        setResetLoading(false);
+                        dialog.showAlert(
+                          'Google Account',
+                          'This email is registered using Google Sign-In. It does not have a separate password. Please sign in using the "Continue with Google" button.'
+                        );
+                        return;
+                      }
+
+                      await resetPassword(resetEmail.trim());
+                      setResetSuccessMessage('Password reset email sent! Please check your inbox.');
+                    } catch (e: any) {
+                      dialog.showError('Reset Failed', e.message || 'Unable to send reset link.');
+                    } finally {
+                      setResetLoading(false);
+                    }
+                  }}
+                >
+                  {resetLoading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.sendText, { color: colors.onPrimary }]}>Send Link</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+
+        {/* Link Account Modal */}
+        <Modal visible={linkModalVisible} transparent animationType="fade" onRequestClose={() => setLinkModalVisible(false)}>
+          <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLinkModalVisible(false)}>
+            <TouchableOpacity activeOpacity={1} style={[styles.resetCard, { backgroundColor: colors.surfaceContainerLowest }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <MaterialIcons name="link" size={24} color={colors.primary} />
+                <Text style={[styles.resetTitle, { color: colors.onSurface, flex: 1 }]}>Link Google Account</Text>
+              </View>
+              <Text style={[styles.resetSub, { color: colors.onSurfaceVariant }]}>
+                An account with <Text style={{ fontWeight: '700', color: colors.onSurface }}>{linkEmail}</Text> already exists using Email & Password. Enter your password to securely link Google Sign-In to your existing SplitMate account.
+              </Text>
+
+              {!!linkError && (
+                <View style={[styles.errorContainer, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginVertical: 4 }]}>
+                  <MaterialIcons name="error-outline" size={18} color={colors.error} />
+                  <Text style={[styles.errorText, { color: colors.onErrorContainer }]}>{linkError}</Text>
+                </View>
+              )}
+
+              <OutlinedInput
+                label="Account Password"
+                value={linkPassword}
+                onChangeText={setLinkPassword}
+                placeholder="Enter your password"
+                secureTextEntry
+              />
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setLinkModalVisible(false)}>
+                  <Text style={[styles.cancelText, { color: colors.onSurfaceVariant }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sendBtn,
+                    { backgroundColor: colors.primary },
+                    (linkLoading || !linkPassword) && styles.disabledButton,
+                  ]}
+                  disabled={linkLoading || !linkPassword}
+                  onPress={handleLinkAccountSubmit}
+                >
+                  {linkLoading ? (
+                    <ActivityIndicator color={colors.onPrimary} size="small" />
+                  ) : (
+                    <Text style={[styles.sendText, { color: colors.onPrimary }]}>Link & Sign In</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -344,7 +659,6 @@ export default function SignInScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   scroll: {
     flexGrow: 1,
@@ -356,11 +670,9 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: Colors.divider,
     ...Shadows.card,
   },
   brandSection: {
@@ -372,22 +684,40 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  brandTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
     marginBottom: Spacing.md,
+    gap: 6,
+  },
+  brandTagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  brandDot: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  brandTagSub: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   logoIcon: {
     fontSize: 32,
-    color: Colors.onPrimaryContainer,
   },
   heading: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
   },
   subheading: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginTop: Spacing.xs,
     textAlign: 'center',
   },
@@ -414,8 +744,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerLowest,
     marginBottom: Spacing.lg,
     ...Shadows.card,
   },
@@ -434,7 +762,7 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     ...Typography.titleMd,
-    color: Colors.onSurface,
+    fontWeight: '600',
   },
   divider: {
     flexDirection: 'row',
@@ -445,15 +773,12 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: Colors.outlineVariant,
   },
   dividerText: {
     ...Typography.bodyMd,
-    color: Colors.outline,
   },
   primaryButton: {
     width: '100%',
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingVertical: 14,
     minHeight: 48,
@@ -467,26 +792,26 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     ...Typography.titleMd,
-    color: Colors.onPrimary,
+    fontWeight: '700',
   },
   toggleRow: {
     alignItems: 'center',
     marginTop: Spacing.md,
+    paddingVertical: 4,
   },
   toggleText: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
+    textAlign: 'center',
   },
   toggleLink: {
-    color: Colors.primary,
-    fontWeight: '600',
+    ...Typography.bodyMd,
+    fontWeight: '700',
   },
   legalLink: {
-    color: Colors.primary,
+    textDecorationLine: 'underline',
   },
   legal: {
     ...Typography.labelMd,
-    color: Colors.outline,
     textAlign: 'center',
     marginTop: Spacing.xl,
   },
@@ -494,10 +819,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginBottom: Spacing.sm,
     marginTop: -Spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   forgotText: {
     ...Typography.titleSm,
-    color: Colors.primary,
     fontWeight: '600',
   },
   modalBackdrop: {
@@ -510,7 +836,6 @@ const styles = StyleSheet.create({
   resetCard: {
     width: '100%',
     maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerLowest,
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
     gap: Spacing.sm,
@@ -518,24 +843,19 @@ const styles = StyleSheet.create({
   },
   resetTitle: {
     ...Typography.headlineLgMobile,
-    color: Colors.onSurface,
     fontWeight: '700',
   },
   resetSub: {
     ...Typography.bodyMd,
-    color: Colors.onSurfaceVariant,
     marginBottom: Spacing.xs,
   },
   resetSuccessBox: {
-    backgroundColor: '#E8F5E9',
     borderRadius: BorderRadius.md,
     padding: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#C8E6C9',
   },
   resetSuccessText: {
     ...Typography.bodyMd,
-    color: '#2E7D32',
     fontWeight: '500',
   },
   modalActions: {
@@ -551,11 +871,9 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     ...Typography.titleSm,
-    color: Colors.onSurfaceVariant,
     fontWeight: '600',
   },
   sendBtn: {
-    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -565,7 +883,31 @@ const styles = StyleSheet.create({
   },
   sendText: {
     ...Typography.titleSm,
-    color: Colors.onPrimary,
     fontWeight: '600',
+  },
+  passwordStrengthContainer: {
+    marginTop: -Spacing.xs,
+    marginBottom: Spacing.md,
+    width: '100%',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    width: '100%',
+    overflow: 'hidden',
+    marginBottom: Spacing.xs,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  requirementsContainer: {
+    flexDirection: 'column',
+    gap: 2,
+    marginTop: 4,
+  },
+  reqText: {
+    ...Typography.labelMd,
+    fontSize: 12,
   },
 });

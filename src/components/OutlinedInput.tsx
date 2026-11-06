@@ -71,9 +71,9 @@ export function OutlinedInput({ label, error, style, secureTextEntry, editable, 
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             {isPasswordVisible ? (
-              <ClosedEyeSvg color={isFocused ? colors.primary : colors.outline} size={20} />
-            ) : (
               <OpenEyeSvg color={isFocused ? colors.primary : colors.outline} size={20} />
+            ) : (
+              <ClosedEyeSvg color={isFocused ? colors.primary : colors.outline} size={20} />
             )}
           </TouchableOpacity>
         )}

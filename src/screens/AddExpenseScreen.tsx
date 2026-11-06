@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Spacing, Typography } from '../constants/theme';
 import { auth } from '../config/firebase';
 import {
   addExpenseToFirestore,
+  createRecurringExpenseInFirestore,
   subscribeToGroupDetail,
   subscribeToAcceptedMembers,
   getAllUsersFromFirestore,
@@ -25,16 +26,18 @@ import {
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import ExpenseForm, { ExpenseFormData } from '../components/ExpenseForm';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddExpense'>;
 
 export default function AddExpenseScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
-  const { groupId, groupName } = route.params || {};
+  const { groupId, groupName, initialBillingMonth } = route.params || {};
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [activeMembers, setActiveMembers] = useState<UserProfile[]>([]);
@@ -42,6 +45,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [receiptMetadata, setReceiptMetadata] = useState<any>(null);
+  const groupOwnerRef = useRef<string | null>(null);
 
   const {
     isUploading,
@@ -68,12 +72,34 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
       return;
     }
 
+    const unsubGroup = subscribeToGroupDetail(groupId, (data) => {
+      if (data) {
+        if (data.createdBy) groupOwnerRef.current = data.createdBy;
+      } else {
+        const isOwner = groupOwnerRef.current === currentUser?.uid;
+        if (isOwner) {
+          navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+        } else {
+          dialog.showError(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            () => {
+              navigation.navigate('MainTabs', { screen: 'GroupsTab' } as any);
+            }
+          );
+        }
+      }
+    });
+
     const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted) => {
       setActiveMembers(accepted);
       setLoading(false);
     });
 
-    return () => unsubMembers();
+    return () => {
+      unsubGroup();
+      unsubMembers();
+    };
   }, [groupId]);
 
   const handleSave = async (formData: ExpenseFormData) => {
@@ -81,14 +107,34 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
     try {
       await addExpenseToFirestore({
         groupId: groupId || '',
+        createdBy: currentUser?.uid || formData.paidBy,
         ...formData,
         receiptUrl: receiptUrl,
         receiptMetadata: receiptMetadata,
       });
-      navigation.goBack();
+
+      if (formData.recurringConfig?.isRecurring) {
+        await createRecurringExpenseInFirestore({
+          groupId: groupId || '',
+          title: formData.title,
+          amount: formData.amount,
+          paidBy: formData.paidBy,
+          splitDetails: formData.splitDetails,
+          splitType: formData.splitType,
+          category: formData.category,
+          notes: formData.notes,
+          frequency: formData.recurringConfig.frequency,
+          startDate: formData.recurringConfig.startDate,
+          endDate: formData.recurringConfig.endDate,
+        });
+      }
+
+      showInterstitialAd(() => {
+        navigation.goBack();
+      });
     } catch (error: any) {
       console.error('Error adding expense:', error);
-      Alert.alert('Error', error.message || 'Failed to save expense.');
+      dialog.showError('Error', error.message || 'Failed to save expense.');
     } finally {
       setSubmitting(false);
     }
@@ -112,7 +158,7 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, backgroundColor: colors.background }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Top Header */}
@@ -136,11 +182,14 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
             <ExpenseForm
               members={membersForForm}
               initialData={{ paidBy: currentUser?.uid || '', receiptUrl: receiptUrl }}
+              initialBillingMonth={initialBillingMonth}
               onPickReceipt={() => setIsPickerVisible(true)}
               onRemoveReceipt={() => setReceiptUrl('')}
               onSubmit={handleSave}
               submitting={submitting}
               submitLabel="Add Expense"
+              isUploading={isUploading}
+              progress={progress}
             />
           </View>
         )}
@@ -153,11 +202,6 @@ export default function AddExpenseScreen({ navigation, route }: Props) {
         onGallery={pickFromGallery}
         onFiles={browseFiles}
         title="Attach Receipt"
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
       />
     </SafeAreaView>
   );

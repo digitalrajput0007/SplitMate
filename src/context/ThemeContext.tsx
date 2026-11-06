@@ -13,7 +13,7 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  themeMode: 'Light',
+  themeMode: 'System',
   setThemeMode: () => {},
   colors: LightColors,
   isDark: false,
@@ -23,7 +23,7 @@ const THEME_STORAGE_KEY = '@splitmate_theme_mode';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemColorScheme = useColorScheme();
-  const [themeMode, setThemeModeState] = useState<ThemeMode>('Light');
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('System');
 
   useEffect(() => {
     AsyncStorage.getItem(THEME_STORAGE_KEY).then((stored) => {

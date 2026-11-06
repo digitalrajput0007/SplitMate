@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Typography, Spacing, Colors } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { PinPad } from '../components/PinPad';
 import { setPin } from '../services/appLockService';
 import { useSecurity } from '../context/SecurityContext';
@@ -11,6 +12,7 @@ import { useSecurity } from '../context/SecurityContext';
 export default function SetupPinScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation();
+  const dialog = useDialog();
   const { lockSettings, updateLockSettings } = useSecurity();
   const [pin, setPinState] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -42,13 +44,14 @@ export default function SetupPinScreen() {
       try {
         await setPin(pin);
         await updateLockSettings({ ...lockSettings, isPinEnabled: true });
-        Alert.alert('Success', 'PIN set successfully');
-        navigation.goBack();
+        dialog.showSuccess('Success', 'PIN set successfully', () => {
+          navigation.goBack();
+        });
       } catch (e) {
-        Alert.alert('Error', 'Failed to save PIN');
+        dialog.showError('Error', 'Failed to save PIN');
       }
     } else {
-      Alert.alert('Error', 'PINs do not match. Try again.');
+      dialog.showError('Mismatch', 'PINs do not match. Try again.');
       setPinState('');
       setConfirmPin('');
       setIsConfirming(false);

@@ -5,4 +5,8 @@ android/build/
 android/.gradle/
 *.log
 .env
-google-services.json
+scratch/
+android/local.properties
+.idea/
+*firebase-adminsdk*.json
+dist/

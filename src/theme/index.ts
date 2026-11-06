@@ -1,99 +1,142 @@
-// Centralized SplitMate Design System — Grounded in Stitch Design Guidelines
+// Centralized SplitMate Design System — Sky Blue Brand Identity (Fyndra Labs)
 
 export const LightColors = {
-  // Primary Palette
-  primary: '#24389C',
+  // Brand Primary Sky Blue Palette
+  primary: '#0284C7', // Stronger high-contrast sky blue primary for Android readability
+  primaryLight: '#38BDF8',
+  primaryPressed: '#0369A1',
+  primaryDark: '#0369A1',
   onPrimary: '#FFFFFF',
-  primaryContainer: '#3F51B5',
-  onPrimaryContainer: '#CACFFF',
-  primaryFixed: '#DEE0FF',
-  primaryFixedDim: '#BAC3FF',
-  onPrimaryFixed: '#00105C',
-  onPrimaryFixedVariant: '#293CA0',
-  inversePrimary: '#BAC3FF',
+  primaryContainer: '#E0F2FE', // Pale blue surface
+  onPrimaryContainer: '#0369A1',
+  primaryFixed: '#E0F2FE',
+  primaryFixedDim: '#BAE6FD',
+  onPrimaryFixed: '#082F49',
+  onPrimaryFixedVariant: '#0284C7',
+  inversePrimary: '#38BDF8',
 
-  // Secondary & Accent Palette
-  secondary: '#4C56AF',
+  // Secondary & Soft Accent
+  secondary: '#0EA5E9',
   onSecondary: '#FFFFFF',
-  secondaryContainer: '#959EFD',
-  onSecondaryContainer: '#27308A',
-  secondaryFixed: '#E0E0FF',
-  secondaryFixedDim: '#BDC2FF',
+  secondaryContainer: '#F0F9FF',
+  onSecondaryContainer: '#0369A1',
+  secondaryFixed: '#E0F2FE',
+  secondaryFixedDim: '#BAE6FD',
 
-  // Accent Teal
-  accentTeal: '#008080',
-  accentTealContainer: '#E0F2F1',
+  // Accent Cyan/Teal
+  accentTeal: '#0D9488',
+  accentTealContainer: '#CCFBF1',
 
-  // Tertiary
-  tertiary: '#6C3400',
+  // Tertiary Slate Amber
+  tertiary: '#D97706',
   onTertiary: '#FFFFFF',
-  tertiaryContainer: '#8F4700',
+  tertiaryContainer: '#FEF3C7',
 
-  // Neutral & Surface Palette
-  surface: '#F9F9F9',
-  surfaceDim: '#DADADA',
-  surfaceBright: '#F9F9F9',
+  // Neutral & Surface Palette (Clean Fintech White & Slate)
+  surface: '#FFFFFF',
+  surfaceDim: '#F1F5F9',
+  surfaceBright: '#FFFFFF',
   surfaceContainerLowest: '#FFFFFF',
-  surfaceContainerLow: '#F3F3F3',
-  surfaceContainer: '#EEEEEE',
-  surfaceContainerHigh: '#E8E8E8',
-  surfaceContainerHighest: '#E2E2E2',
-  surfaceVariant: '#E2E2E2',
-  onSurface: '#1A1C1C',
-  onSurfaceVariant: '#454652',
-  inverseSurface: '#2F3131',
+  surfaceContainerLow: '#F8FAFC',
+  surfaceContainer: '#F1F5F9',
+  surfaceContainerHigh: '#E2E8F0',
+  surfaceContainerHighest: '#CBD5E1',
+  surfaceVariant: '#F1F5F9',
+  onSurface: '#0F172A',
+  onSurfaceVariant: '#64748B',
+  inverseSurface: '#0F172A',
 
-  // Background
-  background: '#F9F9F9',
-  onBackground: '#1A1C1C',
+  // Backgrounds
+  background: '#F8FAFC',
+  onBackground: '#0F172A',
+  lightSkyBackground: '#F0F9FF',
+  paleBlueSurface: '#E0F2FE',
+  cardBackground: '#FFFFFF',
 
   // Outlines & Borders
-  outline: '#757684',
-  outlineVariant: '#C5C5D4',
-  divider: '#F2F2F7',
+  outline: '#94A3B8',
+  outlineVariant: '#E2E8F0',
+  divider: '#E2E8F0',
+  border: '#E2E8F0',
 
   // Semantic Status Colors
-  error: '#BA1A1A',
+  error: '#DC2626',
   onError: '#FFFFFF',
-  errorContainer: '#FFDAD6',
-  onErrorContainer: '#93000A',
+  errorContainer: '#FEE2E2',
+  onErrorContainer: '#991B1B',
 
-  positive: '#15803D',
+  warning: '#F59E0B',
+  onWarning: '#FFFFFF',
+  warningContainer: '#FEF3C7',
+
+  positive: '#16A34A',
   positiveContainer: '#DCFCE7',
-  positiveText: '#166534',
+  positiveText: '#15803D',
+  success: '#16A34A',
+
+  // Text helpers
+  primaryText: '#0F172A',
+  secondaryText: '#64748B',
 };
 
 export const DarkColors = {
   ...LightColors,
-  primary: '#5C6BC0',
-  onPrimary: '#FFFFFF',
-  primaryContainer: '#1F2937',
-  onPrimaryContainer: '#E0E7FF',
-  primaryFixed: '#374151',
-  primaryFixedDim: '#1F2937',
-  onPrimaryFixed: '#F3F4F6',
-  onPrimaryFixedVariant: '#9CA3AF',
-  inversePrimary: '#3F51B5',
+  // Brand Primary Sky Blue for Dark Theme
+  primary: '#38BDF8',
+  primaryLight: '#7DD3FC',
+  primaryPressed: '#0284C7',
+  primaryDark: '#0369A1',
+  onPrimary: '#082F49',
+  primaryContainer: '#0C4A6E',
+  onPrimaryContainer: '#E0F2FE',
+  primaryFixed: '#075985',
+  primaryFixedDim: '#0369A1',
+  onPrimaryFixed: '#F0F9FF',
+  onPrimaryFixedVariant: '#BAE6FD',
+  inversePrimary: '#0284C7',
 
-  surface: '#121212',
-  surfaceDim: '#121212',
-  surfaceBright: '#242424',
-  surfaceContainerLowest: '#1E1E1E',
-  surfaceContainerLow: '#242424',
-  surfaceContainer: '#2C2C2C',
-  surfaceContainerHigh: '#333333',
-  surfaceContainerHighest: '#3B3B3B',
-  surfaceVariant: '#374151',
-  onSurface: '#F3F4F6',
-  onSurfaceVariant: '#9CA3AF',
-  inverseSurface: '#F3F4F6',
+  // Dark Slate Surfaces
+  surface: '#0F172A',
+  surfaceDim: '#0B1120',
+  surfaceBright: '#1E293B',
+  surfaceContainerLowest: '#090D16',
+  surfaceContainerLow: '#0F172A',
+  surfaceContainer: '#1E293B',
+  surfaceContainerHigh: '#334155',
+  surfaceContainerHighest: '#475569',
+  surfaceVariant: '#1E293B',
+  onSurface: '#F8FAFC',
+  onSurfaceVariant: '#94A3B8',
+  inverseSurface: '#F8FAFC',
 
-  background: '#121212',
-  onBackground: '#F3F4F6',
+  // Dark Backgrounds
+  background: '#090D16',
+  onBackground: '#F8FAFC',
+  lightSkyBackground: '#0C4A6E',
+  paleBlueSurface: '#075985',
+  cardBackground: '#0F172A',
 
-  outline: '#6B7280',
-  outlineVariant: '#374151',
-  divider: '#2D3748',
+  // Outlines & Borders
+  outline: '#64748B',
+  outlineVariant: '#334155',
+  divider: '#1E293B',
+  border: '#334155',
+
+  // Semantics in Dark
+  error: '#EF4444',
+  errorContainer: '#7F1D1D',
+  onErrorContainer: '#FEE2E2',
+
+  warning: '#FBBF24',
+  warningContainer: '#78350F',
+
+  positive: '#22C55E',
+  positiveContainer: '#14532D',
+  positiveText: '#4ADE80',
+  success: '#22C55E',
+
+  primaryText: '#F8FAFC',
+  secondaryText: '#94A3B8',
 };
 
 export const activeTheme = {
@@ -110,35 +153,35 @@ export const Typography = {
 
   displayLg: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 48,
-    lineHeight: 56,
-    letterSpacing: -0.96,
+    fontSize: 40,
+    lineHeight: 48,
+    letterSpacing: -0.8,
   },
   headlineLg: {
     fontFamily: 'Inter_700Bold',
-    fontSize: 32,
-    lineHeight: 40,
-    letterSpacing: -0.32,
+    fontSize: 30,
+    lineHeight: 38,
+    letterSpacing: -0.4,
   },
   headlineSm: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 24,
-    lineHeight: 32,
-  },
-  headlineLgMobile: {
-    fontFamily: 'Inter_600SemiBold',
-    fontSize: 24,
-    lineHeight: 32,
-  },
-  titleLg: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 22,
     lineHeight: 28,
   },
+  headlineLgMobile: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 22,
+    lineHeight: 28,
+  },
+  titleLg: {
+    fontFamily: 'Inter_600SemiBold',
+    fontSize: 20,
+    lineHeight: 26,
+  },
   titleMd: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 22,
   },
   titleSm: {
     fontFamily: 'Inter_500Medium',
@@ -161,7 +204,7 @@ export const Typography = {
     lineHeight: 16,
   },
   labelLg: {
-    fontFamily: 'Inter_500Medium',
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 14,
     lineHeight: 20,
     letterSpacing: 0.1,
@@ -170,13 +213,13 @@ export const Typography = {
     fontFamily: 'Inter_500Medium',
     fontSize: 12,
     lineHeight: 16,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   numericDisplay: {
     fontFamily: 'Inter_700Bold',
     fontSize: 32,
     lineHeight: 40,
-    letterSpacing: -0.64,
+    letterSpacing: -0.5,
   },
 };
 
@@ -185,20 +228,20 @@ export const Spacing = {
   sm: 8,
   gutter: 12,
   md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-  containerMargin: 24,
+  lg: 20,
+  xl: 28,
+  xxl: 40,
+  containerMargin: 18,
 };
 
 export const BorderRadius = {
-  xs: 4,
-  sm: 8,
-  DEFAULT: 8,
-  md: 12,
-  lg: 16,
+  xs: 6,
+  sm: 10,
+  DEFAULT: 14,
+  md: 16,
+  lg: 20,
   xl: 24,
-  xxl: 28,
+  xxl: 32,
   full: 9999,
 };
 
@@ -211,31 +254,31 @@ export const Shadows = {
     elevation: 0,
   },
   card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  cardElevated: {
-    shadowColor: '#000',
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
   },
+  cardElevated: {
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
   button: {
-    shadowColor: '#24389C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.22,
     shadowRadius: 6,
     elevation: 3,
   },
   dialog: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 6,
   },
 };

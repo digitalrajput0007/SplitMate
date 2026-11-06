@@ -26,7 +26,7 @@ const TYPE_ICONS: Record<string, keyof typeof MaterialIcons.glyphMap> = {
   Other: 'groups',
 };
 
-export function GroupCard({
+export const GroupCard = React.memo(function GroupCard({
   name,
   groupPhotoUrl,
   groupPhotoThumbnailUrl,
@@ -156,7 +156,7 @@ export function GroupCard({
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 const styles = StyleSheet.create({
   card: {

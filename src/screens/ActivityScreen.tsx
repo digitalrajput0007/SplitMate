@@ -4,11 +4,14 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   ActivityIndicator,
   StatusBar as RNStatusBar,
   Platform,
   Image,
+  TouchableOpacity,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
@@ -18,13 +21,16 @@ import { formatCurrency } from '../services/currencyService';
 import {
   subscribeToUserGroups,
   subscribeUserActivityFeed,
-  subscribeAllUserProfiles,
+  subscribeToUserProfile,
   ActivityItem,
   UserProfile,
 } from '../services/firestoreService';
 import { SmartImage } from '../components/SmartImage';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
 
 export default function ActivityScreen() {
+  const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
@@ -34,14 +40,31 @@ export default function ActivityScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Reactive listener for all user profiles
-    const unsub = subscribeAllUserProfiles((users) => {
-      const mapping: Record<string, UserProfile> = {};
-      users.forEach(u => mapping[u.uid] = u);
-      setUserMap(mapping);
+    if (activities.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+    activities.forEach(a => {
+      if (a.actorUid) uidsToFetch.add(a.actorUid);
+      if (a.targetUid) uidsToFetch.add(a.targetUid);
     });
-    return () => unsub();
-  }, []);
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach(uid => {
+      if (!userMap[uid]) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setUserMap(prev => ({
+              ...prev,
+              [uid]: profile
+            }));
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [activities]);
 
   useEffect(() => {
     if (!currentUser?.uid) {
@@ -80,71 +103,101 @@ export default function ActivityScreen() {
     };
   };
 
+  const renderActivityItem = ({ item, index }: { item: ActivityItem; index: number }) => {
+    const actor = getActorInfo(item.actorUid);
+    const displayTitle = item.type === 'group' ? item.title.replace(/\s+created$/i, '') : item.title;
+
+    const handlePress = () => {
+      if (item.type === 'expense' && item.id) {
+        navigation.navigate('ExpenseDetail', { expenseId: item.id });
+      } else if (item.type === 'group' && item.id) {
+        navigation.navigate('GroupDetail', { groupId: item.id, groupName: displayTitle });
+      }
+    };
+
+    return (
+      <View key={item.id}>
+        <TouchableOpacity
+          style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+          onPress={handlePress}
+          activeOpacity={0.7}
+        >
+          <View style={styles.actorAvatarContainer}>
+            <SmartImage
+              uri={actor.photo || undefined}
+              thumbnailUri={actor.thumb || undefined}
+              name={actor.name}
+              mode="thumbnail"
+              size={44}
+              fallbackIcon="person"
+            />
+          </View>
+          <View style={styles.feedContent}>
+            <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
+              <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
+              <Text style={{ color: colors.primary, fontWeight: '600' }}>{displayTitle}</Text>
+            </Text>
+            <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
+            <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
+          </View>
+          {item.amount > 0 && (
+            <View style={styles.feedRight}>
+              <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
+                {formatCurrency(item.amount)}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Single banner ad blended in activity */}
+        {index === 2 && (
+          <BannerAdSlot style={{ marginVertical: 8 }} />
+        )}
+      </View>
+    );
+  };
+
+  const HeaderComponent = () => (
+    <View style={{ marginBottom: Spacing.md }}>
+      <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
+      <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Real-time timeline of your group activity</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} translucent />
 
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Activity Feed</Text>
-        <Text style={[styles.headerSub, { color: colors.onSurfaceVariant }]}>Real-time timeline of your group activity</Text>
-
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color={colors.primary} />
-            <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing timeline...</Text>
-          </View>
-        ) : activities.length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={[styles.emptyIconBox, { backgroundColor: colors.surfaceContainerLow }]}>
-              <MaterialIcons name="history" size={48} color={colors.outline} />
-            </View>
-            <Text style={[styles.emptyTitle, { color: colors.onBackground }]}>No activity yet</Text>
-            <Text style={[styles.emptySub, { color: colors.onSurfaceVariant }]}>
-              New expenses, settlements, and groups will appear here as they happen.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.feedList}>
-            {activities.map((item) => {
-              const actor = getActorInfo(item.actorUid);
-              return (
-                <View key={item.id} style={[styles.feedCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-                  {/* Actor Avatar */}
-                  <SmartImage
-                    uri={actor.photo || undefined}
-                    thumbnailUri={actor.thumb || undefined}
-                    name={actor.name}
-                    mode="thumbnail"
-                    size={44}
-                    fallbackIcon="person"
-                    style={styles.avatarImg}
-                  />
-
-                  <View style={styles.feedContent}>
-                    <Text style={[styles.feedTitle, { color: colors.onSurface }]}>
-                      <Text style={{ fontWeight: '700' }}>{actor.name}</Text> {item.type === 'group' ? 'created ' : 'added '}
-                      <Text style={{ color: colors.primary, fontWeight: '600' }}>{item.title}</Text>
-                    </Text>
-                    <Text style={[styles.feedSubtitle, { color: colors.onSurfaceVariant }]}>{item.subtitle}</Text>
-                    <Text style={[styles.feedDate, { color: colors.outline }]}>{item.date}</Text>
-                  </View>
-
-                  {item.amount > 0 && (
-                    <View style={styles.feedRight}>
-                      <Text style={[styles.feedAmount, { color: item.type === 'settlement' ? colors.positive : colors.onSurface }]}>
-                        {formatCurrency(item.amount)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.onSurfaceVariant }]}>Syncing timeline...</Text>
+        </View>
+      ) : activities.length === 0 ? (
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}>
+          <HeaderComponent />
+          <EmptyStateIllustration
+            type="activity"
+            title="No Activity Yet"
+            description="When you or your group members add expenses, make payments, or create groups, real-time activity will show up here."
+            actionLabel="View Groups"
+            onActionPress={() => navigation.navigate('GroupsTab')}
+          />
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={activities}
+          keyExtractor={(item) => item.id}
+          renderItem={renderActivityItem}
+          ListHeaderComponent={HeaderComponent}
+          contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={8}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -182,11 +235,16 @@ const styles = StyleSheet.create({
   feedList: { gap: Spacing.md },
   feedCard: {
     flexDirection: 'row',
+    alignItems: 'center',
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     borderWidth: 1,
     ...Shadows.card,
+  },
+  actorAvatarContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actorAvatar: {
     width: 44,

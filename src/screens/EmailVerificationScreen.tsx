@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { auth } from '../config/firebase';
@@ -48,15 +48,14 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
       if (isVerified && currentUser?.uid) {
         await setUserEmailVerifiedInFirestore(currentUser.uid);
         setLoading(false);
-        navigation.navigate('ProfileSetup');
+        // AppNavigator will handle redirection to ProfileSetup or MainTabs automatically
       } else {
         setLoading(false);
         setStatusMessage('Email link has not been verified yet. Please check your inbox and click the verification link.');
       }
     } catch (e: any) {
       setLoading(false);
-      // Fallback navigation for demo / testing
-      navigation.navigate('ProfileSetup');
+      // AppNavigator will handle redirection if state changes
     }
   };
 

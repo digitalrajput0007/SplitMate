@@ -1,0 +1,48 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isImageBelow5MB() {
+      return request.resource.size < 5 * 1024 * 1024 &&
+             request.resource.contentType.matches('image/.*');
+    }
+
+    function isGroupMember(groupId) {
+      return isSignedIn() && 
+        firestore.exists(/databases/(default)/documents/groups/$(groupId)) &&
+        request.auth.uid in firestore.get(/databases/(default)/documents/groups/$(groupId)).data.memberIds;
+    }
+
+    // 👤 AVATARS: Users can only upload and replace their own profile avatar
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId) && isImageBelow5MB();
+    }
+
+    // 👥 GROUP COVERS: Only active members of the group can upload group cover images
+    match /groups/{groupId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isGroupMember(groupId) && isImageBelow5MB();
+    }
+
+    // 🧾 EXPENSE RECEIPTS: Only active group members can upload expense receipts
+    match /receipts/{groupId}/{expenseId}/{allPaths=**} {
+      allow read: if isGroupMember(groupId);
+      allow write: if isGroupMember(groupId) && isImageBelow5MB();
+    }
+
+    // 📁 GENERAL USER STORAGE
+    match /general/{userId}/{allPaths=**} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+  }
+}

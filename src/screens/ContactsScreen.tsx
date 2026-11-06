@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,184 +6,724 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  TextInput,
   StatusBar as RNStatusBar,
-  Platform,
+  Alert,
   Image,
   ScrollView,
-  Alert,
+  Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { auth } from '../config/firebase';
 import {
-  UserProfile,
-  getSavedUserContactsFromFirestore,
+  Contact,
   removeContactFromUserFirestore,
-  subscribeToFriendRequests,
-  respondToFriendRequest,
-  FriendRequest
+  subscribeToUserContacts,
+  subscribeToUserProfile,
+  findUserByPhone,
+  UserProfile,
 } from '../services/firestoreService';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { ContactService, normalizePhoneNumber } from '../services/ContactService';
+import { formatCurrency } from '../services/currencyService';
 import { SmartImage } from '../components/SmartImage';
+import { M3SearchBar } from '../components/M3SearchBar';
+import { M3BottomSheet } from '../components/M3BottomSheet';
+import { EmptyStateIllustration } from '../components/EmptyIllustration';
+import { BannerAdSlot } from '../components/BannerAdSlot';
+import { usePairwiseBalances, PairwiseBalanceSummary } from '../hooks/usePairwiseBalances';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+import { shareApp } from '../config/appConfig';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+/**
+ * Main Contacts Screen
+ * Senior engineering implementation: Direct utility feel, no complex social graph.
+ */
 export default function ContactsScreen() {
-  const navigation = useNavigation<NavigationProp>();
   const { colors, isDark } = useTheme();
+  const navigation = useNavigation<NavigationProp>();
   const currentUser = auth.currentUser;
 
-  const [addedContacts, setAddedContacts] = useState<UserProfile[]>([]);
-  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const { balancesMap } = usePairwiseBalances();
+  const [selectedContactForDetail, setSelectedContactForDetail] = useState<{
+    contact: Contact;
+    summary: PairwiseBalanceSummary | null;
+  } | null>(null);
+
+  const [myContacts, setMyContacts] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Real-time platform profiles for contacts
+  const [platformProfiles, setPlatformProfiles] = useState<Record<string, UserProfile>>({});
 
   useEffect(() => {
     if (!currentUser?.uid) return;
-    const unsub = subscribeToFriendRequests(currentUser.uid, setFriendRequests);
+    const unsub = subscribeToUserContacts(currentUser.uid, (contacts) => {
+      setMyContacts(contacts.sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      setLoading(false);
+    });
     return () => unsub();
   }, [currentUser]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchAddedContacts();
-    }, [currentUser])
-  );
+  // Sync latest platform profiles in real-time for contacts that have a UID
+  useEffect(() => {
+    if (myContacts.length === 0) return;
 
-  const fetchAddedContacts = async () => {
-    if (!currentUser?.uid) return;
-    try {
-      const savedContacts = await getSavedUserContactsFromFirestore(currentUser.uid);
-      const sorted = [...savedContacts].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-      setAddedContacts(sorted);
-    } catch (e) {
-      console.log('Error loading contacts:', e);
-    } finally {
-      setLoading(false);
-    }
+    const unsubs: (() => void)[] = [];
+    const subscribedUids = new Set<string>();
+
+    myContacts.forEach(contact => {
+      if (contact.uid && !subscribedUids.has(contact.uid)) {
+        subscribedUids.add(contact.uid);
+        const unsub = subscribeToUserProfile(contact.uid, (profile) => {
+          if (profile) {
+            setPlatformProfiles(prev => ({
+              ...prev,
+              [contact.uid!]: profile
+            }));
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [myContacts]);
+
+  const dialog = useDialog();
+
+  const handleRemove = (contact: Contact) => {
+    dialog.showConfirm(
+      'Remove Contact',
+      `Are you sure you want to remove ${contact.name || contact.phone}?`,
+      async () => {
+        try {
+          await removeContactFromUserFirestore(currentUser!.uid, contact.phone || contact.name, contact.uid);
+          dialog.showSuccess('Removed', `${contact.name || 'Contact'} has been removed.`);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to remove contact. Please try again.');
+        }
+      },
+      {
+        confirmText: 'Remove',
+        cancelText: 'Cancel',
+        destructive: true,
+      }
+    );
   };
 
-  const handleRespond = async (request: FriendRequest, status: 'accepted' | 'declined') => {
-    try {
-      await respondToFriendRequest(request.requestId, status);
-      if (status === 'accepted') fetchAddedContacts();
-    } catch (e) {
-      Alert.alert('Error', 'Failed to respond to request');
-    }
+  const [activeFilter, setActiveFilter] = useState<'all' | 'owesYou' | 'youOwe'>('all');
+
+  const handleInvite = (phone: string, name?: string) => {
+    const customMessage = name
+      ? `Hey ${name}! Join me on SplitMate to split expenses & track bills easily.`
+      : undefined;
+    shareApp(customMessage);
   };
 
-  const handleRemoveContact = async (contact: UserProfile) => {
-    if (!currentUser?.uid) return;
-    Alert.alert('Remove Friend', `Remove ${contact.name} from your friends?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => {
-          await removeContactFromUserFirestore(currentUser.uid, contact.uid);
-          fetchAddedContacts();
-      }},
-    ]);
-  };
+  const filteredContacts = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
 
-  const filteredContacts = addedContacts.filter(c =>
-    !searchQuery || c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    return myContacts.filter((c) => {
+      const matchesSearch =
+        !query ||
+        (c.name || '').toLowerCase().includes(query) ||
+        (c.phone || '').includes(query);
 
-  const renderRequest = ({ item }: { item: FriendRequest }) => (
-    <View style={[styles.requestCard, { backgroundColor: colors.primaryFixed, borderColor: colors.primary }]}>
-      <SmartImage uri={item.fromPhotoUrl} name={item.fromName} size={44} style={{ borderRadius: 22 }} />
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.contactName, { color: colors.onPrimaryFixed }]}>{item.fromName}</Text>
-        <Text style={[styles.contactSub, { color: colors.onPrimaryFixedVariant }]}>Sent you a friend request</Text>
-      </View>
-      <View style={styles.requestActions}>
-        <TouchableOpacity onPress={() => handleRespond(item, 'declined')} style={styles.iconBtn}>
-          <MaterialIcons name="close" size={24} color={colors.onPrimaryFixedVariant} />
+      if (!matchesSearch) return false;
+
+      if (activeFilter === 'all') return true;
+
+      const balSummary = c.uid ? balancesMap.get(c.uid) : undefined;
+      const total = balSummary?.totalBalance || 0;
+
+      if (activeFilter === 'owesYou') {
+        return total > 0.01;
+      }
+      if (activeFilter === 'youOwe') {
+        return total < -0.01;
+      }
+
+      return true;
+    });
+  }, [myContacts, searchQuery, activeFilter, balancesMap]);
+
+  // UI Components
+  const renderContact = useCallback(({ item, index }: { item: Contact; index: number }) => {
+    const platformUser = item.uid ? platformProfiles[item.uid] : null;
+
+    // Priority: 1. Platform Thumbnail/Photo, 2. Local Contact Thumbnail/Photo
+    const priorityPhoto = platformUser?.photoThumbnailUrl || platformUser?.photoUrl || (platformUser as any)?.photoURL || item.photoThumbnailUrl || item.photoUrl;
+    const thumbnailUri = platformUser?.photoThumbnailUrl || item.photoThumbnailUrl || priorityPhoto;
+
+    const balanceSummary = item.uid ? balancesMap.get(item.uid) : undefined;
+    const total = balanceSummary?.totalBalance || 0;
+    const isSettled = Math.abs(total) < 0.01;
+    const owesYou = total > 0.01;
+    const youOwe = total < -0.01;
+
+    return (
+      <View key={item.phone || `contact-${index}`}>
+        <TouchableOpacity
+          style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+          onPress={() => setSelectedContactForDetail({ contact: item, summary: balanceSummary || null })}
+          activeOpacity={0.7}
+        >
+          <SmartImage
+            uri={priorityPhoto}
+            thumbnailUri={thumbnailUri}
+            name={platformUser?.name || item.name}
+            mode="thumbnail"
+            size={48}
+            style={{ borderRadius: 24 }}
+          />
+          <View style={styles.contactInfo}>
+            <Text style={[styles.contactName, { color: colors.onSurface }]}>{platformUser?.name || item.name || item.phone}</Text>
+            <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.phone}</Text>
+            
+            {item.uid && (
+              <View style={styles.balanceBadgeRow}>
+                {isSettled ? (
+                  <Text style={[styles.settledText, { color: colors.outline }]}>settled up</Text>
+                ) : owesYou ? (
+                  <Text style={[styles.owesYouText, { color: isDark ? '#34D399' : '#059669' }]}>
+                    owes you {formatCurrency(total)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.youOweText, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                    you owe {formatCurrency(Math.abs(total))}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+          <View style={styles.actions}>
+            {!item.uid ? (
+              <TouchableOpacity onPress={() => handleInvite(item.phone, item.name)} style={styles.inviteSmallBtn}>
+                <Text style={[styles.inviteSmallBtnText, { color: colors.primary }]}>Invite</Text>
+              </TouchableOpacity>
+            ) : (
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
+            )}
+            <TouchableOpacity onPress={() => handleRemove(item)} style={styles.deleteBtn}>
+              <MaterialIcons name="delete-outline" size={20} color={colors.outline} />
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleRespond(item, 'accepted')} style={[styles.iconBtn, { backgroundColor: colors.primary, borderRadius: 20 }]}>
-          <MaterialIcons name="check" size={24} color={colors.onPrimary} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
-  const renderContact = ({ item }: { item: UserProfile }) => (
-    <View style={[styles.contactCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-      <SmartImage uri={item.photoUrl} thumbnailUri={item.photoThumbnailUrl} name={item.name} size={44} style={{ borderRadius: 22 }} />
-      <View style={styles.contactInfo}>
-        <Text style={[styles.contactName, { color: colors.onSurface }]}>{item.name}</Text>
-        <Text style={[styles.contactSub, { color: colors.onSurfaceVariant }]}>{item.email || item.mobile}</Text>
+        {/* Banner ad blended after 3 contacts */}
+        {index === 2 && (
+          <BannerAdSlot style={{ marginVertical: 8 }} />
+        )}
       </View>
-      <TouchableOpacity onPress={() => handleRemoveContact(item)}>
-        <MaterialIcons name="more-vert" size={20} color={colors.outline} />
+    );
+  }, [colors, platformProfiles, balancesMap, isDark]);
+
+  const HeaderComponent = useMemo(() => (
+    <View style={styles.listHeader}>
+      {/* ➕ ADD FRIENDS CTA ROW */}
+      <TouchableOpacity
+        style={[styles.addFriendsRow, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primaryContainer }]}
+        onPress={() => navigation.navigate('ContactSync')}
+        activeOpacity={0.8}
+      >
+        <View style={[styles.addIconCircle, { backgroundColor: colors.primary }]}>
+          <MaterialIcons name="person-add" size={20} color={colors.onPrimary} />
+        </View>
+        <Text style={[styles.addFriendsText, { color: colors.onSurface }]}>Add contacts</Text>
+        <MaterialIcons name="chevron-right" size={24} color={colors.primary} />
       </TouchableOpacity>
+
+      {!searchQuery && myContacts.length > 0 && (
+        <Text style={[styles.sectionHeader, { color: colors.onSurfaceVariant }]}>MY CONTACTS</Text>
+      )}
     </View>
-  );
+  ), [colors, searchQuery, myContacts.length, navigation]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Friends</Text>
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primaryContainer }]} onPress={() => navigation.navigate('InviteContacts')}>
-          <MaterialIcons name="person-add" size={22} color={colors.primary} />
+      <RNStatusBar backgroundColor={colors.background} barStyle={isDark ? "light-content" : "dark-content"} />
+
+      <View style={styles.topBar}>
+        <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Contacts</Text>
+      </View>
+
+      <View style={styles.searchRow}>
+        <View style={{ flex: 1 }}>
+          <M3SearchBar
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search name or phone..."
+            onClear={() => setSearchQuery('')}
+          />
+        </View>
+        <TouchableOpacity
+          style={[
+            styles.filterIconBtn,
+            { backgroundColor: activeFilter !== 'all' ? colors.primary : colors.surfaceContainerHigh }
+          ]}
+          onPress={() => setShowFilterSheet(true)}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons
+            name="tune"
+            size={22}
+            color={activeFilter !== 'all' ? colors.onPrimary : colors.onSurfaceVariant}
+          />
+          {activeFilter !== 'all' && <View style={[styles.filterBadge, { backgroundColor: colors.error }]} />}
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.searchBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-        <MaterialIcons name="search" size={22} color={colors.outline} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.onSurface }]}
-          placeholder="Search friends..."
-          placeholderTextColor={colors.outline}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-      </View>
-
-      {friendRequests.length > 0 && !searchQuery && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>PENDING REQUESTS</Text>
-          <FlatList data={friendRequests} renderItem={renderRequest} keyExtractor={r => r.requestId} scrollEnabled={false} />
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      )}
-
-      <View style={[styles.section, { flex: 1 }]}>
-        {!searchQuery && <Text style={[styles.sectionTitle, { color: colors.onSurfaceVariant }]}>ALL FRIENDS</Text>}
+      ) : myContacts.length === 0 && !searchQuery ? (
+        <ScrollView contentContainerStyle={[styles.emptyContainer, { paddingHorizontal: Spacing.lg }]}>
+          <EmptyStateIllustration
+            type="contacts"
+            title="No Contacts Added"
+            description="Start adding friends or sync from contacts to begin splitting dinners, trips, and daily bills effortlessly."
+            actionLabel="Add Contacts"
+            onActionPress={() => navigation.navigate('ContactSync')}
+          />
+        </ScrollView>
+      ) : (
         <FlatList
           data={filteredContacts}
+          keyExtractor={(item, index) => item.phone || `contact-${index}`}
           renderItem={renderContact}
-          keyExtractor={c => c.uid}
-          contentContainerStyle={{ paddingBottom: 100 }}
+          ListHeaderComponent={HeaderComponent}
+          contentContainerStyle={styles.list}
+          initialNumToRender={12}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
           ListEmptyComponent={
-            <View style={styles.empty}>
-              <MaterialIcons name="people-outline" size={64} color={colors.outlineVariant} />
-              <Text style={{ color: colors.onSurfaceVariant, marginTop: 16 }}>No friends found</Text>
-            </View>
+            searchQuery ? (
+              <EmptyStateIllustration
+                type="contacts"
+                compact
+                title="No Matching Contacts"
+                description={`No contacts found matching "${searchQuery}".`}
+                actionLabel="Sync Contacts"
+                onActionPress={() => navigation.navigate('ContactSync')}
+              />
+            ) : null
           }
         />
-      </View>
+      )}
+
+      {/* OWE DETAILS BOTTOM SHEET */}
+      <M3BottomSheet
+        visible={!!selectedContactForDetail}
+        onClose={() => setSelectedContactForDetail(null)}
+        onDismiss={() => setSelectedContactForDetail(null)}
+        title="Owe Details"
+      >
+        {selectedContactForDetail && (
+          <View style={{ paddingBottom: 24 }}>
+            {/* Contact Info Header Box */}
+            <View style={[styles.modalHeaderBox, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.divider }]}>
+              <SmartImage
+                uri={selectedContactForDetail.contact.photoUrl}
+                thumbnailUri={selectedContactForDetail.contact.photoThumbnailUrl}
+                name={selectedContactForDetail.contact.name}
+                size={56}
+                mode="thumbnail"
+                style={{ borderRadius: 28 }}
+              />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.modalName, { color: colors.onSurface }]}>
+                  {selectedContactForDetail.contact.name || selectedContactForDetail.contact.phone}
+                </Text>
+                <Text style={[styles.modalPhone, { color: colors.onSurfaceVariant }]}>
+                  {selectedContactForDetail.contact.phone}
+                </Text>
+                {selectedContactForDetail.summary && (
+                  <Text
+                    style={[
+                      styles.modalOverallBalance,
+                      {
+                        color:
+                          selectedContactForDetail.summary.totalBalance > 0.01
+                            ? (isDark ? '#34D399' : '#059669')
+                            : selectedContactForDetail.summary.totalBalance < -0.01
+                            ? (isDark ? '#F87171' : '#DC2626')
+                            : colors.outline,
+                      },
+                    ]}
+                  >
+                    {Math.abs(selectedContactForDetail.summary.totalBalance) < 0.01
+                      ? 'Overall: Settled up'
+                      : selectedContactForDetail.summary.totalBalance > 0.01
+                      ? `Overall: Owes you ${formatCurrency(selectedContactForDetail.summary.totalBalance)}`
+                      : `Overall: You owe ${formatCurrency(Math.abs(selectedContactForDetail.summary.totalBalance))}`}
+                  </Text>
+                )}
+              </View>
+            </View>
+
+            {/* Group-Wise Breakdown List */}
+            <Text style={[styles.groupSectionTitle, { color: colors.onSurfaceVariant }]}>
+              GROUP-WISE BREAKDOWN
+            </Text>
+
+            {selectedContactForDetail.summary && selectedContactForDetail.summary.groupBreakdown.length > 0 ? (
+              selectedContactForDetail.summary.groupBreakdown.map((item, index) => {
+                const grpBal = item.balance;
+                const isGrpSettled = Math.abs(grpBal) < 0.01;
+                const grpOwesYou = grpBal > 0.01;
+
+                return (
+                  <TouchableOpacity
+                    key={item.group.groupId || `grp-${index}`}
+                    style={[styles.groupRowCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}
+                    onPress={() => {
+                      setSelectedContactForDetail(null);
+                      navigation.navigate('GroupDetail', {
+                        groupId: item.group.groupId,
+                        groupName: item.group.name || 'Group',
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <SmartImage
+                      uri={item.group.photoUrl}
+                      thumbnailUri={item.group.photoThumbnailUrl}
+                      name={item.group.name}
+                      size={44}
+                      fallbackIcon="groups"
+                      style={{ borderRadius: 12 }}
+                    />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[styles.groupRowName, { color: colors.onSurface }]}>
+                        {item.group.name}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.groupRowBalance,
+                          {
+                            color: isGrpSettled
+                              ? colors.outline
+                              : grpOwesYou
+                              ? (isDark ? '#34D399' : '#059669')
+                              : (isDark ? '#F87171' : '#DC2626'),
+                          },
+                        ]}
+                      >
+                        {isGrpSettled
+                          ? 'Settled up'
+                          : grpOwesYou
+                          ? `owes you ${formatCurrency(grpBal)}`
+                          : `you owe ${formatCurrency(Math.abs(grpBal))}`}
+                      </Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
+                  </TouchableOpacity>
+                );
+              })
+            ) : (
+              <View style={[styles.noSharedGroupsCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+                <MaterialIcons name="groups" size={40} color={colors.outline} />
+                <Text style={[styles.noSharedGroupsText, { color: colors.onSurfaceVariant }]}>
+                  No shared groups with {selectedContactForDetail.contact.name || 'this contact'} yet.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.createGroupBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    setSelectedContactForDetail(null);
+                    navigation.navigate('CreateGroupModal' as any);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="add" size={18} color={colors.onPrimary} />
+                  <Text style={[styles.createGroupBtnText, { color: colors.onPrimary }]}>Add to Group</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+      </M3BottomSheet>
+
+      {/* FILTER CONTACTS BOTTOM SHEET */}
+      <M3BottomSheet
+        visible={showFilterSheet}
+        onClose={() => setShowFilterSheet(false)}
+        onDismiss={() => setShowFilterSheet(false)}
+        title="Filter Contacts"
+      >
+        <View style={{ gap: 10, paddingBottom: 24 }}>
+          {[
+            { id: 'all', label: 'All Contacts', icon: 'people-outline' },
+            { id: 'owesYou', label: 'Owes You', icon: 'arrow-downward', color: isDark ? '#34D399' : '#059669' },
+            { id: 'youOwe', label: 'You Owe', icon: 'arrow-upward', color: isDark ? '#F87171' : '#DC2626' },
+          ].map((option) => {
+            const isSelected = activeFilter === option.id;
+            return (
+              <TouchableOpacity
+                key={option.id}
+                style={[
+                  styles.filterOptionRow,
+                  {
+                    backgroundColor: isSelected ? colors.primaryContainer : colors.surfaceContainerLowest,
+                    borderColor: isSelected ? colors.primary : colors.divider,
+                  },
+                ]}
+                onPress={() => {
+                  setActiveFilter(option.id as any);
+                  setShowFilterSheet(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.filterOptionIconCircle, { backgroundColor: isSelected ? colors.primary : colors.surfaceContainerLow }]}>
+                  <MaterialIcons
+                    name={option.icon as any}
+                    size={20}
+                    color={isSelected ? colors.onPrimary : option.color || colors.onSurfaceVariant}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.filterOptionLabel,
+                    { color: isSelected ? colors.onPrimaryContainer : colors.onSurface, fontWeight: isSelected ? '700' : '500' },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {isSelected && (
+                  <MaterialIcons name="check" size={22} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </M3BottomSheet>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md },
+  topBar: { padding: Spacing.md, paddingBottom: Spacing.xs },
   headerTitle: { ...Typography.headlineSm, fontWeight: '700' },
-  addBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  searchBox: { flexDirection: 'row', alignItems: 'center', marginHorizontal: Spacing.md, paddingHorizontal: 12, height: 48, borderRadius: BorderRadius.lg, borderWidth: 1, gap: 8 },
-  searchInput: { flex: 1, ...Typography.bodyLg },
-  section: { paddingHorizontal: Spacing.md, marginTop: Spacing.lg, gap: Spacing.sm },
-  sectionTitle: { ...Typography.labelMd, fontWeight: '800', letterSpacing: 1 },
-  requestCard: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.xl, borderWidth: 1, gap: 12 },
-  requestActions: { flexDirection: 'row', gap: 8 },
-  iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  contactCard: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.lg, borderWidth: 1, gap: 12, marginVertical: 4 },
+  searchPadding: { paddingHorizontal: Spacing.md, marginBottom: Spacing.md },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  filterIconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  filterOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    gap: 12,
+  },
+  filterOptionIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterOptionLabel: {
+    ...Typography.titleSm,
+    flex: 1,
+  },
+  list: { paddingHorizontal: Spacing.md, paddingBottom: 100 },
+  listHeader: { marginBottom: Spacing.sm },
+  addFriendsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    marginBottom: Spacing.lg,
+    gap: 12
+  },
+  addIconCircle: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  addFriendsText: { ...Typography.titleSm, fontWeight: '700', flex: 1 },
+  sectionHeader: { ...Typography.labelMd, fontWeight: '800', letterSpacing: 1, marginBottom: 12, marginTop: 4 },
+  platformResultBox: { marginBottom: Spacing.lg },
+  contactCard: { flexDirection: 'row', alignItems: 'center', padding: Spacing.md, borderRadius: BorderRadius.xl, borderWidth: 1, gap: 12, marginBottom: Spacing.sm },
   contactInfo: { flex: 1 },
   contactName: { ...Typography.titleSm, fontWeight: '700' },
-  contactSub: { ...Typography.bodySm, marginTop: 2 },
-  empty: { marginTop: 80, alignItems: 'center' }
+  contactSub: { ...Typography.bodySm, opacity: 0.6 },
+  platformBadge: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 4 },
+  platformBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inviteSmallBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  inviteSmallBtnText: { ...Typography.labelMd, fontWeight: '700' },
+  deleteBtn: { padding: 4 },
+  platformAddBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: BorderRadius.md, gap: 4 },
+  platformAddBtnText: { ...Typography.labelMd, fontWeight: '700' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  noResults: { marginTop: 40, alignItems: 'center', gap: 8 },
+  hintText: { ...Typography.labelMd, textAlign: 'center' },
+
+  /* EMPTY STATE STYLES */
+  emptyContainer: { alignItems: 'center', paddingTop: 40, paddingHorizontal: 24 },
+  illustrationCard: {
+    width: '100%',
+    maxWidth: 280,
+    height: 280,
+    borderRadius: BorderRadius.xxl,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+    ...Shadows.card
+  },
+  illustration: { width: '100%', height: '100%' },
+  emptyHeadline: { ...Typography.titleLg, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
+  emptySubtitle: { ...Typography.bodyMd, textAlign: 'center', lineHeight: 22, marginBottom: 32, paddingHorizontal: 12 },
+  inviteNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    maxWidth: 320,
+    height: 56,
+    borderRadius: BorderRadius.lg,
+    gap: 12,
+    ...Shadows.button
+  },
+  inviteNowText: { ...Typography.titleMd, fontWeight: '700' },
+  balanceBadgeRow: {
+    marginTop: 3,
+  },
+  owesYouText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  youOweText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  settledText: {
+    ...Typography.labelMd,
+    fontWeight: '500',
+    fontSize: 12,
+  },
+  modalHeaderBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    gap: 14,
+    marginBottom: Spacing.lg,
+  },
+  modalName: {
+    ...Typography.titleMd,
+    fontWeight: '700',
+  },
+  modalPhone: {
+    ...Typography.bodySm,
+    fontSize: 13,
+  },
+  modalOverallBalance: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+    fontSize: 13,
+    marginTop: 2,
+  },
+  groupSectionTitle: {
+    ...Typography.labelMd,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 12,
+  },
+  groupRowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: 10,
+  },
+  groupRowName: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+  },
+  groupRowBalance: {
+    ...Typography.labelMd,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  noSharedGroupsCard: {
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 8,
+  },
+  noSharedGroupsText: {
+    ...Typography.bodyMd,
+    textAlign: 'center',
+  },
+  createGroupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    gap: 6,
+    marginTop: 4,
+  },
+  createGroupBtnText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+  },
+  filterChipContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    ...Typography.labelMd,
+    fontWeight: '700',
+    fontSize: 12,
+  },
 });

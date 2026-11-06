@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  KeyboardAvoidingView,
   Image,
   ActivityIndicator,
   Alert,
@@ -16,8 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
+import { useTheme } from '../context/ThemeContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
 import { updateUserProfile } from '../services/authService';
@@ -25,15 +27,18 @@ import {
   saveUserProfileToFirestore,
   getUserProfileFromFirestore,
   isMobileNumberRegistered,
+  isProfileComplete,
+  getPersistentProfileStatus,
+  getPersistentProfile,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfileSetup'>;
 
 export default function ProfileSetupScreen({ navigation, route }: Props) {
+  const { colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
 
   const [name, setName] = useState('');
@@ -77,6 +82,16 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         return;
       }
 
+      // Fast check persistent storage: If user profile is already known to be complete, redirect to MainTabs immediately
+      try {
+        const persistentStatus = await getPersistentProfileStatus(activeUser.uid, activeUser.email);
+        const persistentProf = await getPersistentProfile(activeUser.uid, activeUser.email);
+        if (persistentStatus === 'complete' || (persistentProf && isProfileComplete(persistentProf))) {
+          navigation.replace('MainTabs');
+          return;
+        }
+      } catch (cacheErr) {}
+
       let resolvedName = route.params?.displayName || activeUser.displayName || '';
       let resolvedPhoto = route.params?.photoURL || activeUser.photoURL || '';
       let resolvedThumb = '';
@@ -94,8 +109,9 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           if (firestoreProf.dob) resolvedDob = firestoreProf.dob;
           if (firestoreProf.mobile) resolvedMobile = firestoreProf.mobile;
 
-          if (firestoreProf.name && firestoreProf.paymentHandle && !route.params?.fromGoogle) {
-            navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
+          if (isProfileComplete(firestoreProf)) {
+            // Already has a complete profile, redirect to MainTabs
+            navigation.replace('MainTabs');
             return;
           }
         }
@@ -103,12 +119,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         console.log('Firestore offline / cache read mode');
       }
 
-      if (!resolvedName && activeUser.email) {
-        resolvedName = activeUser.email.split('@')[0];
-        resolvedName = resolvedName.charAt(0).toUpperCase() + resolvedName.slice(1);
-      }
-
-      setName(resolvedName);
+      setName(resolvedName || '');
       setPhotoUrl(resolvedPhoto);
       setPhotoThumbnailUrl(resolvedThumb);
       setDobDate(resolvedDob ? new Date(resolvedDob) : null);
@@ -124,9 +135,23 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
     loadInitialData();
   }, [route.params]);
 
+  const isValidName = (val: string) => {
+    // Only letters (A-Z, a-z) and single spaces between names allowed
+    return /^[A-Za-z]+(?:\s[A-Za-z]+)*$/.test(val.trim());
+  };
+
   const handleCompleteProfile = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       Alert.alert('Required Field', 'Please enter your Full Name.');
+      return;
+    }
+
+    if (!isValidName(trimmedName)) {
+      Alert.alert(
+        'Invalid Name',
+        'Name can only contain letters and spaces. Numbers, dots, and special characters are not allowed.'
+      );
       return;
     }
 
@@ -163,186 +188,223 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       await updateUserProfile(name.trim(), photoUrl || undefined);
 
       // 3. Save to Firestore
-      if (currentUser?.uid) {
+      if (activeUser?.uid) {
+        const isGoogle = activeUser.providerData.some((p: any) => p.providerId === 'google.com') || route.params?.fromGoogle;
         await saveUserProfileToFirestore({
-          uid: currentUser.uid,
+          uid: activeUser.uid,
           name: name.trim(),
-          email: currentUser?.email || '',
-          photoUrl: photoUrl || currentUser?.photoURL || '',
+          email: activeUser?.email || '',
+          photoUrl: photoUrl || activeUser?.photoURL || '',
           photoThumbnailUrl: photoThumbnailUrl,
           photoMetadata: photoMetadata,
-          paymentHandle: paymentHandle.trim(),
+          paymentHandle: paymentHandle ? paymentHandle.trim() : '',
           dob: formattedDob,
           mobile: fullMobile,
+          profileCompleted: true,
+          authProvider: isGoogle ? 'google' : 'password',
         });
       }
       setSaving(false);
-      navigation.navigate('ContactsPermission');
-    } catch (err) {
+
+      // Redirect to MainTabs (HomeScreen) cleanly with reset
+      try {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'MainTabs' }],
+        });
+      } catch (e) {
+        navigation.navigate('MainTabs');
+      }
+    } catch (err: any) {
       setSaving(false);
-      console.log('Profile saved locally (offline / non-blocking mode):', err);
-      navigation.navigate('ContactsPermission');
+      console.log('Error saving profile:', err);
+      Alert.alert('Error', err?.message || 'Failed to save profile. Please try again.');
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Setup Profile</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: colors.background }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          style={{ flex: 1, backgroundColor: colors.background }}
+          contentContainerStyle={[styles.scroll, { backgroundColor: colors.background }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={[styles.title, { color: colors.onBackground }]}>Setup Profile</Text>
 
-        {/* Avatar Section matching initials placeholder & camera badge */}
-        <View style={styles.avatarContainer}>
-          <TouchableOpacity style={styles.avatarWrapper} onPress={() => setIsPickerVisible(true)} activeOpacity={0.8}>
-            <View style={styles.avatarCircle}>
-              <SmartImage
-                uri={photoUrl || undefined}
-                thumbnailUri={photoThumbnailUrl || undefined}
-                name={name}
-                size={120}
-                fallbackIcon="person"
-              />
-            </View>
-            <View style={styles.cameraBadge}>
-              <MaterialIcons name="camera-alt" size={18} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
-
-          {photoUrl ? (
-            <TouchableOpacity onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} style={styles.removePhotoBtn}>
-              <Text style={styles.removePhotoText}>Remove Photo</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Form Container */}
-        <View style={styles.formContainer}>
-          {/* Full Name */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Full Name <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <View style={styles.inputBox}>
-              <TextInput
-                style={styles.inputText}
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Rahul Sharma"
-                placeholderTextColor="#A0A0A0"
-              />
-            </View>
-          </View>
-
-          {/* Date of Birth */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Date of Birth <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <TouchableOpacity
-              style={styles.inputBoxRow}
-              onPress={() => setShowDatePicker(true)}
-              activeOpacity={0.85}
+          {/* Avatar Section matching initials placeholder & camera badge */}
+          <View style={styles.avatarContainer}>
+            <TouchableOpacity 
+              style={styles.avatarWrapper} 
+              onPress={() => setIsPickerVisible(true)} 
+              activeOpacity={0.8}
+              disabled={isUploading}
             >
-              <Text style={[styles.inputText, !dobDate && { color: '#A0A0A0' }]}>
-                {dobDate
-                  ? `${String(dobDate.getDate()).padStart(2, '0')}-${String(dobDate.getMonth() + 1).padStart(2, '0')}-${dobDate.getFullYear()}`
-                  : 'DD-MM-YYYY'}
-              </Text>
-              <MaterialIcons name="calendar-today" size={20} color="#1A1C1C" />
+              <View style={[styles.avatarCircle, { backgroundColor: colors.surfaceContainerHigh, opacity: isUploading ? 0.7 : 1 }]}>
+                <SmartImage
+                  uri={photoUrl || undefined}
+                  thumbnailUri={photoThumbnailUrl || undefined}
+                  name={name}
+                  size={120}
+                  fallbackIcon="person"
+                />
+                {isUploading && (
+                  <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 60, alignItems: 'center', justifyContent: 'center' }]}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700', marginTop: 4 }}>{Math.round(progress)}%</Text>
+                  </View>
+                )}
+              </View>
+              <View style={[styles.cameraBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.background }]}>
+                <MaterialIcons name="camera-alt" size={18} color={colors.onPrimary} />
+              </View>
             </TouchableOpacity>
 
-            {showDatePicker && typeof DateTimePicker === 'function' && (
-              <DateTimePicker
-                value={dobDate || new Date(1998, 0, 1)}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                onChange={(event: any, selectedDate?: Date) => {
-                  setShowDatePicker(false);
-                  if (selectedDate) setDobDate(selectedDate);
-                }}
-              />
-            )}
+            {photoUrl ? (
+              <TouchableOpacity 
+                onPress={() => { setPhotoUrl(''); setPhotoThumbnailUrl(''); }} 
+                style={styles.removePhotoBtn}
+                disabled={isUploading}
+              >
+                <Text style={[styles.removePhotoText, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
-          {/* Mobile Number */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Mobile Number (10 digits) <Text style={{ color: Colors.error }}>*</Text>
-            </Text>
-            <View style={styles.inputBoxRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Spacing.sm }}>
-                <Text style={{ fontSize: 16, marginRight: 4 }}>🇮🇳</Text>
-                <Text style={[styles.inputText, { fontWeight: '600' }]}>+91</Text>
-              </View>
-              <TextInput
-                style={[styles.inputText, { flex: 1 }]}
-                value={mobileNumber}
-                onChangeText={(val) => {
-                  const cleaned = val.replace(/[^0-9]/g, '').slice(0, 10);
-                  setMobileNumber(cleaned);
-                }}
-                placeholder="9876543210"
-                placeholderTextColor="#A0A0A0"
-                keyboardType="number-pad"
-                maxLength={10}
-              />
-            </View>
-          </View>
-
-          {/* UPI ID (Optional) */}
-          <View style={styles.fieldGroup}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={styles.fieldLabel}>UPI ID / Payment Handle</Text>
-              <Text style={{ fontSize: 12, color: Colors.onSurfaceVariant, fontWeight: '500' }}>(Optional)</Text>
-            </View>
-            <View style={styles.inputBox}>
-              <TextInput
-                style={styles.inputText}
-                value={paymentHandle}
-                onChangeText={(val) => setPaymentHandle(val.replace(/\s+/g, ''))}
-                placeholder="user@okhdfcbank"
-                placeholderTextColor="#A0A0A0"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-            <View style={styles.upiInfoCard}>
-              <MaterialIcons name="info-outline" size={18} color={Colors.primary} />
-              <Text style={styles.upiInfoText}>
-                Your UPI ID lets group members settle up debts directly to your Google Pay, PhonePe, or Paytm account with one tap!
+          {/* Form Container */}
+          <View style={styles.formContainer}>
+            {/* Full Name */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Full Name <Text style={{ color: colors.error }}>*</Text>
               </Text>
+              <View style={[styles.inputBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <TextInput
+                  style={[styles.inputText, { color: colors.onSurface }]}
+                  value={name}
+                  onChangeText={(val) => {
+                    const cleaned = val.replace(/[^A-Za-z\s]/g, '');
+                    setName(cleaned);
+                  }}
+                  placeholder="e.g. Rahul Sharma"
+                  placeholderTextColor={colors.outline}
+                />
+              </View>
             </View>
+
+            {/* Date of Birth */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Date of Birth <Text style={{ color: colors.error }}>*</Text>
+              </Text>
+              <TouchableOpacity
+                style={[styles.inputBoxRow, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.inputText, { color: dobDate ? colors.onSurface : colors.outline }]}>
+                  {dobDate
+                    ? `${String(dobDate.getDate()).padStart(2, '0')}-${String(dobDate.getMonth() + 1).padStart(2, '0')}-${dobDate.getFullYear()}`
+                    : 'DD-MM-YYYY'}
+                </Text>
+                <MaterialIcons name="calendar-today" size={20} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+
+              {showDatePicker && typeof DateTimePicker === 'function' && (
+                <DateTimePicker
+                  value={dobDate || new Date(1998, 0, 1)}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  maximumDate={new Date()}
+                  onChange={(event: any, selectedDate?: Date) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setDobDate(selectedDate);
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Mobile Number */}
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>
+                Mobile Number (10 digits) <Text style={{ color: colors.error }}>*</Text>
+              </Text>
+              <View style={[styles.inputBoxRow, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: Spacing.sm }}>
+                  <Text style={{ fontSize: 16, marginRight: 4 }}>🇮🇳</Text>
+                  <Text style={[styles.inputText, { color: colors.onSurface, fontWeight: '600' }]}>+91</Text>
+                </View>
+                <TextInput
+                  style={[styles.inputText, { flex: 1, color: colors.onSurface }]}
+                  value={mobileNumber}
+                  onChangeText={(val) => {
+                    const cleaned = val.replace(/[^0-9]/g, '').slice(0, 10);
+                    setMobileNumber(cleaned);
+                  }}
+                  placeholder="9876543210"
+                  placeholderTextColor={colors.outline}
+                  keyboardType="number-pad"
+                  maxLength={10}
+                />
+              </View>
+            </View>
+
+            {/* UPI ID (Optional) */}
+            <View style={styles.fieldGroup}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={[styles.fieldLabel, { color: colors.onSurfaceVariant }]}>UPI ID / Payment Handle</Text>
+                <Text style={{ fontSize: 12, color: colors.outline, fontWeight: '500' }}>(Optional)</Text>
+              </View>
+              <View style={[styles.inputBox, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.outlineVariant }]}>
+                <TextInput
+                  style={[styles.inputText, { color: colors.onSurface }]}
+                  value={paymentHandle}
+                  onChangeText={(val) => setPaymentHandle(val.replace(/\s+/g, ''))}
+                  placeholder="user@okhdfcbank"
+                  placeholderTextColor={colors.outline}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+              <View style={[styles.upiInfoCard, { backgroundColor: colors.primaryContainer }]}>
+                <MaterialIcons name="info-outline" size={18} color={colors.primary} />
+                <Text style={[styles.upiInfoText, { color: colors.onPrimaryContainer }]}>
+                  Your UPI ID lets group members settle up debts directly to your Google Pay, PhonePe, or Paytm account with one tap!
+                </Text>
+              </View>
+            </View>
+
+            {/* Primary Continue Button */}
+            <TouchableOpacity
+              style={[styles.continueButton, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
+              onPress={handleCompleteProfile}
+              activeOpacity={0.85}
+              disabled={saving || isUploading}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+              ) : (
+                <Text style={[styles.continueButtonText, { color: colors.onPrimary }]}>
+                  {isUploading ? 'Uploading Image...' : 'Continue'}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
+        </ScrollView>
 
-          {/* Primary Continue Button matching exact blue pill in screenshot */}
-          <TouchableOpacity
-            style={[styles.continueButton, saving && styles.disabledButton]}
-            onPress={handleCompleteProfile}
-            activeOpacity={0.85}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Text style={styles.continueButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-
-      <MediaPickerSheet
-        visible={isPickerVisible}
-        onDismiss={() => setIsPickerVisible(false)}
-        onCamera={takePhoto}
-        onGallery={pickFromGallery}
-        onFiles={browseFiles}
-        onRemove={photoUrl ? removeMedia : undefined}
-      />
-
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
-      />
+        <MediaPickerSheet
+          visible={isPickerVisible}
+          onDismiss={() => setIsPickerVisible(false)}
+          onCamera={takePhoto}
+          onGallery={pickFromGallery}
+          onFiles={browseFiles}
+          onRemove={photoUrl ? removeMedia : undefined}
+        />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -350,7 +412,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   scroll: {
     flexGrow: 1,
@@ -392,16 +453,16 @@ const styles = StyleSheet.create({
   avatarInitialsText: {
     fontSize: 40,
     fontWeight: '700',
-    color: '#3F51B5',
+    color: Colors.primaryDark,
   },
   cameraBadge: {
     position: 'absolute',
     bottom: 2,
     right: 2,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#4C56AF',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -428,66 +489,70 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4B5563',
+    color: Colors.secondaryText,
   },
   inputBox: {
     width: '100%',
     height: 52,
-    borderRadius: 10,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: Colors.border,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     justifyContent: 'center',
   },
   inputBoxRow: {
     width: '100%',
     height: 52,
-    borderRadius: 10,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: Colors.border,
     backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   inputText: {
     fontSize: 15,
-    color: '#1F2937',
+    color: Colors.primaryText,
     fontWeight: '400',
   },
   continueButton: {
     width: '100%',
-    height: 50,
-    borderRadius: 10,
-    backgroundColor: '#4051BF',
+    height: 52,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
+    ...Shadows.card,
   },
   disabledButton: {
     opacity: 0.6,
   },
   continueButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   upiInfoCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: Colors.primaryFixed,
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 4,
+    gap: 10,
+    backgroundColor: Colors.primaryContainer,
+    padding: 12,
+    borderRadius: BorderRadius.md,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
   },
   upiInfoText: {
     flex: 1,
     fontSize: 12,
-    color: Colors.onPrimaryFixed,
-    lineHeight: 16,
+    color: Colors.primaryDark,
+    lineHeight: 18,
+    fontWeight: '500',
   },
   modalBackdrop: {
     flex: 1,

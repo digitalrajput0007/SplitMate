@@ -12,6 +12,7 @@ import {
   StatusBar as RNStatusBar,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -20,12 +21,24 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { auth } from '../config/firebase';
 import { signOutUser } from '../services/authService';
-import { getUserProfileFromFirestore, getAllUsersFromFirestore } from '../services/firestoreService';
+import {
+  getUserProfileFromFirestore,
+  getAllUsersFromFirestore,
+  subscribeToUserProfile,
+  addContactToUserFirestore,
+  Contact,
+} from '../services/firestoreService';
 import { getCurrencyConfig } from '../services/currencyService';
 import { useTheme } from '../context/ThemeContext';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { useDialog } from '../context/DialogContext';
+import { RootStackParamList } from '../navigation/types';
+import { shareApp, openPlayStoreRating, APP_VERSION } from '../config/appConfig';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
 import AppLogo from '../components/AppLogo';
 import { M3Skeleton } from '../components/M3Skeleton';
+import { SmartImage } from '../components/SmartImage';
+import { M3Dialog } from '../components/M3Dialog';
 import QRCode from 'react-native-qrcode-svg';
 
 let CameraView: any = View;
@@ -47,6 +60,7 @@ export default function AccountScreen() {
   const currencyConfig = getCurrencyConfig();
   const { themeMode, colors, isDark } = useTheme();
   const currentUser = auth.currentUser;
+  const appVersion = Constants.expoConfig?.version || packageJson.version || APP_VERSION || '1.2.1';
 
   const [permission, requestPermission] = useCameraPermissions();
   const [displayName, setDisplayName] = useState(currentUser?.displayName || 'User');
@@ -54,6 +68,7 @@ export default function AccountScreen() {
   const [displayMobile, setDisplayMobile] = useState('');
   const [paymentHandle, setPaymentHandle] = useState('');
   const [photoUrl, setPhotoUrl] = useState(currentUser?.photoURL || '');
+  const [photoThumbnailUrl, setPhotoThumbnailUrl] = useState('');
   const [profileLoading, setProfileLoading] = useState(true);
 
   const [qrModalVisible, setQrModalVisible] = useState(false);
@@ -65,43 +80,39 @@ export default function AccountScreen() {
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
 
-  const fetchUserData = useCallback(async () => {
+  useEffect(() => {
     const activeUser = auth.currentUser;
     if (!activeUser?.uid) {
       setDisplayName('User');
       setDisplayEmail('');
       setPaymentHandle('');
       setPhotoUrl('');
+      setPhotoThumbnailUrl('');
       setDisplayMobile('');
       setProfileLoading(false);
       return;
     }
+
+    // Initial sync from Auth
     setDisplayName(activeUser.displayName || activeUser.email?.split('@')[0] || 'User');
     setDisplayEmail(activeUser.email || '');
     setPhotoUrl(activeUser.photoURL || '');
 
-    try {
-      const prof = await getUserProfileFromFirestore(activeUser.uid);
+    // Listen for real-time Firestore updates
+    const unsubscribe = subscribeToUserProfile(activeUser.uid, (prof) => {
       if (prof) {
         if (prof.name !== undefined) setDisplayName(prof.name);
         if (prof.email !== undefined) setDisplayEmail(prof.email);
         if (prof.paymentHandle !== undefined) setPaymentHandle(prof.paymentHandle);
         if (prof.photoUrl !== undefined) setPhotoUrl(prof.photoUrl);
+        if (prof.photoThumbnailUrl !== undefined) setPhotoThumbnailUrl(prof.photoThumbnailUrl);
         if (prof.mobile !== undefined) setDisplayMobile(prof.mobile);
       }
-    } catch (err) {
-      console.error('Firestore fetch error in AccountScreen:', err);
-      Alert.alert('Error', 'Network error, check your connection');
-    } finally {
       setProfileLoading(false);
-    }
-  }, []);
+    });
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchUserData();
-    }, [fetchUserData])
-  );
+    return () => unsubscribe();
+  }, []);
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scannedLock || scannedUser || scannedNotFound) return;
@@ -114,9 +125,8 @@ export default function AccountScreen() {
       const allUsers = await getAllUsersFromFirestore();
 
       const matchedUser = allUsers.find((u) => {
-        if (!u.mobile) return false;
-        const normalized = u.mobile.replace(/[^0-9]/g, '').slice(-10);
-        return normalized === extractedMobile || u.uid === cleanedData;
+        const normalized = u.mobile ? u.mobile.replace(/[^0-9]/g, '').slice(-10) : '';
+        return (normalized && normalized === extractedMobile) || u.uid === cleanedData;
       });
 
       if (matchedUser) {
@@ -130,41 +140,61 @@ export default function AccountScreen() {
     }
   };
 
+  const dialog = useDialog();
+
   const handleAddScannedContact = async () => {
-    if (!scannedUser) return;
+    if (!scannedUser || !currentUser?.uid) return;
     setAddingContact(true);
-    setTimeout(() => {
+
+    try {
+      const contactData: Contact = {
+        name: scannedUser.name,
+        phone: scannedUser.mobile || '',
+        email: scannedUser.email,
+        uid: scannedUser.uid,
+        photoUrl: scannedUser.photoUrl,
+      };
+
+      await addContactToUserFirestore(currentUser.uid, contactData);
+
       setAddingContact(false);
-      Alert.alert('Contact Added', `${scannedUser.name} has been added to your SplitMate contacts!`);
+      dialog.showSuccess('Contact Added', `${scannedUser.name} has been added to your SplitMate contacts!`);
       setScannedUser(null);
       setScannedLock(false);
       setQrModalVisible(false);
-    }, 600);
-  };
-
-  const confirmLogout = async () => {
-    setLogoutModalVisible(false);
-    try {
-      await signOutUser();
-      setDisplayName('User');
-      setDisplayEmail('');
-      setDisplayMobile('');
-      setPaymentHandle('');
-      setPhotoUrl('');
-      navigation.reset({ index: 0, routes: [{ name: 'SignIn' }] });
-    } catch (e: any) {
-      Alert.alert('Logout Error', 'Couldn\'t sign out, please try again');
+    } catch (e) {
+      console.error('Error adding scanned contact:', e);
+      setAddingContact(false);
+      dialog.showError('Error', 'Failed to add contact. Please try again.');
     }
   };
 
-  const handleShareApp = async () => {
-    try {
-      await Share.share({
-        message: 'Hey! Join me on SplitMate to split expenses & settle up seamlessly! Download: https://splitmate.app',
-      });
-    } catch (err) {
-      console.log('Share error:', err);
-    }
+  const handleSignOutPress = () => {
+    dialog.showConfirm(
+      'Sign Out?',
+      "Are you sure you want to sign out? You'll need to sign in again to access your shared expenses.",
+      async () => {
+        try {
+          await signOutUser();
+          setDisplayName('User');
+          setDisplayEmail('');
+          setDisplayMobile('');
+          setPaymentHandle('');
+          setPhotoUrl('');
+        } catch (e: any) {
+          dialog.showError('Logout Error', "Couldn't sign out, please try again.");
+        }
+      },
+      {
+        confirmText: 'Sign Out',
+        cancelText: 'Cancel',
+        destructive: true,
+      }
+    );
+  };
+
+  const handleShareApp = () => {
+    shareApp();
   };
 
   const insets = useSafeAreaInsets();
@@ -178,7 +208,11 @@ export default function AccountScreen() {
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: topPadding }]} showsVerticalScrollIndicator={false}>
         <View style={styles.topHeader}>
           <Text style={[styles.headerTitle, { color: colors.onBackground }]}>Account</Text>
-          <TouchableOpacity style={[styles.qrBtn, { backgroundColor: colors.surfaceContainerLow }]} onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}>
+          <TouchableOpacity
+            style={[styles.qrBtn, { backgroundColor: isDark ? '#1E293B' : colors.surfaceContainerLow, borderColor: colors.divider }]}
+            onPress={() => { setActiveQrTab('my'); setScannedUser(null); setScannedLock(false); setQrModalVisible(true); }}
+            activeOpacity={0.7}
+          >
             <MaterialIcons name="qr-code-2" size={24} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -194,22 +228,14 @@ export default function AccountScreen() {
           </View>
         ) : (
           <View style={[styles.userCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
-            <View style={[styles.avatarCircle, { backgroundColor: colors.primaryContainer }]}>
-              {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-              ) : (
-                <Text style={[styles.avatarText, { color: colors.onPrimaryContainer }]}>
-                  {displayName
-                    .trim()
-                    .split(' ')
-                    .filter(Boolean)
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase()
-                    .slice(0, 2) || 'U'}
-                </Text>
-              )}
-            </View>
+            <SmartImage
+              uri={photoUrl || undefined}
+              thumbnailUri={photoThumbnailUrl || undefined}
+              name={displayName}
+              size={56}
+              mode="thumbnail"
+              fallbackIcon="person"
+            />
             <View style={styles.userInfo}>
               <Text style={[styles.userName, { color: colors.onSurface }]}>{displayName}</Text>
               <Text style={[styles.userEmail, { color: colors.onSurfaceVariant }]}>{displayEmail}</Text>
@@ -248,6 +274,20 @@ export default function AccountScreen() {
               <Text style={[styles.menuText, { color: colors.onSurface }]}>Payment Methods & UPI</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
+
+            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
+
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('Contacts' as any)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
+                <MaterialIcons name="contacts" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Contacts & Friends</Text>
+              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -282,20 +322,6 @@ export default function AccountScreen() {
                 <MaterialIcons name="notifications-none" size={24} color={colors.primary} />
               </View>
               <Text style={[styles.menuText, { color: colors.onSurface }]}>Notifications</Text>
-              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
-            </TouchableOpacity>
-
-            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => navigation.navigate('RecurringExpenses')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
-                <MaterialIcons name="autorenew" size={24} color={colors.primary} />
-              </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Recurring Expenses & Subs</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
@@ -354,7 +380,7 @@ export default function AccountScreen() {
               <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
                 <MaterialIcons name="share" size={24} color={colors.primary} />
               </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Invite Friends</Text>
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Share App</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
 
@@ -362,43 +388,27 @@ export default function AccountScreen() {
 
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => Alert.alert('Rate SplitMate', 'Thank you for rating SplitMate 5 stars!')}
+              onPress={openPlayStoreRating}
               activeOpacity={0.7}
             >
               <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
                 <MaterialIcons name="star-outline" size={24} color={colors.primary} />
               </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Rate SplitMate</Text>
+              <Text style={[styles.menuText, { color: colors.onSurface }]}>Rate My App</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]} onPress={() => setLogoutModalVisible(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.logoutBtn, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]} onPress={handleSignOutPress} activeOpacity={0.85}>
           <MaterialIcons name="logout" size={24} color={colors.error} />
           <Text style={[styles.logoutText, { color: colors.error }]}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={[styles.footerText, { color: colors.onSurfaceVariant }]}>Made with ❤️ in India • v1.2.0</Text>
+        <Text style={[styles.footerText, { color: colors.onSurfaceVariant }]}>
+          Made with ❤️ in India • v{appVersion}
+        </Text>
       </ScrollView>
-
-      <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setLogoutModalVisible(false)}>
-          <View style={[styles.confirmDialog, { backgroundColor: colors.surfaceContainerLowest }]}>
-            <MaterialIcons name="logout" size={32} color={colors.error} style={{ alignSelf: 'center', marginBottom: 8 }} />
-            <Text style={[styles.confirmTitle, { color: colors.onSurface }]}>Sign Out?</Text>
-            <Text style={[styles.confirmSub, { color: colors.onSurfaceVariant }]}>Are you sure? You'll need to sign in again.</Text>
-            <View style={styles.confirmBtnRow}>
-              <TouchableOpacity style={[styles.cancelDialogBtn, { backgroundColor: colors.surfaceContainerHigh }]} onPress={() => setLogoutModalVisible(false)}>
-                <Text style={[styles.cancelDialogText, { color: colors.onSurface }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmLogoutBtn, { backgroundColor: colors.error }]} onPress={confirmLogout}>
-                <Text style={[styles.confirmLogoutText, { color: colors.onError }]}>Logout</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       <Modal visible={helpModalVisible} transparent animationType="slide" onRequestClose={() => setHelpModalVisible(false)}>
         <View style={[styles.lazyModalContainer, { backgroundColor: colors.background }]}>
@@ -422,6 +432,24 @@ export default function AccountScreen() {
             <TouchableOpacity style={[styles.fullHelpBtn, { backgroundColor: colors.primary }]} onPress={() => { setHelpModalVisible(false); navigation.navigate('HelpSupport'); }}>
               <Text style={[styles.fullHelpText, { color: colors.onPrimary }]}>Open Full Support Page</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 12,
+                marginTop: 10,
+                borderRadius: BorderRadius.lg,
+                borderWidth: 1,
+                borderColor: colors.outlineVariant,
+              }}
+              onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms#faq')}
+            >
+              <MaterialIcons name="open-in-new" size={16} color={colors.primary} />
+              <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>View Terms & Web FAQ</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>
@@ -429,33 +457,50 @@ export default function AccountScreen() {
       <Modal visible={qrModalVisible} transparent animationType="fade" onRequestClose={() => setQrModalVisible(false)}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setQrModalVisible(false)}>
           <TouchableOpacity activeOpacity={1} style={[styles.qrCardExpanded, { backgroundColor: colors.surfaceContainerLowest }]}>
-            <View style={[styles.tabHeader, { borderBottomColor: colors.outlineVariant }]}>
+            <View style={[styles.tabHeader, { backgroundColor: isDark ? '#1E293B' : colors.surfaceContainerLow }]}>
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'scan' && { borderBottomColor: colors.primary }]}
+                style={[
+                  styles.tabButton,
+                  activeQrTab === 'scan' && [styles.tabButtonActive, { backgroundColor: isDark ? '#334155' : colors.surfaceContainerLowest }]
+                ]}
                 onPress={() => { setActiveQrTab('scan'); setScannedUser(null); setScannedNotFound(false); setScannedLock(false); }}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="qr-code-scanner" size={22} color={activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, { color: activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant }]}>Scan QR</Text>
+                <MaterialIcons name="qr-code-scanner" size={20} color={activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'scan' ? colors.primary : colors.onSurfaceVariant, fontWeight: activeQrTab === 'scan' ? '700' : '500' }]}>
+                  Scan QR
+                </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.tabButton, activeQrTab === 'my' && { borderBottomColor: colors.primary }]}
+                style={[
+                  styles.tabButton,
+                  activeQrTab === 'my' && [styles.tabButtonActive, { backgroundColor: isDark ? '#334155' : colors.surfaceContainerLowest }]
+                ]}
                 onPress={() => setActiveQrTab('my')}
+                activeOpacity={0.8}
               >
-                <MaterialIcons name="qr-code-2" size={22} color={activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant} />
-                <Text style={[styles.tabText, { color: activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant }]}>My QR</Text>
+                <MaterialIcons name="qr-code-2" size={20} color={activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant} />
+                <Text style={[styles.tabText, { color: activeQrTab === 'my' ? colors.primary : colors.onSurfaceVariant, fontWeight: activeQrTab === 'my' ? '700' : '500' }]}>
+                  My QR
+                </Text>
               </TouchableOpacity>
             </View>
 
             {activeQrTab === 'my' ? (
               <View style={styles.tabContent}>
-                <AppLogo size={56} />
                 <Text style={[styles.qrTitle, { color: colors.onSurface }]}>{displayName}</Text>
                 <View style={[styles.qrBoxLarge, { backgroundColor: '#FFFFFF' }]}>
                   <QRCode
                     value={displayMobile || currentUser?.uid || 'SPLITMATE_USER'}
-                    size={200}
-                    color="#000000"
+                    size={210}
+                    color="#0B132B"
                     backgroundColor="#FFFFFF"
+                    logo={require('../../assets/icon.png')}
+                    logoSize={48}
+                    logoMargin={4}
+                    logoBackgroundColor="#FFFFFF"
+                    logoBorderRadius={12}
                   />
                 </View>
                 <Text style={[styles.qrNote, { color: colors.onSurfaceVariant }]}>Scan this QR code using SplitMate to add me directly to your contacts.</Text>
@@ -565,9 +610,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: Colors.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   userCard: {
     flexDirection: 'row',

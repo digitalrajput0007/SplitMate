@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,13 @@ import {
   Image,
   TextInput,
   Switch,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { auth, db } from '../config/firebase';
 import {
@@ -30,21 +31,25 @@ import {
   toggleGroupArchive,
   subscribeToGroupExpenses,
   subscribeToGroupSettlements,
-  getGroupMembersInvitationStatus,
   GroupData,
   UserProfile,
   ExpenseData,
   SettlementData,
   formatCurrency,
   subscribeToAcceptedMembers,
+  reinviteUserToGroupInFirestore,
+  removeMemberFromGroup,
+  redistributeGroupExpensesOnMemberRemoval,
+  addSettlementToFirestore,
 } from '../services/firestoreService';
 import { useMediaManager } from '../hooks/useMediaManager';
 import { MediaPickerSheet } from '../components/MediaPickerSheet';
-import { MediaUploadOverlay } from '../components/MediaUploadOverlay';
 import { SmartImage } from '../components/SmartImage';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { AddGroupMemberModal } from './AddGroupMemberModal';
 import { GroupTypeOption } from './CreateGroupModal';
+import { showInterstitialAd } from '../services/adMobService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupSettings'>;
 
@@ -60,6 +65,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
   const groupId = route.params?.groupId;
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
 
   const [group, setGroup] = useState<GroupData | null>(null);
   const [groupName, setGroupName] = useState('');
@@ -88,19 +94,37 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
     },
   });
 
+  const handleRemovePhoto = async () => {
+    await removeMedia();
+  };
+
   // Conditional Fields
+  const [enableTripDates, setEnableTripDates] = useState(false);
   const [startDate, setStartDate] = useState<Date>(new Date());
   const [endDate, setEndDate] = useState<Date>(new Date());
-  const [pickerMode, setPickerMode] = useState<'start' | 'end' | null>(null);
+  const [pickerMode, setPickerMode] = useState<'start' | 'end' | 'family' | 'flatmate' | null>(null);
   const [familyName, setFamilyName] = useState('');
   const [setupMonthlySplit, setSetupMonthlySplit] = useState(false);
+  const [enableFamilyReminder, setEnableFamilyReminder] = useState(false);
+  const [familyReminderDate, setFamilyReminderDate] = useState<Date>(new Date());
+  const [enableBalanceAlert, setEnableBalanceAlert] = useState(false);
+  const [balanceAlertThreshold, setBalanceAlertThreshold] = useState('2000');
+  const [enableFlatmateSettleReminder, setEnableFlatmateSettleReminder] = useState(false);
+  const [flatmateReminderDate, setFlatmateReminderDate] = useState<Date>(new Date());
 
   const [acceptedUsers, setAcceptedUsers] = useState<UserProfile[]>([]);
   const [pendingUsers, setPendingUsers] = useState<UserProfile[]>([]);
+  const [declinedUsers, setDeclinedUsers] = useState<UserProfile[]>([]);
   const [saving, setSaving] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
   const [userExpenses, setUserExpenses] = useState<ExpenseData[]>([]);
   const [userSettlements, setUserSettlements] = useState<SettlementData[]>([]);
+  const isDeletingRef = useRef(false);
+
+  // Transfer Admin & Leave Group State
+  const [transferAdminModalVisible, setTransferAdminModalVisible] = useState(false);
+  const [selectedNewAdminUid, setSelectedNewAdminUid] = useState<string | null>(null);
+  const [transferringAdmin, setTransferringAdmin] = useState(false);
 
   const isOwner = group?.createdBy === currentUser?.uid;
 
@@ -115,14 +139,30 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           if (data.photoThumbnailUrl !== undefined) setGroupPhotoThumbnail(data.photoThumbnailUrl);
           if (data.startDate) setStartDate(new Date(data.startDate));
           if (data.endDate) setEndDate(new Date(data.endDate));
+          if (data.enableDates !== undefined) setEnableTripDates(data.enableDates);
           if (data.familyName) setFamilyName(data.familyName);
           if (data.setupMonthlySplit !== undefined) setSetupMonthlySplit(data.setupMonthlySplit);
+          if (data.enableSettleReminder !== undefined) setEnableFamilyReminder(data.enableSettleReminder);
+          if (data.settleReminderDate) setFamilyReminderDate(new Date(data.settleReminderDate));
+          if (data.enableBalanceAlert !== undefined) setEnableBalanceAlert(data.enableBalanceAlert);
+          if (data.balanceAlertThreshold !== undefined) setBalanceAlertThreshold(data.balanceAlertThreshold.toString());
+          if (data.enableFlatmateSettleReminder !== undefined) setEnableFlatmateSettleReminder(data.enableFlatmateSettleReminder);
+          if (data.flatmateReminderDate) setFlatmateReminderDate(new Date(data.flatmateReminderDate));
+        } else if (!isDeletingRef.current) {
+          dialog.showError(
+            'Group Deleted',
+            'The group owner has deleted this group.',
+            () => {
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+            }
+          );
         }
       });
 
-      const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending) => {
+      const unsubMembers = subscribeToAcceptedMembers(groupId, (accepted, pending, declined) => {
         setAcceptedUsers(accepted);
         setPendingUsers(pending);
+        setDeclinedUsers(declined);
       });
 
       const unsubExp = subscribeToGroupExpenses(groupId, (expList) => {
@@ -179,14 +219,17 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
   const handleUpdateGroup = async () => {
     if (!groupName.trim() || !groupId) {
-      Alert.alert('Validation Error', 'Group name cannot be empty.');
+      dialog.showWarning('Validation Error', 'Group name cannot be empty.');
       return;
     }
 
     setSaving(true);
     try {
-      const formattedStart = groupType === 'Trip' ? startDate.toISOString().split('T')[0] : undefined;
-      const formattedEnd = groupType === 'Trip' ? endDate.toISOString().split('T')[0] : undefined;
+      const formattedStart = (groupType === 'Trip' && enableTripDates) ? startDate.toISOString().split('T')[0] : undefined;
+      const formattedEnd = (groupType === 'Trip' && enableTripDates) ? endDate.toISOString().split('T')[0] : undefined;
+      const formattedFamilyReminder = (groupType === 'Family' && enableFamilyReminder) ? familyReminderDate.toISOString().split('T')[0] : undefined;
+      const formattedFlatmateReminder = (groupType === 'Flatmate' && enableFlatmateSettleReminder) ? flatmateReminderDate.toISOString().split('T')[0] : undefined;
+      const alertThresholdNum = (groupType === 'Couple' && enableBalanceAlert) ? parseFloat(balanceAlertThreshold) || 2000 : undefined;
 
       const updateData: any = {
         name: groupName.trim(),
@@ -194,21 +237,33 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         photoUrl: groupPhoto || '',
         photoThumbnailUrl: groupPhotoThumbnail || '',
         photoMetadata: groupPhotoMetadata,
-        enableDates: groupType === 'Trip',
+        enableDates: groupType === 'Trip' && enableTripDates,
       };
 
-      if (groupType === 'Family') updateData.familyName = familyName.trim();
-      if (groupType === 'Flatmate') updateData.setupMonthlySplit = setupMonthlySplit;
+      if (groupType === 'Family') {
+        updateData.familyName = familyName.trim();
+        updateData.enableSettleReminder = enableFamilyReminder;
+        updateData.settleReminderDate = formattedFamilyReminder;
+      }
+      if (groupType === 'Couple') {
+        updateData.enableBalanceAlert = enableBalanceAlert;
+        updateData.balanceAlertThreshold = alertThresholdNum;
+      }
+      if (groupType === 'Flatmate') {
+        updateData.setupMonthlySplit = setupMonthlySplit;
+        updateData.enableFlatmateSettleReminder = enableFlatmateSettleReminder;
+        updateData.flatmateReminderDate = formattedFlatmateReminder;
+      }
       if (groupType === 'Trip') {
         updateData.startDate = formattedStart;
         updateData.endDate = formattedEnd;
       }
 
       await updateGroupInFirestore(groupId, updateData);
-      Alert.alert('Group Updated', 'Group settings updated successfully.');
+      dialog.showSuccess('Group Updated', 'Group settings updated successfully.');
     } catch (error: any) {
       console.error('Error updating group:', error);
-      Alert.alert('Error', error.message || 'Failed to update group.');
+      dialog.showError('Error', error.message || 'Failed to update group.');
     } finally {
       setSaving(false);
     }
@@ -217,150 +272,307 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
   const handleTransferOwnership = (u: UserProfile) => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Transfer Ownership',
       `Are you sure you want to make ${u.name} the owner of this group? You will lose administrative privileges.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
+      async () => {
+        try {
+          await transferGroupOwnership(groupId, u.uid);
+          dialog.showSuccess('Success', `${u.name} is now the group owner.`);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to transfer ownership.');
+        }
+      },
+      { confirmText: 'Transfer' }
+    );
+  };
+
+  const handleReinviteMember = async (u: UserProfile) => {
+    if (!groupId) return;
+    try {
+      await reinviteUserToGroupInFirestore(groupId, u.uid);
+      dialog.showSuccess('Re-invited', `A new invitation request has been sent to ${u.name}.`);
+    } catch (error: any) {
+      console.error('Re-invite error details:', error);
+      dialog.showError('Error', error?.message || 'Failed to re-invite member.');
+    }
+  };
+
+  const calculateMemberBalance = (targetUid: string) => {
+    let paid = 0;
+    let share = 0;
+
+    userExpenses.forEach((item) => {
+      if (item.paidBy === targetUid) {
+        paid += (item.amount || 0);
+      }
+      share += (item.splitDetails?.[targetUid] || 0);
+    });
+
+    let received = 0;
+    let sent = 0;
+
+    userSettlements.forEach((s) => {
+      if (s.status === 'completed' || !s.status) {
+        if (s.toUserId === targetUid) received += (s.amount || 0);
+        if (s.fromUserId === targetUid) sent += (s.amount || 0);
+      }
+    });
+
+    return Math.round((paid - share + sent - received) * 100) / 100;
+  };
+
+  const handleRemoveMemberClick = (u: UserProfile) => {
+    if (!groupId) return;
+    const balance = calculateMemberBalance(u.uid);
+
+    if (Math.abs(balance) < 0.05) {
+      dialog.showConfirm(
+        'Remove Member',
+        `Remove ${u.name} from this group? They will no longer see group expenses.`,
+        async () => {
+          try {
+            await removeMemberFromGroup(groupId, u.uid);
+            dialog.showSuccess('Removed', `${u.name} has been removed from the group.`);
+          } catch (err) {
+            dialog.showError('Error', 'Failed to remove member.');
+          }
+        },
+        { confirmText: 'Remove', destructive: true }
+      );
+      return;
+    }
+
+    const isOwed = balance > 0;
+    const absVal = Math.abs(balance);
+    const formattedVal = formatCurrency(absVal);
+    const statusText = isOwed ? `is owed ${formattedVal}` : `owes ${formattedVal}`;
+
+    dialog.showDialog({
+      title: 'Unsettled Balance Warning ⚠️',
+      message: `${u.name} ${statusText} in this group. Choose how to handle this balance before removing them:`,
+      type: 'warning',
+      actions: [
         {
-          text: 'Transfer',
+          text: 'Cancel',
+          variant: 'ghost',
+        },
+        {
+          text: 'Mark Settled',
+          variant: 'primary',
           onPress: async () => {
             try {
-              await transferGroupOwnership(groupId, u.uid);
-              Alert.alert('Success', `${u.name} is now the group owner.`);
+              if (isOwed) {
+                await addSettlementToFirestore({
+                  groupId,
+                  fromUserId: currentUser?.uid || '',
+                  toUserId: u.uid,
+                  amount: absVal,
+                  notes: `Auto-settled upon removing ${u.name}`,
+                  status: 'completed',
+                });
+              } else {
+                await addSettlementToFirestore({
+                  groupId,
+                  fromUserId: u.uid,
+                  toUserId: currentUser?.uid || '',
+                  amount: absVal,
+                  notes: `Auto-settled upon removing ${u.name}`,
+                  status: 'completed',
+                });
+              }
+              await removeMemberFromGroup(groupId, u.uid);
+              dialog.showSuccess('Success', `Settled ${formattedVal} and removed ${u.name}.`);
             } catch (e) {
-              Alert.alert('Error', 'Failed to transfer ownership.');
+              dialog.showError('Error', 'Failed to settle and remove member.');
             }
           },
         },
-      ]
-    );
+        {
+          text: 'Redistribute',
+          variant: 'outline',
+          onPress: async () => {
+            try {
+              const remainingMembers = acceptedUsers.filter(x => x.uid !== u.uid);
+              if (remainingMembers.length === 0) {
+                dialog.showError('Error', 'No remaining members to redistribute balance to.');
+                return;
+              }
+              const remainingMemberUids = remainingMembers.map(x => x.uid);
+
+              // 1. Redistribute existing expenses among remaining members so updated owes are calculated correctly
+              await redistributeGroupExpensesOnMemberRemoval(groupId, u.uid, remainingMemberUids);
+
+              // 2. Remove member from group
+              await removeMemberFromGroup(groupId, u.uid);
+
+              dialog.showSuccess('Success', `Redistributed balance among remaining members and removed ${u.name}.`);
+            } catch (e) {
+              console.error('Error redistributing balance on member removal:', e);
+              dialog.showError('Error', 'Failed to redistribute balance and remove member.');
+            }
+          },
+        },
+      ],
+    });
   };
 
   const handleToggleArchive = async () => {
     if (!groupId) return;
     const isCurrentlyArchived = group?.isArchived || false;
 
-    Alert.alert(
+    dialog.showConfirm(
       isCurrentlyArchived ? 'Restore Group' : 'Archive Group',
       isCurrentlyArchived
         ? 'Do you want to restore this group to your active list?'
         : 'Archiving hides the group from your main list but keeps all records. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: isCurrentlyArchived ? 'Restore' : 'Archive',
-          onPress: async () => {
-            try {
-              await toggleGroupArchive(groupId, !isCurrentlyArchived);
-              Alert.alert('Success', isCurrentlyArchived ? 'Group restored.' : 'Group archived.');
-              if (!isCurrentlyArchived) {
-                navigation.goBack();
-              }
-            } catch (e) {
-              Alert.alert('Error', 'Failed to update archive status.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await toggleGroupArchive(groupId, !isCurrentlyArchived);
+          dialog.showSuccess('Success', isCurrentlyArchived ? 'Group restored.' : 'Group archived.');
+          if (!isCurrentlyArchived) {
+            navigation.goBack();
+          }
+        } catch (e) {
+          dialog.showError('Error', 'Failed to update archive status.');
+        }
+      },
+      { confirmText: isCurrentlyArchived ? 'Restore' : 'Archive' }
     );
   };
 
-  const handleLeaveGroup = async () => {
-    if (!groupId || !currentUser?.uid) return;
+  const handleLeaveGroup = () => {
+    if (!groupId || !currentUser) return;
 
-    if (isOwner) {
-      Alert.alert('Cannot Leave', 'As the owner, you must delete the group or transfer ownership before leaving.');
-      return;
-    }
-
+    // 1. Check Outstanding Balance
     const currentBalance = calculateUserBalance();
     if (Math.abs(currentBalance) > 0.05) {
-      Alert.alert(
+      dialog.showWarning(
         'Outstanding Balance',
         `You cannot leave the group until your balance is zero. Your current balance: ${formatCurrency(currentBalance)}.`
       );
       return;
     }
 
-    Alert.alert(
+    const otherMembers = acceptedUsers.filter((u) => u.uid !== currentUser.uid);
+
+    // 2. Sole Member Case: Delete group directly
+    if (otherMembers.length === 0) {
+      dialog.showConfirm(
+        'Delete Group',
+        'You are the only member in this group. Leaving will permanently delete this group and all its records.',
+        async () => {
+          isDeletingRef.current = true;
+          try {
+            await deleteGroupFromFirestore(groupId);
+            showInterstitialAd(() => {
+              navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+            });
+          } catch (e) {
+            isDeletingRef.current = false;
+            dialog.showError('Error', 'Failed to delete group.');
+          }
+        },
+        { confirmText: 'Delete Group', destructive: true }
+      );
+      return;
+    }
+
+    // 3. Evaluate Sole Admin Status
+    const isOwner = group?.createdBy === currentUser.uid;
+    const adminList = group?.adminIds && group.adminIds.length > 0 ? group.adminIds : (group?.createdBy ? [group.createdBy] : []);
+    const otherAdmins = adminList.filter((id: string) => id !== currentUser.uid && otherMembers.some((m) => m.uid === id));
+    const isSoleAdmin = (isOwner || adminList.includes(currentUser.uid)) && otherAdmins.length === 0;
+
+    // 4. Sole Admin Case: Require admin rights transfer
+    if (isSoleAdmin) {
+      setSelectedNewAdminUid(otherMembers[0]?.uid || null);
+      setTransferAdminModalVisible(true);
+      return;
+    }
+
+    // 5. Standard Leave Confirmation
+    dialog.showConfirm(
       'Leave Group',
       'Are you sure you want to leave this group? You will no longer be able to see expenses or contribute.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await leaveGroupInFirestore(groupId, currentUser.uid);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
-            } catch (e) {
-              Alert.alert('Error', 'Failed to leave group.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await leaveGroupInFirestore(groupId, currentUser.uid);
+          navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+        } catch (e) {
+          dialog.showError('Error', 'Failed to leave group.');
+        }
+      },
+      { confirmText: 'Leave', destructive: true }
     );
+  };
+
+  const handleConfirmTransferAndLeave = async () => {
+    if (!groupId || !currentUser || !selectedNewAdminUid) {
+      dialog.showWarning('Selection Required', 'Please select a member to promote to Admin.');
+      return;
+    }
+
+    setTransferringAdmin(true);
+    try {
+      // Promote selected member to admin
+      await transferGroupOwnership(groupId, selectedNewAdminUid);
+
+      // Now leave the group
+      await leaveGroupInFirestore(groupId, currentUser.uid);
+
+      setTransferringAdmin(false);
+      setTransferAdminModalVisible(false);
+      navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+    } catch (e: any) {
+      setTransferringAdmin(false);
+      dialog.showError('Error', e.message || 'Failed to transfer admin rights and leave group.');
+    }
   };
 
   const handleCancelInvite = (u: UserProfile) => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Cancel Invitation',
       `Are you sure you want to cancel the invitation for ${u.name}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await cancelGroupInvitation(groupId, u.uid);
-              loadMembersStatus(groupId);
-              Alert.alert('Success', 'Invitation cancelled successfully.');
-            } catch (e) {
-              Alert.alert('Error', 'Failed to cancel invitation.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await cancelGroupInvitation(groupId, u.uid);
+          dialog.showSuccess('Success', 'Invitation cancelled successfully.');
+        } catch (e: any) {
+          console.error('Error cancelling invitation:', e);
+          dialog.showError('Error', 'Failed to cancel invitation.');
+        }
+      },
+      { confirmText: 'Yes, Cancel', destructive: true }
     );
   };
 
   const handleDeleteGroup = async () => {
     if (!groupId) return;
 
-    Alert.alert(
+    dialog.showConfirm(
       'Delete Group',
       'Are you sure you want to delete this group? All expense records for this group will be deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteGroupFromFirestore(groupId);
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTabs' }],
-              });
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete group.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          isDeletingRef.current = true;
+          await deleteGroupFromFirestore(groupId);
+          showInterstitialAd(() => {
+            navigation.navigate('MainTabs', { screen: 'Groups' } as any);
+          });
+        } catch (error: any) {
+          isDeletingRef.current = false;
+          dialog.showError('Error', error.message || 'Failed to delete group.');
+        }
+      },
+      { confirmText: 'Delete', destructive: true }
     );
   };
 
   const getInitials = (name: string) => {
-    return name
+    return (name || '')
       .trim()
       .split(' ')
       .filter(Boolean)
@@ -400,18 +612,32 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         <View style={styles.photoUploadCenter}>
           <TouchableOpacity
             style={[styles.photoCircleContainer, { backgroundColor: colors.primaryContainer, borderColor: colors.outlineVariant }]}
-            onPress={isOwner ? () => setIsPickerVisible(true) : undefined}
-            activeOpacity={isOwner ? 0.8 : 1}
+            onPress={isOwner && !isUploading ? () => setIsPickerVisible(true) : undefined}
+            activeOpacity={isOwner && !isUploading ? 0.8 : 1}
+            disabled={isUploading}
           >
-            <SmartImage
-              uri={groupPhoto || undefined}
-              thumbnailUri={groupPhotoThumbnail || undefined}
-              name={groupName}
-              size={80}
-              fallbackIcon={groupType === 'Trip' ? 'flight' : 'groups'}
-            />
+            <View style={{ width: 80, height: 80, borderRadius: 40, overflow: 'hidden', opacity: isUploading ? 0.7 : 1 }}>
+              <SmartImage
+                uri={groupPhoto || undefined}
+                thumbnailUri={groupPhotoThumbnail || undefined}
+                name={groupName}
+                size={80}
+                fallbackIcon={
+                  groupType === 'Trip' ? 'flight' :
+                  groupType === 'Family' ? 'home' :
+                  groupType === 'Couple' ? 'favorite' :
+                  groupType === 'Flatmate' ? 'apartment' : 'groups'
+                }
+              />
+              {isUploading && (
+                <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 40, alignItems: 'center', justifyContent: 'center' }]}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: '700', marginTop: 2 }}>{Math.round(progress)}%</Text>
+                </View>
+              )}
+            </View>
             {isOwner && (
-              <View style={[styles.photoAddBadge, { backgroundColor: colors.primary, borderColor: colors.surface }]}>
+              <View style={[styles.photoAddBadge, { backgroundColor: isUploading ? colors.outline : colors.primary, borderColor: colors.surface }]}>
                 <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
               </View>
             )}
@@ -419,8 +645,8 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
 
           <View style={styles.photoActions}>
             {isOwner && groupPhoto ? (
-              <TouchableOpacity onPress={handleRemovePhoto}>
-                <Text style={[styles.avatarHint, { color: colors.error }]}>Remove Photo</Text>
+              <TouchableOpacity onPress={handleRemovePhoto} disabled={isUploading}>
+                <Text style={[styles.avatarHint, { color: isUploading ? colors.outline : colors.error }]}>Remove Photo</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -478,62 +704,46 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Conditional Fields */}
         {groupType === 'Trip' && (
           <View style={styles.inputGroup}>
-            <View style={styles.datesRow}>
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
-                  onPress={isOwner ? () => setPickerMode('start') : undefined}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableTripDates ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Add trip dates?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Set start and end dates for your trip</Text>
               </View>
-
-              <View style={styles.dateCol}>
-                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
-                <TouchableOpacity
-                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
-                  onPress={isOwner ? () => setPickerMode('end') : undefined}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
-                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-              </View>
+              <Switch
+                value={enableTripDates}
+                onValueChange={isOwner ? setEnableTripDates : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableTripDates ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
             </View>
 
-            {isOwner && pickerMode && (
-              <DateTimePicker
-                value={pickerMode === 'start' ? startDate : endDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                onChange={(event, selected) => {
-                  if (Platform.OS === 'android') {
-                    setPickerMode(null);
-                  }
+            {enableTripDates && (
+              <View style={styles.datesRow}>
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Start date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                    onPress={isOwner ? () => setPickerMode('start') : undefined}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(startDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
 
-                  if (selected && event.type !== 'dismissed') {
-                    if (pickerMode === 'start') {
-                      setStartDate(selected);
-                      if (selected > endDate) {
-                        setEndDate(selected);
-                      }
-                    } else {
-                      if (selected < startDate) {
-                        setEndDate(startDate);
-                      } else {
-                        setEndDate(selected);
-                      }
-                    }
-                  }
-
-                  if (Platform.OS === 'ios') {
-                    setPickerMode(null);
-                  }
-                }}
-              />
+                <View style={styles.dateCol}>
+                  <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>End date</Text>
+                  <TouchableOpacity
+                    style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                    onPress={isOwner ? () => setPickerMode('end') : undefined}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(endDate)}</Text>
+                    <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
           </View>
         )}
@@ -542,43 +752,153 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Family name (Optional)</Text>
             <TextInput
-              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface }, !isOwner && { opacity: 0.7 }]}
+              style={[styles.textInputFull, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, color: colors.onSurface, marginBottom: 12 }, !isOwner && { opacity: 0.7 }]}
               placeholder="e.g., The Sharma Household"
               placeholderTextColor={colors.outline}
               value={familyName}
               onChangeText={setFamilyName}
               editable={isOwner}
             />
+
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFamilyReminder ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Enable Settle Up Reminder?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Send reminder notification to all family members on a date</Text>
+              </View>
+              <Switch
+                value={enableFamilyReminder}
+                onValueChange={isOwner ? setEnableFamilyReminder : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableFamilyReminder ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
+            </View>
+
+            {enableFamilyReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('family') : undefined}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(familyReminderDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
+        {groupType === 'Couple' && (
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableBalanceAlert ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Set balance alert?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Alert the group when someone's balance reaches a set amount</Text>
+              </View>
+              <Switch
+                value={enableBalanceAlert}
+                onValueChange={isOwner ? setEnableBalanceAlert : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableBalanceAlert ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
+            </View>
+
+            {enableBalanceAlert && (
+              <View style={{ gap: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Alert threshold amount (₹)</Text>
+                <TextInput
+                  style={[styles.textInputFull, { borderColor: colors.outlineVariant, color: colors.onSurface, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  placeholder="e.g., 2000"
+                  placeholderTextColor={colors.outline}
+                  keyboardType="numeric"
+                  value={balanceAlertThreshold}
+                  onChangeText={setBalanceAlertThreshold}
+                  editable={isOwner}
+                />
+              </View>
+            )}
           </View>
         )}
 
         {groupType === 'Flatmate' && (
-          <View style={[styles.inputGroup, styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Setup monthly split?</Text>
-              <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Automate recurring rent & utility bills</Text>
+          <View style={styles.inputGroup}>
+            <View style={[styles.switchCard, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest, marginBottom: enableFlatmateSettleReminder ? 12 : 0 }, !isOwner && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.switchTitle, { color: colors.onSurface }]}>Remind to settle up?</Text>
+                <Text style={[styles.switchSubtitle, { color: colors.onSurfaceVariant }]}>Trigger monthly notification to members who owe balance</Text>
+              </View>
+              <Switch
+                value={enableFlatmateSettleReminder}
+                onValueChange={isOwner ? setEnableFlatmateSettleReminder : undefined}
+                trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
+                thumbColor={enableFlatmateSettleReminder ? colors.primary : colors.outline}
+                disabled={!isOwner}
+              />
             </View>
-            <Switch
-              value={setupMonthlySplit}
-              onValueChange={isOwner ? setSetupMonthlySplit : undefined}
-              trackColor={{ false: colors.surfaceContainerHighest, true: colors.primaryContainer }}
-              thumbColor={setupMonthlySplit ? colors.primary : colors.outline}
-              disabled={!isOwner}
-            />
+
+            {enableFlatmateSettleReminder && (
+              <View style={styles.dateCol}>
+                <Text style={[styles.inputLabel, { color: colors.onSurfaceVariant }]}>Reminder date</Text>
+                <TouchableOpacity
+                  style={[styles.dateInputBox, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }, !isOwner && { opacity: 0.7 }]}
+                  onPress={isOwner ? () => setPickerMode('flatmate') : undefined}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.dateInputText, { color: colors.onSurface }]}>{formatDateShort(flatmateReminderDate)}</Text>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
+        )}
+
+        {isOwner && pickerMode && (
+          <DateTimePicker
+            value={pickerMode === 'start' ? startDate : pickerMode === 'end' ? endDate : pickerMode === 'family' ? familyReminderDate : flatmateReminderDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            onChange={(event, selected) => {
+              if (Platform.OS === 'android') {
+                setPickerMode(null);
+              }
+
+              if (selected && event.type !== 'dismissed') {
+                if (pickerMode === 'start') {
+                  setStartDate(selected);
+                  if (selected > endDate) setEndDate(selected);
+                } else if (pickerMode === 'end') {
+                  if (selected < startDate) setEndDate(startDate);
+                  else setEndDate(selected);
+                } else if (pickerMode === 'family') {
+                  setFamilyReminderDate(selected);
+                } else if (pickerMode === 'flatmate') {
+                  setFlatmateReminderDate(selected);
+                }
+              }
+
+              if (Platform.OS === 'ios') {
+                setPickerMode(null);
+              }
+            }}
+          />
         )}
 
         {isOwner && (
           <TouchableOpacity
-            style={[styles.saveBtn, { backgroundColor: colors.primary }, saving && styles.disabledButton]}
+            style={[styles.saveBtn, { backgroundColor: colors.primary }, (saving || isUploading) && styles.disabledButton]}
             onPress={handleUpdateGroup}
             activeOpacity={0.85}
-            disabled={saving}
+            disabled={saving || isUploading}
           >
             {saving ? (
               <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
-              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>Update Group</Text>
+              <Text style={[styles.saveBtnText, { color: colors.onPrimary }]}>
+                {isUploading ? 'Uploading Image...' : 'Update Group'}
+              </Text>
             )}
           </TouchableOpacity>
         )}
@@ -586,7 +906,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         {/* Section 2: Members */}
         <View style={styles.section}>
           <View style={styles.membersHeaderRow}>
-            <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length})</Text>
+            <Text style={[styles.sectionHeaderTitle, { color: colors.onSurface }]}>Members ({acceptedUsers.length + pendingUsers.length + declinedUsers.length})</Text>
             {isOwner && (
               <TouchableOpacity
                 style={styles.addMemberBtn}
@@ -641,7 +961,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     {isOwner && !isMe && (
                       <TouchableOpacity
                         style={styles.removeIconBtn}
-                        onPress={() => Alert.alert('Remove Member', `Remove ${u.name} from this group?`)}
+                        onPress={() => handleRemoveMemberClick(u)}
                       >
                         <MaterialIcons name="person-remove" size={20} color={colors.error} />
                       </TouchableOpacity>
@@ -656,7 +976,7 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                 key={u.uid}
                 style={[
                   styles.memberRowItem,
-                  index !== pendingUsers.length - 1 && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
+                  (index !== pendingUsers.length - 1 || declinedUsers.length > 0) && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
                   { backgroundColor: colors.surfaceContainerHighest + '44' },
                 ]}
               >
@@ -682,6 +1002,43 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
                     onPress={() => handleCancelInvite(u)}
                   >
                     <MaterialIcons name="close" size={20} color={colors.error} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+
+            {declinedUsers.map((u, index) => (
+              <View
+                key={u.uid}
+                style={[
+                  styles.memberRowItem,
+                  index !== declinedUsers.length - 1 && [styles.memberRowBorder, { borderBottomColor: colors.divider }],
+                  { backgroundColor: colors.errorContainer + '22' },
+                ]}
+              >
+                <View style={styles.memberLeftInfo}>
+                  <View style={[styles.memberAvatarCircle, { backgroundColor: colors.errorContainer }]}>
+                    {u.photoUrl ? (
+                      <Image source={{ uri: u.photoUrl }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                    ) : (
+                      <Text style={[styles.memberAvatarText, { color: colors.error }]}>{u.name ? u.name.charAt(0).toUpperCase() : 'M'}</Text>
+                    )}
+                  </View>
+                  <View>
+                    <Text style={[styles.memberItemName, { color: colors.onSurface }]}>{u.name}</Text>
+                    <Text style={[styles.memberRoleText, { color: colors.error, fontWeight: '600' }]}>
+                      Invitation Declined ❌
+                    </Text>
+                  </View>
+                </View>
+
+                {isOwner && (
+                  <TouchableOpacity
+                    style={[styles.adminActionBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => handleReinviteMember(u)}
+                  >
+                    <MaterialIcons name="refresh" size={16} color={colors.onPrimary} />
+                    <Text style={[styles.adminActionText, { color: colors.onPrimary }]}>Re-invite</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -748,10 +1105,95 @@ export default function GroupSettingsScreen({ navigation, route }: Props) {
         onRemove={groupPhoto ? removeMedia : undefined}
       />
 
-      <MediaUploadOverlay
-        visible={isUploading}
-        progress={progress}
-      />
+      {/* Transfer Admin Rights & Leave Group Modal */}
+      <Modal
+        visible={transferAdminModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!transferringAdmin) setTransferAdminModalVisible(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.onSurface }]}>Assign New Admin</Text>
+              <TouchableOpacity
+                onPress={() => !transferringAdmin && setTransferAdminModalVisible(false)}
+                style={styles.modalCloseBtn}
+                disabled={transferringAdmin}
+              >
+                <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.rowSub, { color: colors.onSurfaceVariant, marginBottom: Spacing.md }]}>
+              You are currently the sole admin of this group. Please select a member to promote as Admin before leaving.
+            </Text>
+
+            <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+              {acceptedUsers
+                .filter((u) => u.uid !== currentUser?.uid)
+                .map((user) => {
+                  const isSelected = selectedNewAdminUid === user.uid;
+                  return (
+                    <TouchableOpacity
+                      key={user.uid}
+                      style={[
+                        styles.memberPickerRow,
+                        { borderColor: isSelected ? colors.primary : colors.divider, backgroundColor: isSelected ? colors.primaryContainer : colors.surfaceContainerLow }
+                      ]}
+                      onPress={() => setSelectedNewAdminUid(user.uid)}
+                      disabled={transferringAdmin}
+                    >
+                      <SmartImage
+                        uri={user.photoThumbnailUrl || user.photoUrl}
+                        name={user.name}
+                        size={36}
+                        style={{ borderRadius: 18 }}
+                      />
+                      <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                        <Text style={[styles.rowTitle, { color: isSelected ? colors.onPrimaryContainer : colors.onSurface }]}>
+                          {user.name || 'Group Member'}
+                        </Text>
+                        <Text style={[styles.rowSub, { color: isSelected ? colors.onPrimaryContainer : colors.onSurfaceVariant }]}>
+                          {user.email || user.mobile || ''}
+                        </Text>
+                      </View>
+                      <MaterialIcons
+                        name={isSelected ? 'radio-button-checked' : 'radio-button-unchecked'}
+                        size={22}
+                        color={isSelected ? colors.primary : colors.outline}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+            </ScrollView>
+
+            <View style={[styles.modalActions, { marginTop: Spacing.md }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: colors.outlineVariant }]}
+                onPress={() => setTransferAdminModalVisible(false)}
+                disabled={transferringAdmin}
+              >
+                <Text style={[styles.modalCancelText, { color: colors.onSurface }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: colors.primary }, transferringAdmin && { opacity: 0.6 }]}
+                onPress={handleConfirmTransferAndLeave}
+                disabled={transferringAdmin || !selectedNewAdminUid}
+              >
+                {transferringAdmin ? (
+                  <ActivityIndicator size="small" color={colors.onPrimary} />
+                ) : (
+                  <Text style={[styles.modalSubmitText, { color: colors.onPrimary }]}>Promote & Leave</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1025,5 +1467,75 @@ const styles = StyleSheet.create({
   deleteGroupText: {
     ...Typography.titleMd,
     fontWeight: '700',
+  },
+  memberPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.xs,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    ...Shadows.card,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+  },
+  modalTitle: {
+    ...Typography.titleLg,
+    fontWeight: '700',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  modalSubmitBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
+  rowTitle: {
+    ...Typography.bodyMd,
+    fontWeight: '600',
+  },
+  rowSub: {
+    ...Typography.bodySm,
   },
 });

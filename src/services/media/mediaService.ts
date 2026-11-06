@@ -7,6 +7,7 @@ import {
 } from 'firebase/storage';
 import { storage } from '../../config/firebase';
 import * as FileSystem from 'expo-file-system';
+import { captureError, addSentryBreadcrumb } from '../../config/sentry';
 
 export interface UploadProgress {
   progress: number;
@@ -52,9 +53,35 @@ class MediaService {
     onProgress?: (p: UploadProgress) => void
   ): Promise<string> {
     try {
-      // 1. Resolve URI and get blob
-      const response = await fetch(localUri);
-      const blob = await response.blob();
+      // 1. Resolve URI and get blob using XMLHttpRequest (more robust for Android file:// and content://)
+      const blob: Blob = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = function () {
+          resolve(xhr.response);
+        };
+        xhr.onerror = function (e) {
+          console.error('MediaService: Blob conversion failed', e);
+          reject(new TypeError("Network request failed"));
+        };
+        xhr.responseType = "blob";
+        xhr.open("GET", localUri, true);
+        xhr.send(null);
+      });
+
+      console.log(`MediaService: Prepared blob for upload. Size: ${blob.size} bytes`);
+      if (blob.size === 0) {
+        const sizeError = new Error('Blob size is 0. Upload aborted.');
+        captureError(sizeError, {
+          tags: { location: 'mediaService', action: 'uploadFile' },
+          extra: { storagePath, localUri, fileSize: 0 },
+        });
+        throw sizeError;
+      }
+
+      addSentryBreadcrumb('media', `Uploading file to ${storagePath}`, {
+        storagePath,
+        fileSize: blob.size,
+      });
 
       // 2. Create reference
       const storageRef = ref(storage, storagePath);
@@ -77,15 +104,25 @@ class MediaService {
           },
           (error) => {
             console.error('MediaService: Upload failed', error);
-            if (blob.close) (blob as any).close();
+            captureError(error, {
+              tags: { location: 'mediaService', action: 'uploadFileTask' },
+              extra: { storagePath, fileSize: blob.size },
+            });
+            if ((blob as any).close) (blob as any).close();
             reject(error);
           },
           async () => {
             try {
               const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              if (blob.close) (blob as any).close();
+              console.log('MediaService: Upload successful. URL:', downloadURL);
+              if ((blob as any).close) (blob as any).close();
               resolve(downloadURL);
             } catch (urlErr) {
+              console.error('MediaService: Failed to get download URL', urlErr);
+              captureError(urlErr, {
+                tags: { location: 'mediaService', action: 'getDownloadURL' },
+                extra: { storagePath },
+              });
               reject(urlErr);
             }
           }
@@ -93,6 +130,10 @@ class MediaService {
       });
     } catch (error) {
       console.error('MediaService: Pipeline init failed', error);
+      captureError(error, {
+        tags: { location: 'mediaService', action: 'uploadFileInit' },
+        extra: { storagePath, localUri },
+      });
       throw error;
     }
   }

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/types';
 import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 
@@ -42,11 +42,11 @@ export default function HelpSupportScreen({ navigation }: Props) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(0);
 
   const handleContactSupport = () => {
-    const emailUrl = 'mailto:support@splitmate.app?subject=SplitMate%20Support%20Inquiry';
+    const emailUrl = 'mailto:support@fyndralabs.com?subject=SplitMate%20Support%20Inquiry';
     Linking.openURL(emailUrl).catch(() => {
       Alert.alert(
         'Contact Support',
-        'Please send your feedback or support inquiry to:\n\nsupport@splitmate.app'
+        'Please send your feedback or support inquiry to:\n\nsupport@fyndralabs.com'
       );
     });
   };
@@ -99,6 +99,15 @@ export default function HelpSupportScreen({ navigation }: Props) {
             );
           })}
         </View>
+
+        <TouchableOpacity
+          style={[styles.webFaqBtn, { borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainerLowest }]}
+          onPress={() => Linking.openURL('https://www.fyndralabs.com/products/splitmate/terms#faq')}
+          activeOpacity={0.8}
+        >
+          <MaterialIcons name="open-in-new" size={18} color={colors.primary} />
+          <Text style={[styles.webFaqText, { color: colors.primary }]}>View Complete FAQ & Terms on the Web</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
@@ -145,4 +154,20 @@ const styles = StyleSheet.create({
   faqHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
   faqQuestion: { ...Typography.bodyLg, flex: 1, fontWeight: '600', fontSize: 14 },
   faqAnswer: { ...Typography.bodyMd, marginTop: Spacing.sm, lineHeight: 20 },
+  webFaqBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
+    ...Shadows.card,
+  },
+  webFaqText: {
+    ...Typography.titleSm,
+    fontWeight: '600',
+  },
 });
