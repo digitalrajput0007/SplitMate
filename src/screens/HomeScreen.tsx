@@ -23,7 +23,6 @@ import { M3BottomSheet } from '../components/M3BottomSheet';
 import { SmartImage } from '../components/SmartImage';
 import { SmartInsight } from '../components/SmartInsight';
 import { BalanceCard } from '../components/BalanceCard';
-import { QuickActionTile } from '../components/QuickActionTile';
 import { SectionHeader } from '../components/SectionHeader';
 import { EmptyState } from '../components/EmptyState';
 import { GroupCard } from '../components/GroupCard';
@@ -306,31 +305,49 @@ export default function HomeScreen() {
 
         {/* Quick Actions Row */}
         <View style={styles.quickActionsRow}>
-          <QuickActionTile
-            label={'Add\nExpense'}
-            iconName="add-circle"
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: colors.surfaceContainerLowest,
+                borderColor: colors.divider,
+              },
+            ]}
             onPress={handleAddExpensePress}
-            accentColor={colors.primary}
-          />
-          <QuickActionTile
-            label={'My\nGroups'}
-            iconName="groups"
-            onPress={() => navigation.navigate('MainTabs', { screen: 'GroupsTab' })}
-            accentColor="#0284C7"
-          />
-          <QuickActionTile
-            label={'Settle\nUp'}
-            iconName="swap-horizontal"
-            iconType="ionicons"
-            onPress={() => navigation.navigate('SettlementCenter')}
-            accentColor="#0D9488"
-          />
-          <QuickActionTile
-            label={'View\nActivity'}
-            iconName="receipt-long"
-            onPress={() => navigation.navigate('MainTabs', { screen: 'ActivityTab' })}
-            accentColor="#8B5CF6"
-          />
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Add Expense, Split a bill"
+          >
+            <View style={[styles.quickActionIconCircle, { backgroundColor: colors.primary + '18' }]}>
+              <MaterialIcons name="add-circle" size={26} color={colors.primary} />
+            </View>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Add Expense</Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Split a bill</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: colors.surfaceContainerLowest,
+                borderColor: colors.divider,
+              },
+            ]}
+            onPress={() => navigation.navigate('CreateGroup')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Create Group, Start new pool"
+          >
+            <View style={[styles.quickActionIconCircle, { backgroundColor: colors.secondary + '18' }]}>
+              <MaterialIcons name="group-add" size={26} color={colors.secondary} />
+            </View>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Create Group</Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Start new pool</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Actionable Alerts (Invitations, Reminders, Confirmations) */}
@@ -826,7 +843,41 @@ const styles = StyleSheet.create({
   quickActionsRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
-    justifyContent: 'space-between',
+  },
+  quickActionCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    minHeight: 64,
+    gap: Spacing.sm,
+    ...Shadows.card,
+  },
+  quickActionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickActionTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  quickActionTitle: {
+    ...Typography.titleSm,
+    fontWeight: '700',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  quickActionSubtitle: {
+    ...Typography.bodySm,
+    fontSize: 12,
+    lineHeight: 15,
+    marginTop: 2,
   },
   sectionContainer: {
     gap: Spacing.xs,

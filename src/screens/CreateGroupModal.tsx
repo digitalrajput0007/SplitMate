@@ -314,7 +314,7 @@ export default function CreateGroupModal({ navigation }: Props) {
               style={[styles.stitchSecondaryBtn, { borderColor: colors.primary }]}
               activeOpacity={0.85}
               onPress={() => {
-                navigation.replace('MainTabs', { screen: 'ContactsTab' });
+                navigation.navigate('Contacts');
               }}
             >
               <MaterialIcons name="contacts" size={20} color={colors.primary} style={{ marginRight: 8 }} />

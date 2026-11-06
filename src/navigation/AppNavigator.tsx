@@ -43,6 +43,7 @@ import RecurringExpensesScreen from '../screens/RecurringExpensesScreen';
 import PrivacySecurityScreen from '../screens/PrivacySecurityScreen';
 import ContactUsScreen from '../screens/ContactUsScreen';
 import ContactsScreen from '../screens/ContactsScreen';
+import AnalyticsScreen from '../screens/AnalyticsScreen';
 import ContactSyncScreen from '../screens/ContactSyncScreen';
 import AppThemeScreen from '../screens/AppThemeScreen';
 import UnlockScreen from '../screens/UnlockScreen';
@@ -76,6 +77,16 @@ function GroupsSvgIcon({ color, size = 22 }: { color: string; size?: number }) {
       <Circle cx="9" cy="7" r="4" />
       <Path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <Path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </Svg>
+  );
+}
+
+function AnalyticsSvgIcon({ color, size = 22 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M18 20V10" />
+      <Path d="M12 20V4" />
+      <Path d="M6 20v-6" />
     </Svg>
   );
 }
@@ -145,7 +156,7 @@ function MainTabNavigator() {
         tabBarIcon: ({ color, size }) => {
           if (route.name === 'HomeTab') return <HomeSvgIcon color={color} size={size} />;
           if (route.name === 'GroupsTab') return <GroupsSvgIcon color={color} size={size} />;
-          if (route.name === 'ContactsTab') return <ContactsSvgIcon color={color} size={size} />;
+          if (route.name === 'AnalyticsTab') return <AnalyticsSvgIcon color={color} size={size} />;
           if (route.name === 'ActivityTab') return <ActivitySvgIcon color={color} size={size} />;
           if (route.name === 'AccountTab') return <AccountSvgIcon color={color} size={size} />;
           return <HomeSvgIcon color={color} size={size} />;
@@ -154,7 +165,7 @@ function MainTabNavigator() {
     >
       <Tab.Screen name="HomeTab" component={HomeScreen} options={{ title: 'Home' }} />
       <Tab.Screen name="GroupsTab" component={GroupsScreen} options={{ title: 'Groups' }} />
-      <Tab.Screen name="ContactsTab" component={ContactsScreen} options={{ title: 'Contacts' }} />
+      <Tab.Screen name="AnalyticsTab" component={AnalyticsScreen} options={{ title: 'Analytics' }} />
       <Tab.Screen name="ActivityTab" component={ActivityScreen} options={{ title: 'Activity' }} />
       <Tab.Screen name="AccountTab" component={AccountScreen} options={{ title: 'Account' }} />
     </Tab.Navigator>
@@ -394,6 +405,8 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
               <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
               <Stack.Screen name="ContactUs" component={ContactUsScreen} />
               <Stack.Screen name="ContactSync" component={ContactSyncScreen} />
+              <Stack.Screen name="Contacts" component={ContactsScreen} />
+              <Stack.Screen name="Analytics" component={AnalyticsScreen} />
               <Stack.Screen name="SetupPin" component={SetupPinScreen} />
             </>
           )}

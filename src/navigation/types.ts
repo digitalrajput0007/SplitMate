@@ -14,6 +14,8 @@ export type RootStackParamList = {
   ProfileSetup: { displayName?: string, photoURL?: string, fromGoogle?: boolean } | undefined;
   OTPVerification: { email: string, type: 'verify' | 'reset' };
   ForgotPassword: { email?: string };
+  Contacts: undefined;
+  Analytics: undefined;
   AddExpense: { groupId?: string; groupName?: string; initialBillingMonth?: string } | undefined;
   CreateGroup: undefined;
   GroupDetail: { groupId: string; groupName: string };
@@ -39,7 +41,8 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   HomeTab: undefined;
   GroupsTab: undefined;
-  ContactsTab: undefined;
+  AnalyticsTab: undefined;
+  ContactsTab?: undefined;
   ActivityTab: undefined;
   AccountTab: undefined;
 };
