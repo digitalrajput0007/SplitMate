@@ -58,6 +58,23 @@ export type GoogleSignInResult =
 /* =========================================================
    🌐 GOOGLE SIGN IN
 ========================================================= */
+export const configureGoogleSignIn = (): void => {
+  if (Platform.OS !== 'web') {
+    try {
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID,
+        offlineAccess: false,
+        scopes: ['profile', 'email'],
+      });
+    } catch (e) {
+      console.warn('[Auth] GoogleSignin.configure error:', e);
+    }
+  }
+};
+
+// Auto-initialize GoogleSignin upon module loading
+configureGoogleSignIn();
+
 export const signInWithGoogle = async (): Promise<GoogleSignInResult | undefined> => {
   let pendingCredential: AuthCredential | null = null;
   let userEmail: string = '';
@@ -71,11 +88,8 @@ export const signInWithGoogle = async (): Promise<GoogleSignInResult | undefined
 
     console.log("[Auth] Starting Google Sign-in flow...");
 
-    // Configure Google Sign-in right before using it
-    GoogleSignin.configure({
-      webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
-      offlineAccess: true,
-    });
+    // Ensure Google Sign-in is configured
+    configureGoogleSignIn();
 
     // 1. Check Play Services
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
@@ -518,11 +532,8 @@ export const reauthenticateGoogleUser = async (): Promise<void> => {
     throw new Error('Google re-authentication is not supported on web.');
   }
 
-  // Configure Google Sign-in right before using it
-  GoogleSignin.configure({
-    webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
-    offlineAccess: true,
-  });
+  // Ensure Google Sign-in is configured
+  configureGoogleSignIn();
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   try {
@@ -597,10 +608,8 @@ export const linkGoogleToCurrentUser = async (): Promise<User> => {
     throw new Error('Google linking is not supported on web.');
   }
 
-  GoogleSignin.configure({
-    webClientId: '563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com', // Your client_type: 3 ID
-    offlineAccess: true,
-  });
+  // Ensure Google Sign-in is configured
+  configureGoogleSignIn();
 
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   try {

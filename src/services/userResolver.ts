@@ -101,9 +101,14 @@ export async function resolveAuthenticatedUser(
 
         // If not found by UID, check if user document exists under their email
         if (!profile && firebaseUser.email) {
-          profile = await findUserByEmail(firebaseUser.email);
-          if (profile && isProfileComplete(profile)) {
-            // Cache under current UID so future lookups are instant
+          console.log(`[Auth-Debug 5] User profile lookup initiated for doc: users/${uid} (email: ${firebaseUser.email})`);
+          const existingProfile = await findUserByEmail(firebaseUser.email);
+          if (existingProfile && existingProfile.uid && existingProfile.uid !== uid) {
+            console.log(`[Auth-Debug 6] User profile found by email belongs to previous UID: ${existingProfile.uid}, current UID: ${uid}. Preserving old document and routing to fresh profile setup.`);
+            // Orphaned previous account detected. Do NOT overwrite or merge automatically without explicit approval.
+            profile = null;
+          } else if (existingProfile && isProfileComplete(existingProfile)) {
+            profile = existingProfile;
             setPersistentProfile(uid, profile).catch(() => {});
           }
         }
@@ -163,6 +168,7 @@ export async function resolveAuthenticatedUser(
       // Canonical check: Name + Mobile (or explicit profileCompleted: true)
       console.log('[Resolver] Profile fetched for UID:', uid, 'data:', JSON.stringify(profile));
       const complete = isProfileComplete(profile);
+      console.log(`[Auth-Debug 7] Profile completeness check for UID ${uid}: ${complete}`);
       console.log(`[Resolver] Profile completion status for ${uid}: ${complete}`);
 
       if (complete) {
@@ -170,11 +176,13 @@ export async function resolveAuthenticatedUser(
           setPersistentProfileStatus(uid, 'complete', profile.email || firebaseUser.email).catch(() => {});
           setPersistentProfile(uid, profile).catch(() => {});
         }
+        console.log(`[Auth-Debug 8] Profile status determined: complete for UID: ${uid}`);
         return {
           status: 'complete',
           profile,
         };
       } else {
+        console.log(`[Auth-Debug 8] Profile status determined: needs_setup for UID: ${uid}`);
         return {
           status: 'needs_setup',
           profile,

@@ -246,6 +246,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
           console.warn('[AppNavigator] Error checking user profile:', e);
         }
 
+        console.log(`[Auth-Debug 9] Decision branch taken in AppNavigator: authUser=${authUser.uid}, hasProfile=${hasCompleteProfile}, isVerified=${isVerified}`);
         setUserStatus({
           isVerified,
           hasProfile: hasCompleteProfile,
@@ -377,9 +378,7 @@ export default function AppNavigator({ onReady }: { onReady?: () => void }) {
             </>
           ) : !userStatus?.hasProfile ? (
             <>
-              <Stack.Screen name="SignIn" component={SignInScreen} />
               <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-              <Stack.Screen name="MainTabs" component={MainTabNavigator} />
             </>
           ) : (
             <>

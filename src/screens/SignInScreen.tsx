@@ -204,6 +204,7 @@ export default function SignInScreen({ navigation }: Props) {
     setErrorMessage('');
     setLoading(true);
     try {
+      console.log('[Auth-Debug 1] Google Sign-In initiated');
       const result = await signInWithGoogle();
       
       if (!result || result.status === 'cancelled') {
@@ -220,11 +221,13 @@ export default function SignInScreen({ navigation }: Props) {
       }
 
       if (result.status === 'success') {
+        console.log(`[Auth-Debug 4] Current user UID after sign-in: ${result.user.uid}, email: ${result.user.email}`);
         const userEmail = result.user.email?.toLowerCase().trim();
         if (userEmail) {
-          // Check if this user originally registered with password
+          // Check if this specific UID originally registered with password
           const profile = await getUserProfileFromFirestore(result.user.uid);
-          if (profile && profile.authProvider === 'password') {
+          if (profile && profile.uid === result.user.uid && profile.authProvider === 'password') {
+            console.log('[Auth-Debug 12] Automatic sign-out triggered: Registered with password credential');
             await signOutUser();
             setLoading(false);
             setErrorMessage(
@@ -250,6 +253,17 @@ export default function SignInScreen({ navigation }: Props) {
 
         if (resolveRes.status === 'error') {
           setErrorMessage(resolveRes.message || 'Unable to connect to SplitMate. Please check your connection.');
+        } else if (resolveRes.status === 'needs_setup') {
+          console.log(`[Auth-Debug 10] Navigation action dispatched: SignIn -> ProfileSetup for UID: ${result.user.uid}`);
+          try {
+            navigation.navigate('ProfileSetup', {
+              displayName: result.googleName || result.user.displayName || undefined,
+              photoURL: result.googlePhoto || result.user.photoURL || undefined,
+              fromGoogle: true,
+            });
+          } catch (navErr) {
+            console.warn('[SignIn] Could not navigate directly to ProfileSetup (AppNavigator will render it):', navErr);
+          }
         }
         setLoading(false);
       }

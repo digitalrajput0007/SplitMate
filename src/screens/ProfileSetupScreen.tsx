@@ -22,7 +22,7 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../theme';
 import { useTheme } from '../context/ThemeContext';
 import { OutlinedInput } from '../components/OutlinedInput';
 import { auth } from '../config/firebase';
-import { updateUserProfile } from '../services/authService';
+import { updateUserProfile, signOutUser } from '../services/authService';
 import {
   saveUserProfileToFirestore,
   getUserProfileFromFirestore,
@@ -174,7 +174,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       const activeUser = auth.currentUser;
       if (!activeUser) throw new Error('User not authenticated');
 
-      const isDuplicate = await isMobileNumberRegistered(cleanedMobile, activeUser?.uid);
+      const isDuplicate = await isMobileNumberRegistered(cleanedMobile, activeUser?.uid, activeUser?.email);
       if (isDuplicate) {
         setSaving(false);
         Alert.alert(
@@ -234,7 +234,18 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={[styles.title, { color: colors.onBackground }]}>Setup Profile</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={[styles.title, { color: colors.onBackground, marginBottom: 0 }]}>Setup Profile</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                await signOutUser();
+              }}
+              style={{ paddingVertical: 6, paddingHorizontal: 12 }}
+              activeOpacity={0.7}
+            >
+              <Text style={{ color: colors.error, fontSize: 14, fontWeight: '600' }}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Avatar Section matching initials placeholder & camera badge */}
           <View style={styles.avatarContainer}>

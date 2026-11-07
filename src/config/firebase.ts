@@ -22,7 +22,7 @@ export const firebaseConfig = {
   projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "splitmate-d2d66",
   storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || "splitmate-d2d66.firebasestorage.app",
   messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "563027170263",
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:563027170263:android:4b72f0d1051e81d406f192"
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || "1:563027170263:android:90fbccc11309ad8e06f192"
 };
 
 export const WEB_CLIENT_ID = "563027170263-279jvhh5r7vsvab35satlq4ill6gfdkr.apps.googleusercontent.com";

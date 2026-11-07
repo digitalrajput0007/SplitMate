@@ -41,6 +41,18 @@ export async function getPersistentProfileStatus(uid?: string | null, email?: st
       }
     }
     if (email) {
+      // If uid is provided, ensure the stored profile does not belong to a different (orphaned) UID
+      if (uid) {
+        const rawByEmail = await AsyncStorage.getItem(PROFILE_DATA_EMAIL_PREFIX + email.toLowerCase().trim());
+        if (rawByEmail) {
+          try {
+            const parsed = JSON.parse(rawByEmail);
+            if (parsed.uid && parsed.uid !== uid) {
+              return null;
+            }
+          } catch {}
+        }
+      }
       const valByEmail = await AsyncStorage.getItem(PROFILE_STATUS_EMAIL_PREFIX + email.toLowerCase().trim());
       if (valByEmail === 'complete' || valByEmail === 'needs_setup') {
         return valByEmail;
@@ -71,7 +83,15 @@ export async function getPersistentProfile(uid?: string | null, email?: string |
     }
     if (email) {
       const rawByEmail = await AsyncStorage.getItem(PROFILE_DATA_EMAIL_PREFIX + email.toLowerCase().trim());
-      if (rawByEmail) return JSON.parse(rawByEmail);
+      if (rawByEmail) {
+        const parsed = JSON.parse(rawByEmail);
+        // If caller requested a specific UID and the email cache holds a different UID,
+        // do not return it as this UID's active profile (prevents orphaned session leakage).
+        if (uid && parsed.uid && parsed.uid !== uid) {
+          return null;
+        }
+        return parsed;
+      }
     }
     return null;
   } catch {
@@ -640,7 +660,7 @@ export const getUserProfileFromFirestore = async (
 /**
  * Checks if a mobile number is already registered to another user
  */
-export const isMobileNumberRegistered = async (mobile: string, currentUid: string): Promise<boolean> => {
+export const isMobileNumberRegistered = async (mobile: string, currentUid: string, userEmail?: string | null): Promise<boolean> => {
   try {
     // Standardize to include country code if not present, or search both
     const q = query(
@@ -649,8 +669,18 @@ export const isMobileNumberRegistered = async (mobile: string, currentUid: strin
     );
     const snap = await getDocs(q);
 
+    const trimmedEmail = userEmail ? userEmail.toLowerCase().trim() : null;
+
     // If any user is found with this mobile, check if it's NOT the current user
-    return snap.docs.some(d => d.id !== currentUid);
+    // AND NOT an orphaned document belonging to the same verified email address
+    return snap.docs.some(d => {
+      if (d.id === currentUid) return false;
+      const data = d.data();
+      if (trimmedEmail && data?.email && data.email.toLowerCase().trim() === trimmedEmail) {
+        return false; // Same user's previous record from before auth deletion
+      }
+      return true;
+    });
   } catch (error) {
     console.error('Error checking mobile registration:', error);
     return false;

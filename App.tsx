@@ -8,6 +8,7 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_7
 import AppNavigator from './src/navigation/AppNavigator';
 import { NotificationService } from './src/services/NotificationService';
 import { initializeInterstitialAd } from './src/services/adMobService';
+import { configureGoogleSignIn } from './src/services/authService';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { SecurityProvider } from './src/context/SecurityContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -58,6 +59,11 @@ function MainAppContent() {
           initializeInterstitialAd();
         } catch (e) {
           console.warn('AdMob initialization failed:', e);
+        }
+        try {
+          configureGoogleSignIn();
+        } catch (e) {
+          console.warn('GoogleSignIn configuration failed:', e);
         }
       }
     });
