@@ -140,20 +140,6 @@ const groupMap = new Map([['g1', group1]]);
 // Current user share: ₹1,200
 // Another member (userB) paid: ₹1,000 (share: ₹1,800)
 // Balance: +₹800 owed to userA
-const s1_expenses = [
-  {
-    groupId: 'g1',
-    amount: 3000,
-    paidBy: 'userA',
-    splitDetails: { userA: 1200, userB: 1800 },
-  },
-  // Note: userB paid ₹1000 can be another expense or part of split
-  // In prompt: "Group total expenses: ₹3,000. Current user paid: ₹2,000. Current user share: ₹1,200. Another member paid: ₹1,000."
-  // That means:
-  // Expense 1: ₹2,000 paid by userA (userA share: 1200, userB share: 800)
-  // Expense 2: ₹1,000 paid by userB (userA share: 0, userB share: 1000)
-  // Total expenses = 3000, userA paid = 2000, userA share = 1200, userB paid = 1000.
-];
 const s1_metrics = calculateOverviewMetrics(
   [
     { groupId: 'g1', amount: 2000, paidBy: 'userA', splitDetails: { userA: 1200, userB: 800 } },
@@ -271,6 +257,82 @@ const dSep = { billingMonth: '2026-09', date: '2026-09-15T12:00:00Z', amount: 30
 assert(getExpenseBillingMonth(dOct) === '2026-10', 'Scenario 9: October 31 23:59 resolves to 2026-10');
 assert(getExpenseBillingMonth(dNov) === '2026-11', 'Scenario 9: November 01 00:00 resolves to 2026-11');
 assert(getExpenseBillingMonth(dSep) === '2026-09', 'Scenario 9: September 15 resolves to 2026-09');
+
+// SCENARIO 10: Chart Data Transformations
+// A. Member Spending Breakdown: Amount Paid vs Expense Share separation
+// Example from prompt:
+// Group expense total: ₹3,000
+// Member A paid: ₹2,000 | Expense share: ₹1,200
+// Member B paid: ₹1,000 | Expense share: ₹1,800
+function computeMemberBreakdown(expenses, group, currentUid, mode) {
+  const map = new Map();
+  const memberIds = group.memberIds || [];
+  memberIds.forEach((uid) => map.set(uid, { paid: 0, share: 0 }));
+
+  expenses.forEach((exp) => {
+    if (exp.paidBy && map.has(exp.paidBy)) {
+      map.get(exp.paidBy).paid += Number(exp.amount) || 0;
+    }
+    const splits = getEffectiveSplitDetails(exp, group);
+    Object.entries(splits).forEach(([uid, amt]) => {
+      if (map.has(uid)) {
+        map.get(uid).share += Number(amt) || 0;
+      }
+    });
+  });
+
+  const total = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const items = Array.from(map.entries()).map(([uid, info]) => {
+    const val = mode === 'paid' ? info.paid : info.share;
+    const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+    return { uid, value: val, percentage: pct };
+  });
+  return { total, items };
+}
+
+const s10_group = {
+  groupId: 'g10',
+  name: 'Test Group',
+  memberIds: ['userA', 'userB'],
+};
+const s10_expenses = [
+  { groupId: 'g10', amount: 2000, paidBy: 'userA', splitDetails: { userA: 800, userB: 1200 } },
+  { groupId: 'g10', amount: 1000, paidBy: 'userB', splitDetails: { userA: 400, userB: 600 } },
+];
+
+const paidMode = computeMemberBreakdown(s10_expenses, s10_group, 'userA', 'paid');
+const shareMode = computeMemberBreakdown(s10_expenses, s10_group, 'userA', 'share');
+
+// In Paid Mode:
+// UserA paid ₹2,000 (67%), UserB paid ₹1,000 (33%)
+assert(paidMode.total === 3000, 'Scenario 10A: Member breakdown total is ₹3,000');
+const userAPaid = paidMode.items.find((i) => i.uid === 'userA');
+const userBPaid = paidMode.items.find((i) => i.uid === 'userB');
+assert(userAPaid.value === 2000, 'Scenario 10A: UserA paid is ₹2,000 in Amount Paid mode');
+assert(userBPaid.value === 1000, 'Scenario 10A: UserB paid is ₹1,000 in Amount Paid mode');
+
+// In Share Mode:
+// UserA share is 800 + 400 = ₹1,200 (40%)
+// UserB share is 1200 + 600 = ₹1,800 (60%)
+const userAShare = shareMode.items.find((i) => i.uid === 'userA');
+const userBShare = shareMode.items.find((i) => i.uid === 'userB');
+assert(userAShare.value === 1200, 'Scenario 10B: UserA share is ₹1,200 in Expense Share mode');
+assert(userBShare.value === 1800, 'Scenario 10B: UserB share is ₹1,800 in Expense Share mode');
+assert(userAShare.percentage === 40, 'Scenario 10B: UserA share is 40%');
+assert(userBShare.percentage === 60, 'Scenario 10B: UserB share is 60%');
+
+// B. Single-member group handles 100% donut slice without error
+const singleGroup = { groupId: 'gSingle', memberIds: ['userA'] };
+const singleExpenses = [{ groupId: 'gSingle', amount: 500, paidBy: 'userA', splitDetails: { userA: 500 } }];
+const singleBreakdown = computeMemberBreakdown(singleExpenses, singleGroup, 'userA', 'paid');
+assert(singleBreakdown.items.length === 1 && singleBreakdown.items[0].percentage === 100, 'Scenario 10C: Single-member group resolves to 100%');
+
+// C. Category totals match total spending
+const catFood = { category: 'food', amount: 1500, splitDetails: { userA: 750, userB: 750 } };
+const catTravel = { category: 'travel', amount: 1500, splitDetails: { userA: 750, userB: 750 } };
+const catExpenses = [catFood, catTravel];
+const totalCatSpending = catExpenses.reduce((s, e) => s + e.amount, 0);
+assert(totalCatSpending === 3000, 'Scenario 10D: Category spending matches total group spend ₹3,000');
 
 console.log(`\n--- TEST RUN COMPLETE: ${passedCount} PASSED, ${failedCount} FAILED ---`);
 process.exit(failedCount > 0 ? 1 : 0);

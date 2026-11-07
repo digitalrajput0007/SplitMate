@@ -8,17 +8,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   Dimensions,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 import { db, auth } from '../config/firebase';
 import { useTheme } from '../context/ThemeContext';
-import { Colors, Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
+import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import {
   ExpenseData,
   GroupData,
@@ -26,6 +25,7 @@ import {
   getEffectiveSplitDetails,
   formatCurrency,
   subscribeToAcceptedMembers,
+  subscribeToUserProfile,
   UserProfile,
 } from '../services/firestoreService';
 import {
@@ -37,9 +37,23 @@ import {
 import { useUserGroups } from '../hooks/useUserGroups';
 import { RootStackParamList } from '../navigation/types';
 
+import {
+  InteractiveDonutChart,
+  DonutDataItem,
+} from '../components/charts/InteractiveDonutChart';
+import {
+  TrendAreaChart,
+  MonthlyTrendItem,
+} from '../components/charts/TrendAreaChart';
+import {
+  HorizontalBarChart,
+  GroupSpendingItem,
+} from '../components/charts/HorizontalBarChart';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type DateRangeFilter = 'this_month' | 'last_month' | 'last_3_months' | 'all_time';
+type MemberViewMode = 'paid' | 'share';
 
 interface CategorySummary {
   category: string;
@@ -51,31 +65,28 @@ interface CategorySummary {
   percentage: number;
 }
 
-interface MonthlyTrend {
-  monthKey: string; // 'YYYY-MM'
-  label: string;    // 'Nov'
-  year: number;
-  month: number;
-  totalSpend: number;
-  userShare: number;
-}
-
-interface MemberSpending {
-  uid: string;
-  name: string;
-  amountPaid: number;
-  percentage: number;
-}
-
 const CATEGORY_META: Record<string, { label: string; icon: string; color: string }> = {
-  'food': { label: 'Food & Dining', icon: 'restaurant', color: '#F97316' },
-  'travel': { label: 'Travel & Transport', icon: 'directions-car', color: '#0EA5E9' },
-  'rent': { label: 'Rent & Housing', icon: 'home', color: '#8B5CF6' },
-  'fun': { label: 'Entertainment & Fun', icon: 'movie', color: '#EC4899' },
-  'shopping': { label: 'Shopping', icon: 'shopping-bag', color: '#10B981' },
-  'health': { label: 'Health & Medical', icon: 'medical-services', color: '#EF4444' },
-  'other': { label: 'Other', icon: 'category', color: '#64748B' },
+  food: { label: 'Food & Dining', icon: 'restaurant', color: '#F97316' },
+  travel: { label: 'Travel & Transport', icon: 'directions-car', color: '#0EA5E9' },
+  rent: { label: 'Rent & Housing', icon: 'home', color: '#8B5CF6' },
+  fun: { label: 'Entertainment & Fun', icon: 'movie', color: '#EC4899' },
+  shopping: { label: 'Shopping', icon: 'shopping-bag', color: '#10B981' },
+  health: { label: 'Health & Medical', icon: 'medical-services', color: '#EF4444' },
+  other: { label: 'Other', icon: 'category', color: '#64748B' },
 };
+
+const MEMBER_PALETTE = [
+  '#0EA5E9', // Sky Blue (Primary)
+  '#8B5CF6', // Purple
+  '#10B981', // Emerald
+  '#F59E0B', // Amber
+  '#EC4899', // Pink
+  '#06B6D4', // Cyan
+  '#F97316', // Orange
+  '#6366F1', // Indigo
+  '#14B8A6', // Teal
+  '#E11D48', // Rose
+];
 
 function normalizeCategory(rawCat: string = ''): { key: string; label: string; icon: string; color: string } {
   const clean = rawCat.toLowerCase().trim();
@@ -99,17 +110,23 @@ export default function AnalyticsScreen() {
 
   const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>('this_month');
+  const [memberViewMode, setMemberViewMode] = useState<MemberViewMode>('paid');
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState<string | null>(null);
+  const [trendViewMonths, setTrendViewMonths] = useState<6 | 12>(6);
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(null);
+
   const [allExpenses, setAllExpenses] = useState<ExpenseData[]>([]);
   const [allSettlements, setAllSettlements] = useState<SettlementData[]>([]);
   const [groupMembers, setGroupMembers] = useState<UserProfile[]>([]);
+  const [allUsersMap, setAllUsersMap] = useState<Map<string, UserProfile>>(new Map());
   const [expensesLoading, setExpensesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(null);
 
   // Group Map for quick lookup
   const groupMap = useMemo(() => {
     const map = new Map<string, GroupData>();
-    activeGroups.forEach(g => {
+    activeGroups.forEach((g) => {
       if (g.groupId) map.set(g.groupId, g);
     });
     return map;
@@ -127,15 +144,69 @@ export default function AnalyticsScreen() {
     return () => unsub();
   }, [selectedGroupId]);
 
-  // Subscribe to expenses and settlements across target groups
+  // Continuously listen to user profiles across all active groups and expenses
+  useEffect(() => {
+    if (activeGroups.length === 0 && allExpenses.length === 0) return;
+
+    const uidsToFetch = new Set<string>();
+
+    activeGroups.forEach((g) => {
+      if (g.memberIds) {
+        g.memberIds.forEach((uid) => {
+          if (uid) uidsToFetch.add(uid);
+        });
+      }
+      if (g.membersDetails) {
+        g.membersDetails.forEach((m) => {
+          if (m.uid) uidsToFetch.add(m.uid);
+        });
+      }
+      if (g.memberProfiles) {
+        Object.keys(g.memberProfiles).forEach((uid) => {
+          if (uid) uidsToFetch.add(uid);
+        });
+      }
+    });
+
+    allExpenses.forEach((exp) => {
+      if (exp.paidBy) uidsToFetch.add(exp.paidBy);
+      if (exp.splitDetails) {
+        Object.keys(exp.splitDetails).forEach((uid) => {
+          if (uid) uidsToFetch.add(uid);
+        });
+      }
+    });
+
+    const unsubs: (() => void)[] = [];
+    uidsToFetch.forEach((uid) => {
+      if (!allUsersMap.has(uid)) {
+        const unsub = subscribeToUserProfile(uid, (profile) => {
+          if (profile) {
+            setAllUsersMap((prev) => {
+              const next = new Map(prev);
+              next.set(uid, profile);
+              return next;
+            });
+          }
+        });
+        unsubs.push(unsub);
+      }
+    });
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
+  }, [activeGroups, allExpenses, allUsersMap]);
+
+  // Always subscribe to expenses and settlements across all active groups
   useEffect(() => {
     if (groupsLoading) return;
 
-    const targetGroupIds = selectedGroupId === 'all'
-      ? activeGroups.map(g => g.groupId).filter((id): id is string => !!id)
-      : [selectedGroupId];
+    const allActiveGroupIds = activeGroups
+      .map((g) => g.groupId)
+      .filter((id): id is string => !!id);
 
-    if (targetGroupIds.length === 0) {
+    if (allActiveGroupIds.length === 0) {
       setAllExpenses([]);
       setAllSettlements([]);
       setExpensesLoading(false);
@@ -146,8 +217,8 @@ export default function AnalyticsScreen() {
 
     // Batch in chunks of 30 for Firestore 'in' query limit
     const chunks: string[][] = [];
-    for (let i = 0; i < targetGroupIds.length; i += 30) {
-      chunks.push(targetGroupIds.slice(i, i + 30));
+    for (let i = 0; i < allActiveGroupIds.length; i += 30) {
+      chunks.push(allActiveGroupIds.slice(i, i + 30));
     }
 
     const chunkExpResults = new Map<number, ExpenseData[]>();
@@ -204,9 +275,9 @@ export default function AnalyticsScreen() {
     });
 
     return () => {
-      unsubs.forEach(u => u());
+      unsubs.forEach((u) => u());
     };
-  }, [selectedGroupId, activeGroups, groupsLoading]);
+  }, [activeGroups, groupsLoading]);
 
   // Canonical month identifiers for bulletproof date range filtering
   const { currentMonthKey, lastMonthKey, last3MonthsKeys } = useMemo(() => {
@@ -244,15 +315,19 @@ export default function AnalyticsScreen() {
     [dateFilter, currentMonthKey, lastMonthKey, last3MonthsKeys]
   );
 
-  // Filter expenses by selected date range
+  // Filter expenses by selected group and selected date range
   const filteredExpenses = useMemo(() => {
-    return allExpenses.filter(matchesDateFilter);
-  }, [allExpenses, matchesDateFilter]);
+    return allExpenses
+      .filter((exp) => selectedGroupId === 'all' || exp.groupId === selectedGroupId)
+      .filter(matchesDateFilter);
+  }, [allExpenses, selectedGroupId, matchesDateFilter]);
 
-  // Filter settlements by selected date range
+  // Filter settlements by selected group and selected date range
   const filteredSettlements = useMemo(() => {
-    return allSettlements.filter(matchesDateFilter);
-  }, [allSettlements, matchesDateFilter]);
+    return allSettlements
+      .filter((s) => selectedGroupId === 'all' || s.groupId === selectedGroupId)
+      .filter(matchesDateFilter);
+  }, [allSettlements, selectedGroupId, matchesDateFilter]);
 
   // Overview metrics calculations
   const overviewMetrics = useMemo(() => {
@@ -301,13 +376,182 @@ export default function AnalyticsScreen() {
     };
   }, [filteredExpenses, filteredSettlements, groupMap, currentUid]);
 
-  // Monthly trends (Last 6 months)
-  const monthlyTrends = useMemo((): MonthlyTrend[] => {
+  // Member Spending Breakdown: Amount Paid vs Expense Share with Profile Photos
+  const memberDonutData = useMemo((): DonutDataItem[] => {
+    const memberMap = new Map<
+      string,
+      {
+        paid: number;
+        share: number;
+        name: string;
+        photoUrl?: string;
+        photoThumbnailUrl?: string;
+        isCurrentUser: boolean;
+      }
+    >();
+
+    // Helper to find photo across profiles
+    const resolveMemberPhoto = (uid: string) => {
+      if (uid === currentUid && currentUser?.photoURL) {
+        return { photoUrl: currentUser.photoURL, photoThumbnailUrl: undefined };
+      }
+      const user = allUsersMap.get(uid);
+      if (user?.photoUrl || user?.photoThumbnailUrl) {
+        return { photoUrl: user.photoUrl, photoThumbnailUrl: user.photoThumbnailUrl };
+      }
+      const p = groupMembers.find((m) => m.uid === uid);
+      if (p?.photoUrl || p?.photoThumbnailUrl) {
+        return { photoUrl: p.photoUrl, photoThumbnailUrl: p.photoThumbnailUrl };
+      }
+      for (const g of activeGroups) {
+        const md = g.membersDetails?.find((m) => m.uid === uid);
+        if (md?.photoUrl || md?.photoThumbnailUrl) {
+          return { photoUrl: md.photoUrl, photoThumbnailUrl: md.photoThumbnailUrl };
+        }
+        const mp = g.memberProfiles?.[uid];
+        if (mp?.photoUrl || mp?.photoThumbnailUrl) {
+          return { photoUrl: mp.photoUrl, photoThumbnailUrl: mp.photoThumbnailUrl };
+        }
+      }
+      return { photoUrl: undefined, photoThumbnailUrl: undefined };
+    };
+
+    // Helper to find member name
+    const resolveMemberName = (uid: string, fallback = 'Member') => {
+      if (uid === currentUid) return 'You';
+      const user = allUsersMap.get(uid);
+      if (user?.name) return user.name;
+      const p = groupMembers.find((m) => m.uid === uid);
+      if (p?.name) return p.name;
+      for (const g of activeGroups) {
+        const md = g.membersDetails?.find((m) => m.uid === uid);
+        if (md?.name) return md.name;
+        const mp = g.memberProfiles?.[uid];
+        if (mp?.name) return mp.name;
+      }
+      return fallback;
+    };
+
+    // If an individual group is selected, initialize all known members
+    if (selectedGroupId !== 'all') {
+      const currentGroup = groupMap.get(selectedGroupId);
+      if (currentGroup?.memberIds) {
+        currentGroup.memberIds.forEach((uid) => {
+          const name = resolveMemberName(uid, 'Member');
+          const { photoUrl, photoThumbnailUrl } = resolveMemberPhoto(uid);
+          memberMap.set(uid, {
+            paid: 0,
+            share: 0,
+            name,
+            photoUrl,
+            photoThumbnailUrl,
+            isCurrentUser: uid === currentUid,
+          });
+        });
+      }
+    }
+
+    filteredExpenses.forEach((exp) => {
+      // 1. Accumulate Paid
+      const payerUid = exp.paidBy;
+      if (payerUid) {
+        const name = resolveMemberName(payerUid, exp.paidByName || 'Member');
+        const { photoUrl, photoThumbnailUrl } = resolveMemberPhoto(payerUid);
+        const existing = memberMap.get(payerUid) || {
+          paid: 0,
+          share: 0,
+          name,
+          photoUrl,
+          photoThumbnailUrl,
+          isCurrentUser: payerUid === currentUid,
+        };
+        existing.paid += Number(exp.amount) || 0;
+        memberMap.set(payerUid, existing);
+      }
+
+      // 2. Accumulate Share
+      const group = groupMap.get(exp.groupId);
+      const splits = getEffectiveSplitDetails(exp, group);
+
+      Object.entries(splits).forEach(([mUid, splitAmt]) => {
+        const joinedAt = group?.membersJoinedAt?.[mUid];
+        const includeExisting = group?.memberExistingExpensesPreference?.[mUid] ?? true;
+        const expTime = exp.createdAt?.seconds
+          ? exp.createdAt.seconds * 1000
+          : parseFirestoreDate(exp.createdAt, exp.date).getTime();
+        const isExcludedPreJoin = !includeExisting && joinedAt && expTime < joinedAt;
+
+        if (!isExcludedPreJoin && Number(splitAmt) > 0) {
+          const name = resolveMemberName(mUid, 'Member');
+          const { photoUrl, photoThumbnailUrl } = resolveMemberPhoto(mUid);
+          const existing = memberMap.get(mUid) || {
+            paid: 0,
+            share: 0,
+            name,
+            photoUrl,
+            photoThumbnailUrl,
+            isCurrentUser: mUid === currentUid,
+          };
+          existing.share += Number(splitAmt) || 0;
+          memberMap.set(mUid, existing);
+        }
+      });
+    });
+
+    const entries = Array.from(memberMap.entries());
+
+    // Sort: 'You' first, then highest contribution
+    entries.sort((a, b) => {
+      if (a[1].isCurrentUser) return -1;
+      if (b[1].isCurrentUser) return 1;
+      const valA = memberViewMode === 'paid' ? a[1].paid : a[1].share;
+      const valB = memberViewMode === 'paid' ? b[1].paid : b[1].share;
+      return valB - valA;
+    });
+
+    return entries.map(([uid, info], idx) => {
+      const color = info.isCurrentUser
+        ? colors.primary
+        : MEMBER_PALETTE[(idx % (MEMBER_PALETTE.length - 1)) + 1];
+
+      const val = memberViewMode === 'paid' ? info.paid : info.share;
+      const secVal = memberViewMode === 'paid' ? info.share : info.paid;
+      const secLabel = memberViewMode === 'paid' ? 'Expense Share' : 'Amount Paid';
+
+      return {
+        id: uid,
+        label: info.name,
+        value: Math.round(val * 100) / 100,
+        color,
+        photoUrl: info.photoUrl,
+        photoThumbnailUrl: info.photoThumbnailUrl,
+        isCurrentUser: info.isCurrentUser,
+        secondaryAmount: Math.round(secVal * 100) / 100,
+        secondaryLabel: secLabel,
+        initials: info.name.charAt(0).toUpperCase(),
+      };
+    });
+  }, [
+    filteredExpenses,
+    selectedGroupId,
+    groupMap,
+    groupMembers,
+    activeGroups,
+    currentUid,
+    currentUser?.photoURL,
+    colors.primary,
+    memberViewMode,
+    allUsersMap,
+  ]);
+
+  // Monthly trends (6M or 12M view)
+  const monthlyTrends = useMemo((): MonthlyTrendItem[] => {
     const now = new Date();
-    const months: MonthlyTrend[] = [];
+    const months: MonthlyTrendItem[] = [];
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    for (let i = 5; i >= 0; i--) {
+    const count = trendViewMonths;
+    for (let i = count - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const y = d.getFullYear();
       const m = d.getMonth();
@@ -323,6 +567,8 @@ export default function AnalyticsScreen() {
     }
 
     allExpenses.forEach((exp) => {
+      if (selectedGroupId !== 'all' && exp.groupId !== selectedGroupId) return;
+
       const bMonth = getExpenseBillingMonth(exp);
       const group = groupMap.get(exp.groupId);
       const joinedAt = group?.membersJoinedAt?.[currentUid];
@@ -334,7 +580,7 @@ export default function AnalyticsScreen() {
 
       const splits = getEffectiveSplitDetails(exp, group);
       const expAmount = Number(exp.amount) || 0;
-      const userShare = (!isExcludedPreJoin && splits[currentUid]) ? Number(splits[currentUid]) || 0 : 0;
+      const userShare = !isExcludedPreJoin && splits[currentUid] ? Number(splits[currentUid]) || 0 : 0;
 
       const target = months.find((m) => m.monthKey === bMonth);
       if (target) {
@@ -344,7 +590,7 @@ export default function AnalyticsScreen() {
     });
 
     return months;
-  }, [allExpenses, groupMap, currentUid]);
+  }, [allExpenses, selectedGroupId, groupMap, currentUid, trendViewMonths]);
 
   // Month-over-month comparison (Current vs Previous)
   const monthComparison = useMemo(() => {
@@ -352,17 +598,17 @@ export default function AnalyticsScreen() {
     const currentMonthData = monthlyTrends[monthlyTrends.length - 1];
     const prevMonthData = monthlyTrends[monthlyTrends.length - 2];
 
-    const currentVal = currentMonthData.userShare;
-    const prevVal = prevMonthData.userShare;
+    const currentVal = currentMonthData.totalSpend;
+    const prevVal = prevMonthData.totalSpend;
 
     if (prevVal === 0) {
-      if (currentVal === 0) return { changePercent: 0, direction: 'flat', prevVal, currentVal };
-      return { changePercent: 100, direction: 'up', prevVal, currentVal };
+      if (currentVal === 0) return { changePercent: 0, direction: 'flat' as const, prevVal, currentVal };
+      return { changePercent: 100, direction: 'up' as const, prevVal, currentVal };
     }
 
     const diff = currentVal - prevVal;
     const percent = Math.round((Math.abs(diff) / prevVal) * 100);
-    const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+    const direction = diff > 0 ? ('up' as const) : diff < 0 ? ('down' as const) : ('flat' as const);
 
     return {
       changePercent: percent,
@@ -409,23 +655,86 @@ export default function AnalyticsScreen() {
     return result.sort((a, b) => b.totalAmount - a.totalAmount);
   }, [filteredExpenses, groupMap, currentUid, overviewMetrics.totalSpending]);
 
-  // Group-level breakdown for "All Groups" view
-  const allGroupsBreakdown = useMemo(() => {
-    if (selectedGroupId !== 'all') return [];
+  const categoryDonutData = useMemo((): DonutDataItem[] => {
+    return categoryBreakdown.map((cat) => ({
+      id: cat.category,
+      label: cat.label,
+      value: cat.totalAmount,
+      color: cat.color,
+      icon: cat.icon,
+      secondaryAmount: cat.userShare,
+      secondaryLabel: 'Your Share',
+    }));
+  }, [categoryBreakdown]);
 
-    const breakdownMap = new Map<string, { totalSpend: number; userShare: number; groupName: string }>();
+  // Group Spending Comparison across ALL active groups for the selected date filter
+  const allGroupsBreakdown = useMemo((): GroupSpendingItem[] => {
+    const breakdownMap = new Map<
+      string,
+      {
+        totalSpend: number;
+        userShare: number;
+        groupName: string;
+        groupPhotoUrl?: string;
+        groupPhotoThumbnailUrl?: string;
+        members: Array<{ uid?: string; name: string; photoUrl?: string; photoThumbnailUrl?: string }>;
+      }
+    >();
 
-    activeGroups.forEach(g => {
+    activeGroups.forEach((g) => {
       if (g.groupId) {
+        const membersList: Array<{ uid?: string; name: string; photoUrl?: string; photoThumbnailUrl?: string }> = [];
+        const uidsInGroup = new Set<string>();
+
+        if (g.memberIds && g.memberIds.length > 0) {
+          g.memberIds.forEach((uid) => uidsInGroup.add(uid));
+        }
+        if (g.membersDetails && g.membersDetails.length > 0) {
+          g.membersDetails.forEach((m) => {
+            if (m.uid) uidsInGroup.add(m.uid);
+          });
+        }
+        if (g.memberProfiles) {
+          Object.keys(g.memberProfiles).forEach((uid) => uidsInGroup.add(uid));
+        }
+
+        uidsInGroup.forEach((uid) => {
+          const user = allUsersMap.get(uid);
+          const isMe = uid === currentUid;
+          const name = isMe
+            ? 'You'
+            : user?.name ||
+              g.membersDetails?.find((m) => m.uid === uid)?.name ||
+              g.memberProfiles?.[uid]?.name ||
+              'Member';
+          const photoUrl = isMe
+            ? currentUser?.photoURL || user?.photoUrl
+            : user?.photoUrl ||
+              g.membersDetails?.find((m) => m.uid === uid)?.photoUrl ||
+              g.memberProfiles?.[uid]?.photoUrl;
+          const photoThumbnailUrl =
+            user?.photoThumbnailUrl ||
+            g.membersDetails?.find((m) => m.uid === uid)?.photoThumbnailUrl ||
+            g.memberProfiles?.[uid]?.photoThumbnailUrl;
+
+          membersList.push({ uid, name, photoUrl, photoThumbnailUrl });
+        });
+
         breakdownMap.set(g.groupId, {
           totalSpend: 0,
           userShare: 0,
           groupName: g.name || 'Unnamed Group',
+          groupPhotoUrl: g.photoUrl,
+          groupPhotoThumbnailUrl: g.photoThumbnailUrl,
+          members: membersList,
         });
       }
     });
 
-    filteredExpenses.forEach((exp) => {
+    // Always use allExpenses filtered by dateFilter so comparison across groups is complete
+    const dateFilteredAllExpenses = allExpenses.filter(matchesDateFilter);
+
+    dateFilteredAllExpenses.forEach((exp) => {
       const item = breakdownMap.get(exp.groupId);
       if (item) {
         item.totalSpend += Number(exp.amount) || 0;
@@ -441,84 +750,36 @@ export default function AnalyticsScreen() {
       .map(([gId, info]) => ({
         groupId: gId,
         groupName: info.groupName,
+        groupPhotoUrl: info.groupPhotoUrl,
+        groupPhotoThumbnailUrl: info.groupPhotoThumbnailUrl,
+        members: info.members,
         totalSpend: Math.round(info.totalSpend * 100) / 100,
         userShare: Math.round(info.userShare * 100) / 100,
         balance: groupBalances[gId] || 0,
       }))
       .sort((a, b) => b.totalSpend - a.totalSpend);
-  }, [selectedGroupId, activeGroups, filteredExpenses, groupMap, currentUid, groupBalances]);
+  }, [
+    activeGroups,
+    allExpenses,
+    matchesDateFilter,
+    groupMap,
+    currentUid,
+    currentUser?.photoURL,
+    groupBalances,
+    allUsersMap,
+  ]);
 
-  // Individual group member-wise spending & top 3 expenses
-  const individualGroupDetails = useMemo(() => {
-    if (selectedGroupId === 'all') return null;
-
-    const currentGroup = groupMap.get(selectedGroupId);
-    const memberPaidMap = new Map<string, number>();
-
-    // Initialize all known members
-    if (currentGroup?.memberIds) {
-      currentGroup.memberIds.forEach((id) => memberPaidMap.set(id, 0));
-    }
-
-    filteredExpenses.forEach((exp) => {
-      const currentPaid = memberPaidMap.get(exp.paidBy) || 0;
-      memberPaidMap.set(exp.paidBy, currentPaid + (Number(exp.amount) || 0));
-    });
-
-    const totalGroupSpend = overviewMetrics.totalSpending || 1;
-    const memberBreakdown: MemberSpending[] = Array.from(memberPaidMap.entries())
-      .map(([mUid, paid]) => {
-        const profile = groupMembers.find((m) => m.uid === mUid);
-        const name = mUid === currentUid ? 'You' : profile?.name || 'Member';
-        const percentage = Math.round((paid / totalGroupSpend) * 100);
-        return {
-          uid: mUid,
-          name,
-          amountPaid: Math.round(paid * 100) / 100,
-          percentage,
-        };
-      })
-      .sort((a, b) => b.amountPaid - a.amountPaid);
-
-    // Top 3 highest expenses in selected period
-    const topExpenses = [...filteredExpenses]
+  // Top 3 highest expenses in selected group & period
+  const topExpenses = useMemo(() => {
+    if (selectedGroupId === 'all') return [];
+    return [...filteredExpenses]
+      .filter((exp) => exp.groupId === selectedGroupId)
       .sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0))
       .slice(0, 3);
-
-    let groupUserSent = 0;
-    let groupUserReceived = 0;
-    filteredSettlements.forEach((s) => {
-      if (s.groupId === selectedGroupId && (s.status === 'completed' || !s.status)) {
-        if (s.fromUserId === currentUid) groupUserSent += Number(s.amount) || 0;
-        if (s.toUserId === currentUid) groupUserReceived += Number(s.amount) || 0;
-      }
-    });
-
-    let groupYouPaid = 0;
-    let groupYourShare = 0;
-    filteredExpenses.forEach((exp) => {
-      if (exp.groupId === selectedGroupId) {
-        if (exp.paidBy === currentUid) groupYouPaid += Number(exp.amount) || 0;
-        const splits = getEffectiveSplitDetails(exp, currentGroup);
-        if (splits[currentUid]) groupYourShare += Number(splits[currentUid]) || 0;
-      }
-    });
-
-    const calculatedGroupBalance = dateFilter === 'all_time'
-      ? (groupBalances[selectedGroupId] ?? Math.round((groupYouPaid - groupYourShare + groupUserSent - groupUserReceived) * 100) / 100)
-      : Math.round((groupYouPaid - groupYourShare + groupUserSent - groupUserReceived) * 100) / 100;
-
-    return {
-      groupName: currentGroup?.name || 'Group',
-      groupBalance: calculatedGroupBalance,
-      memberBreakdown,
-      topExpenses,
-    };
-  }, [selectedGroupId, groupMap, filteredExpenses, filteredSettlements, dateFilter, overviewMetrics.totalSpending, groupMembers, currentUid, groupBalances]);
+  }, [selectedGroupId, filteredExpenses]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Firestore subscriptions update automatically, reset refreshing after brief pulse
     setTimeout(() => setRefreshing(false), 800);
   }, []);
 
@@ -534,17 +795,24 @@ export default function AnalyticsScreen() {
     }
   };
 
-  const maxMonthValue = useMemo(() => {
-    const max = Math.max(...monthlyTrends.map((m) => m.totalSpend), 1);
-    return max;
-  }, [monthlyTrends]);
-
-  const selectedMonthTrend = selectedMonthIndex !== null ? monthlyTrends[selectedMonthIndex] : null;
+  const handleSelectGroupFilter = (gId: string) => {
+    setSelectedGroupId(gId);
+    setSelectedMemberId(null);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 12) + 8, backgroundColor: colors.surfaceContainerLowest, borderBottomColor: colors.divider }]}>
+      {/* 1. Top Header */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: Math.max(insets.top, 12) + 8,
+            backgroundColor: colors.surfaceContainerLowest,
+            borderBottomColor: colors.divider,
+          },
+        ]}
+      >
         <View style={styles.headerTitleRow}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
             {navigation.canGoBack() && (
@@ -565,6 +833,7 @@ export default function AnalyticsScreen() {
               </Text>
             </View>
           </View>
+
           <TouchableOpacity
             style={[styles.headerActionBtn, { backgroundColor: colors.primary + '18' }]}
             onPress={handleAddExpense}
@@ -575,7 +844,7 @@ export default function AnalyticsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Group Filter Selector */}
+        {/* Group Filter Chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -587,9 +856,15 @@ export default function AnalyticsScreen() {
               styles.groupChip,
               selectedGroupId === 'all'
                 ? [styles.groupChipActive, { backgroundColor: colors.primary }]
-                : [styles.groupChipInactive, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.divider }],
+                : [
+                    styles.groupChipInactive,
+                    {
+                      backgroundColor: colors.surfaceContainerLow,
+                      borderColor: colors.divider,
+                    },
+                  ],
             ]}
-            onPress={() => setSelectedGroupId('all')}
+            onPress={() => handleSelectGroupFilter('all')}
             activeOpacity={0.7}
           >
             <MaterialIcons
@@ -617,9 +892,15 @@ export default function AnalyticsScreen() {
                   styles.groupChip,
                   isSelected
                     ? [styles.groupChipActive, { backgroundColor: colors.primary }]
-                    : [styles.groupChipInactive, { backgroundColor: colors.surfaceContainerLow, borderColor: colors.divider }],
+                    : [
+                        styles.groupChipInactive,
+                        {
+                          backgroundColor: colors.surfaceContainerLow,
+                          borderColor: colors.divider,
+                        },
+                      ],
                 ]}
-                onPress={() => setSelectedGroupId(g.groupId)}
+                onPress={() => handleSelectGroupFilter(g.groupId)}
                 activeOpacity={0.7}
               >
                 <MaterialIcons
@@ -642,7 +923,7 @@ export default function AnalyticsScreen() {
           })}
         </ScrollView>
 
-        {/* Date Range Filter Bar */}
+        {/* 2. Date Range Filter Bar */}
         <View style={[styles.dateFilterContainer, { borderTopColor: colors.divider }]}>
           {(
             [
@@ -658,7 +939,13 @@ export default function AnalyticsScreen() {
                 key={item.id}
                 style={[
                   styles.dateFilterTab,
-                  isActive && [styles.dateFilterTabActive, { borderColor: colors.primary, backgroundColor: colors.primary + '12' }],
+                  isActive && [
+                    styles.dateFilterTabActive,
+                    {
+                      borderColor: colors.primary,
+                      backgroundColor: colors.primary + '14',
+                    },
+                  ],
                 ]}
                 onPress={() => setDateFilter(item.id)}
                 activeOpacity={0.7}
@@ -692,12 +979,16 @@ export default function AnalyticsScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 90 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
           }
         >
-          {/* Section A: Overview Metrics Cards */}
+          {/* 3. Overview Summary Cards */}
           <View style={styles.metricsGrid}>
-            {/* Card 1: Total Group Spending */}
+            {/* Card 1: Total Spending */}
             <View
               style={[
                 styles.metricCard,
@@ -705,7 +996,9 @@ export default function AnalyticsScreen() {
               ]}
             >
               <View style={styles.metricCardTop}>
-                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>Total Spending</Text>
+                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                  Total Spending
+                </Text>
                 <View style={[styles.metricIconWrap, { backgroundColor: '#0284C7' + '18' }]}>
                   <MaterialIcons name="account-balance" size={16} color="#0284C7" />
                 </View>
@@ -726,7 +1019,9 @@ export default function AnalyticsScreen() {
               ]}
             >
               <View style={styles.metricCardTop}>
-                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>You Paid</Text>
+                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                  You Paid
+                </Text>
                 <View style={[styles.metricIconWrap, { backgroundColor: '#8B5CF6' + '18' }]}>
                   <MaterialIcons name="payment" size={16} color="#8B5CF6" />
                 </View>
@@ -747,7 +1042,9 @@ export default function AnalyticsScreen() {
               ]}
             >
               <View style={styles.metricCardTop}>
-                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>Your Share</Text>
+                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                  Your Share
+                </Text>
                 <View style={[styles.metricIconWrap, { backgroundColor: '#0EA5E9' + '18' }]}>
                   <MaterialIcons name="person" size={16} color="#0EA5E9" />
                 </View>
@@ -776,7 +1073,9 @@ export default function AnalyticsScreen() {
               ]}
             >
               <View style={styles.metricCardTop}>
-                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>Net Balance</Text>
+                <Text style={[styles.metricLabel, { color: colors.onSurfaceVariant }]}>
+                  Net Balance
+                </Text>
                 <View
                   style={[
                     styles.metricIconWrap,
@@ -855,21 +1154,28 @@ export default function AnalyticsScreen() {
               </Text>
               <Text style={[styles.emptySubtitle, { color: colors.onSurfaceVariant }]}>
                 {selectedGroupId !== 'all'
-                  ? 'Add your first expense to this group to see detailed breakdown and insights.'
-                  : 'Record expenses across your groups to unlock monthly trends and category breakdowns.'}
+                  ? 'Add your first expense to this group to see interactive member breakdowns, category charts, and spending trends.'
+                  : 'Record expenses across your groups to unlock monthly trends, member contributions, and category breakdowns.'}
               </Text>
               <TouchableOpacity
                 style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]}
                 onPress={handleAddExpense}
                 activeOpacity={0.8}
               >
-                <MaterialIcons name="add" size={18} color={colors.onPrimary} style={{ marginRight: 6 }} />
-                <Text style={[styles.emptyAddBtnText, { color: colors.onPrimary }]}>Add Expense</Text>
+                <MaterialIcons
+                  name="add"
+                  size={18}
+                  color={colors.onPrimary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={[styles.emptyAddBtnText, { color: colors.onPrimary }]}>
+                  Add Expense
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
             <>
-              {/* Section B: Spending Trends Bar Chart */}
+              {/* 4. Priority Feature: Member Spending Breakdown Donut Chart */}
               <View
                 style={[
                   styles.sectionCard,
@@ -877,148 +1183,116 @@ export default function AnalyticsScreen() {
                 ]}
               >
                 <View style={styles.sectionHeaderRow}>
-                  <View>
+                  <View style={{ flex: 1, marginRight: Spacing.xs }}>
                     <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
-                      Monthly Spending Trends
+                      Member Spending Breakdown
                     </Text>
                     <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
-                      Last 6 months overview
+                      {selectedGroupId !== 'all'
+                        ? `Contributions for ${groupMap.get(selectedGroupId)?.name || 'Group'}`
+                        : 'Contributions across active groups'}
                     </Text>
                   </View>
 
-                  {monthComparison && (
-                    <View
+                  {/* Amount Paid vs Expense Share Toggle */}
+                  <View
+                    style={[
+                      styles.toggleWrap,
+                      {
+                        backgroundColor: colors.surfaceContainerLow,
+                        borderColor: colors.divider,
+                      },
+                    ]}
+                  >
+                    <TouchableOpacity
                       style={[
-                        styles.trendBadge,
-                        {
-                          backgroundColor:
-                            monthComparison.direction === 'up'
-                              ? '#F59E0B' + '20'
-                              : monthComparison.direction === 'down'
-                              ? '#10B981' + '20'
-                              : colors.surfaceContainerLow,
-                        },
+                        styles.togglePill,
+                        memberViewMode === 'paid' && [
+                          styles.togglePillActive,
+                          { backgroundColor: colors.primary },
+                        ],
                       ]}
+                      onPress={() => setMemberViewMode('paid')}
+                      activeOpacity={0.7}
                     >
-                      <MaterialIcons
-                        name={
-                          monthComparison.direction === 'up'
-                            ? 'north'
-                            : monthComparison.direction === 'down'
-                            ? 'south'
-                            : 'remove'
-                        }
-                        size={12}
-                        color={
-                          monthComparison.direction === 'up'
-                            ? '#F59E0B'
-                            : monthComparison.direction === 'down'
-                            ? '#10B981'
-                            : colors.onSurfaceVariant
-                        }
-                      />
                       <Text
                         style={[
-                          styles.trendBadgeText,
+                          styles.togglePillText,
                           {
                             color:
-                              monthComparison.direction === 'up'
-                                ? '#F59E0B'
-                                : monthComparison.direction === 'down'
-                                ? '#10B981'
+                              memberViewMode === 'paid'
+                                ? colors.onPrimary
                                 : colors.onSurfaceVariant,
+                            fontWeight: memberViewMode === 'paid' ? '700' : '500',
                           },
                         ]}
                       >
-                        {monthComparison.direction === 'flat'
-                          ? '0% vs last mo'
-                          : `${monthComparison.changePercent}% vs last mo`}
+                        Amount Paid
                       </Text>
-                    </View>
-                  )}
-                </View>
+                    </TouchableOpacity>
 
-                {/* Vertical Bar Chart */}
-                <View style={styles.chartContainer}>
-                  <View style={styles.barsRow}>
-                    {monthlyTrends.map((trend, index) => {
-                      const isSelected = selectedMonthIndex === index;
-                      const heightPercent = maxMonthValue > 0 ? (trend.totalSpend / maxMonthValue) * 100 : 0;
-                      const barHeight = Math.max(12, (heightPercent / 100) * 110);
-
-                      return (
-                        <TouchableOpacity
-                          key={trend.monthKey}
-                          style={styles.barColumn}
-                          onPress={() =>
-                            setSelectedMonthIndex(isSelected ? null : index)
-                          }
-                          activeOpacity={0.8}
-                        >
-                          <View style={styles.barTrack}>
-                            <View
-                              style={[
-                                styles.barFill,
-                                {
-                                  height: barHeight,
-                                  backgroundColor: isSelected ? colors.secondary : colors.primary,
-                                  opacity: isSelected ? 1 : 0.85,
-                                },
-                              ]}
-                            />
-                          </View>
-                          <Text
-                            style={[
-                              styles.barLabel,
-                              {
-                                color: isSelected ? colors.primary : colors.onSurfaceVariant,
-                                fontWeight: isSelected ? '700' : '500',
-                              },
-                            ]}
-                          >
-                            {trend.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    <TouchableOpacity
+                      style={[
+                        styles.togglePill,
+                        memberViewMode === 'share' && [
+                          styles.togglePillActive,
+                          { backgroundColor: colors.primary },
+                        ],
+                      ]}
+                      onPress={() => setMemberViewMode('share')}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.togglePillText,
+                          {
+                            color:
+                              memberViewMode === 'share'
+                                ? colors.onPrimary
+                                : colors.onSurfaceVariant,
+                            fontWeight: memberViewMode === 'share' ? '700' : '500',
+                          },
+                        ]}
+                      >
+                        Expense Share
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Selected Month Detail Highlight */}
-                {selectedMonthTrend && (
-                  <View
-                    style={[
-                      styles.selectedMonthBox,
-                      { backgroundColor: colors.surfaceContainerLow, borderColor: colors.primary },
-                    ]}
-                  >
-                    <View style={styles.selectedMonthHeader}>
-                      <Text style={[styles.selectedMonthTitle, { color: colors.onSurface }]}>
-                        {selectedMonthTrend.label} {selectedMonthTrend.year} Details
-                      </Text>
-                      <TouchableOpacity onPress={() => setSelectedMonthIndex(null)}>
-                        <MaterialIcons name="close" size={16} color={colors.onSurfaceVariant} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.selectedMonthValues}>
-                      <View>
-                        <Text style={[styles.selectedMonthSub, { color: colors.onSurfaceVariant }]}>Total Spend</Text>
-                        <Text style={[styles.selectedMonthVal, { color: colors.onSurface }]}>
-                          {formatCurrency(selectedMonthTrend.totalSpend)}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[styles.selectedMonthSub, { color: colors.onSurfaceVariant }]}>Your Share</Text>
-                        <Text style={[styles.selectedMonthVal, { color: colors.primary }]}>
-                          {formatCurrency(selectedMonthTrend.userShare)}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                )}
+                {/* Donut Chart */}
+                <InteractiveDonutChart
+                  data={memberDonutData}
+                  totalValue={overviewMetrics.totalSpending}
+                  centerTitle={memberViewMode === 'paid' ? 'Total Paid' : 'Total Share'}
+                  centerSubtitle={`${memberDonutData.length} ${memberDonutData.length === 1 ? 'member' : 'members'}`}
+                  selectedId={selectedMemberId}
+                  onSelectId={setSelectedMemberId}
+                  colors={colors}
+                  isDark={isDark}
+                />
               </View>
 
-              {/* Section C: Category Breakdown */}
+              {/* 5. Monthly Spending Trend (Area / Line Chart) */}
+              <View
+                style={[
+                  styles.sectionCard,
+                  { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                ]}
+              >
+                <TrendAreaChart
+                  data={monthlyTrends}
+                  viewMonths={trendViewMonths}
+                  onChangeViewMonths={setTrendViewMonths}
+                  selectedIndex={selectedMonthIndex}
+                  onSelectIndex={setSelectedMonthIndex}
+                  colors={colors}
+                  isDark={isDark}
+                  monthComparison={monthComparison}
+                />
+              </View>
+
+              {/* 6. Category Breakdown Donut Chart */}
               <View
                 style={[
                   styles.sectionCard,
@@ -1031,68 +1305,54 @@ export default function AnalyticsScreen() {
                       Category Breakdown
                     </Text>
                     <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
-                      Spending by activity
+                      Spending distribution by activity
                     </Text>
                   </View>
                   <Text style={[styles.categoryCount, { color: colors.onSurfaceVariant }]}>
-                    {categoryBreakdown.length} {categoryBreakdown.length === 1 ? 'category' : 'categories'}
+                    {categoryBreakdown.length}{' '}
+                    {categoryBreakdown.length === 1 ? 'category' : 'categories'}
                   </Text>
                 </View>
 
-                <View style={styles.categoryList}>
-                  {categoryBreakdown.map((item) => (
-                    <View key={item.category} style={styles.categoryRow}>
-                      <View style={styles.categoryTopLine}>
-                        <View style={styles.categoryTitleGroup}>
-                          <View
-                            style={[
-                              styles.categoryIconCircle,
-                              { backgroundColor: item.color + '18' },
-                            ]}
-                          >
-                            <MaterialIcons name={item.icon as any} size={16} color={item.color} />
-                          </View>
-                          <Text style={[styles.categoryName, { color: colors.onSurface }]}>
-                            {item.label}
-                          </Text>
-                        </View>
-                        <View style={styles.categoryAmountGroup}>
-                          <Text style={[styles.categoryTotalAmount, { color: colors.onSurface }]}>
-                            {formatCurrency(item.totalAmount)}
-                          </Text>
-                          <Text style={[styles.categoryPercentage, { color: colors.onSurfaceVariant }]}>
-                            {item.percentage}%
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Progress Bar */}
-                      <View style={[styles.progressBarTrack, { backgroundColor: colors.surfaceContainerLow }]}>
-                        <View
-                          style={[
-                            styles.progressBarFill,
-                            {
-                              width: `${Math.min(100, Math.max(3, item.percentage))}%`,
-                              backgroundColor: item.color,
-                            },
-                          ]}
-                        />
-                      </View>
-
-                      {/* Subtle user share indicator */}
-                      <View style={styles.categoryFooterRow}>
-                        <Text style={[styles.categoryShareLabel, { color: colors.onSurfaceVariant }]}>
-                          Your Share: <Text style={{ color: colors.primary, fontWeight: '600' }}>{formatCurrency(item.userShare)}</Text>
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
+                <InteractiveDonutChart
+                  data={categoryDonutData}
+                  totalValue={overviewMetrics.totalSpending}
+                  centerTitle="Categories"
+                  centerSubtitle={`${categoryBreakdown.length} active`}
+                  selectedId={selectedCategoryKey}
+                  onSelectId={setSelectedCategoryKey}
+                  colors={colors}
+                  isDark={isDark}
+                />
               </View>
 
-              {/* Section D: Group Analysis */}
-              {selectedGroupId === 'all' ? (
-                /* All Groups List Breakdown */
+              {/* 7. Group Spending Comparison (Horizontal Bar Chart) */}
+              <View
+                style={[
+                  styles.sectionCard,
+                  { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
+                ]}
+              >
+                <View style={styles.sectionHeaderRow}>
+                  <View>
+                    <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
+                      Group Spending Comparison
+                    </Text>
+                    <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
+                      Total spending vs your share across groups
+                    </Text>
+                  </View>
+                </View>
+
+                <HorizontalBarChart
+                  data={allGroupsBreakdown}
+                  colors={colors}
+                  isDark={isDark}
+                />
+              </View>
+
+              {/* Top Expenses (for selected individual group) */}
+              {selectedGroupId !== 'all' && topExpenses.length > 0 && (
                 <View
                   style={[
                     styles.sectionCard,
@@ -1102,207 +1362,68 @@ export default function AnalyticsScreen() {
                   <View style={styles.sectionHeaderRow}>
                     <View>
                       <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
-                        Active Groups Analysis
+                        Top Expenses
                       </Text>
                       <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
-                        Spending per group in selected range
+                        Highest recorded amounts in this period
                       </Text>
                     </View>
                   </View>
 
-                  <View style={styles.groupList}>
-                    {allGroupsBreakdown.map((g) => (
-                      <TouchableOpacity
-                        key={g.groupId}
-                        style={[
-                          styles.groupAnalysisItem,
-                          { borderColor: colors.divider, backgroundColor: colors.surfaceContainerLow },
-                        ]}
-                        onPress={() => setSelectedGroupId(g.groupId)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.groupAnalysisLeft}>
-                          <View
-                            style={[
-                              styles.groupAnalysisIcon,
-                              { backgroundColor: colors.primary + '18' },
-                            ]}
-                          >
-                            <MaterialIcons name="groups" size={20} color={colors.primary} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={[styles.groupAnalysisName, { color: colors.onSurface }]}
-                              numberOfLines={1}
+                  <View style={styles.topExpenseList}>
+                    {topExpenses.map((exp, idx) => {
+                      const norm = normalizeCategory(exp.category);
+                      return (
+                        <TouchableOpacity
+                          key={exp.expenseId || String(idx)}
+                          style={[
+                            styles.topExpenseRow,
+                            {
+                              borderColor: colors.divider,
+                              backgroundColor: colors.surfaceContainerLow,
+                            },
+                          ]}
+                          onPress={() => navigation.navigate('ExpenseDetail', { expense: exp })}
+                          activeOpacity={0.7}
+                        >
+                          <View style={styles.topExpenseLeft}>
+                            <View
+                              style={[
+                                styles.topExpenseIcon,
+                                { backgroundColor: norm.color + '18' },
+                              ]}
                             >
-                              {g.groupName}
-                            </Text>
-                            <Text style={[styles.groupAnalysisSub, { color: colors.onSurfaceVariant }]}>
-                              Your Share: {formatCurrency(g.userShare)}
-                            </Text>
+                              <MaterialIcons name={norm.icon as any} size={18} color={norm.color} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={[styles.topExpenseTitle, { color: colors.onSurface }]}
+                                numberOfLines={1}
+                              >
+                                {exp.title}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.topExpenseMeta,
+                                  { color: colors.onSurfaceVariant },
+                                ]}
+                              >
+                                Paid by{' '}
+                                {exp.paidByName ||
+                                  (exp.paidBy === currentUid ? 'You' : 'Member')}{' '}
+                                • {formatFirestoreDate(exp.createdAt, exp.date)}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
-
-                        <View style={styles.groupAnalysisRight}>
-                          <Text style={[styles.groupAnalysisTotal, { color: colors.onSurface }]}>
-                            {formatCurrency(g.totalSpend)}
-                          </Text>
                           <Text
-                            style={[
-                              styles.groupAnalysisBalance,
-                              {
-                                color:
-                                  g.balance > 0
-                                    ? '#10B981'
-                                    : g.balance < 0
-                                    ? '#F59E0B'
-                                    : colors.onSurfaceVariant,
-                              },
-                            ]}
-                          >
-                            {g.balance > 0
-                              ? `+${formatCurrency(g.balance)}`
-                              : g.balance < 0
-                              ? `-${formatCurrency(Math.abs(g.balance))}`
-                              : 'Settled'}
+                            style={[styles.topExpenseAmount, { color: colors.onSurface }]}>
+                            {formatCurrency(exp.amount)}
                           </Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
-              ) : (
-                /* Individual Group View: Member Breakdown & Top 3 Expenses */
-                individualGroupDetails && (
-                  <>
-                    {/* Member-wise spending */}
-                    <View
-                      style={[
-                        styles.sectionCard,
-                        { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
-                      ]}
-                    >
-                      <View style={styles.sectionHeaderRow}>
-                        <View>
-                          <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
-                            Member Spending Breakdown
-                          </Text>
-                          <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
-                            Who paid what in {individualGroupDetails.groupName}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.memberList}>
-                        {individualGroupDetails.memberBreakdown.map((m) => (
-                          <View key={m.uid} style={styles.memberRow}>
-                            <View style={styles.memberInfo}>
-                              <View
-                                style={[
-                                  styles.memberAvatarCircle,
-                                  {
-                                    backgroundColor:
-                                      m.uid === currentUid ? colors.primary + '20' : colors.surfaceContainerHigh,
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.memberAvatarText,
-                                    { color: m.uid === currentUid ? colors.primary : colors.onSurface },
-                                  ]}
-                                >
-                                  {m.name.charAt(0).toUpperCase()}
-                                </Text>
-                              </View>
-                              <View>
-                                <Text
-                                  style={[
-                                    styles.memberName,
-                                    { color: colors.onSurface },
-                                    m.uid === currentUid && { fontWeight: '700', color: colors.primary },
-                                  ]}
-                                >
-                                  {m.name}
-                                </Text>
-                                <Text style={[styles.memberPct, { color: colors.onSurfaceVariant }]}>
-                                  {m.percentage}% of total group spend
-                                </Text>
-                              </View>
-                            </View>
-                            <Text style={[styles.memberAmount, { color: colors.onSurface }]}>
-                              {formatCurrency(m.amountPaid)}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-
-                    {/* Top 3 Highest Expenses */}
-                    {individualGroupDetails.topExpenses.length > 0 && (
-                      <View
-                        style={[
-                          styles.sectionCard,
-                          { backgroundColor: colors.surfaceContainerLowest, borderColor: colors.divider },
-                        ]}
-                      >
-                        <View style={styles.sectionHeaderRow}>
-                          <View>
-                            <Text style={[styles.sectionTitle, { color: colors.onSurface }]}>
-                              Top Expenses
-                            </Text>
-                            <Text style={[styles.sectionSubtitle, { color: colors.onSurfaceVariant }]}>
-                              Highest recorded amounts in this period
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.topExpenseList}>
-                          {individualGroupDetails.topExpenses.map((exp, idx) => {
-                            const norm = normalizeCategory(exp.category);
-                            return (
-                              <TouchableOpacity
-                                key={exp.expenseId || String(idx)}
-                                style={[
-                                  styles.topExpenseRow,
-                                  { borderColor: colors.divider, backgroundColor: colors.surfaceContainerLow },
-                                ]}
-                                onPress={() => navigation.navigate('ExpenseDetail', { expense: exp })}
-                                activeOpacity={0.7}
-                              >
-                                <View style={styles.topExpenseLeft}>
-                                  <View
-                                    style={[
-                                      styles.topExpenseIcon,
-                                      { backgroundColor: norm.color + '18' },
-                                    ]}
-                                  >
-                                    <MaterialIcons name={norm.icon as any} size={18} color={norm.color} />
-                                  </View>
-                                  <View style={{ flex: 1 }}>
-                                    <Text
-                                      style={[styles.topExpenseTitle, { color: colors.onSurface }]}
-                                      numberOfLines={1}
-                                    >
-                                      {exp.title}
-                                    </Text>
-                                    <Text style={[styles.topExpenseMeta, { color: colors.onSurfaceVariant }]}>
-                                      Paid by {exp.paidByName || (exp.paidBy === currentUid ? 'You' : 'Member')} •{' '}
-                                      {formatFirestoreDate(exp.createdAt, exp.date)}
-                                    </Text>
-                                  </View>
-                                </View>
-                                <Text style={[styles.topExpenseAmount, { color: colors.onSurface }]}>
-                                  {formatCurrency(exp.amount)}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    )}
-                  </>
-                )
               )}
             </>
           )}
@@ -1501,13 +1622,14 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    gap: Spacing.md,
+    gap: Spacing.sm,
     ...Shadows.card,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    marginBottom: Spacing.xs,
   },
   sectionTitle: {
     ...Typography.titleSm,
@@ -1519,216 +1641,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 1,
   },
-  trendBadge: {
+  toggleWrap: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 3,
-  },
-  trendBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  chartContainer: {
-    paddingVertical: Spacing.xs,
-  },
-  barsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 140,
-    paddingTop: 10,
-    paddingHorizontal: 6,
-  },
-  barColumn: {
-    alignItems: 'center',
-    flex: 1,
-    height: '100%',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  barTrack: {
-    width: 22,
-    height: 110,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  barFill: {
-    width: '100%',
-    borderRadius: 6,
-    minHeight: 8,
-  },
-  barLabel: {
-    fontSize: 11,
-  },
-  selectedMonthBox: {
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
+    borderRadius: 16,
     borderWidth: 1,
-    gap: Spacing.xs,
+    padding: 2,
+    alignSelf: 'flex-start',
   },
-  selectedMonthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  togglePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
   },
-  selectedMonthTitle: {
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  selectedMonthValues: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  selectedMonthSub: {
-    fontSize: 10,
-    textTransform: 'uppercase',
-  },
-  selectedMonthVal: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 2,
+  togglePillActive: {},
+  togglePillText: {
+    fontSize: 11,
   },
   categoryCount: {
     fontSize: 11,
     fontWeight: '600',
-  },
-  categoryList: {
-    gap: Spacing.md,
-  },
-  categoryRow: {
-    gap: 6,
-  },
-  categoryTopLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  categoryTitleGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  categoryIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  categoryName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  categoryAmountGroup: {
-    alignItems: 'flex-end',
-  },
-  categoryTotalAmount: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  categoryPercentage: {
-    fontSize: 10,
-  },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  categoryFooterRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  categoryShareLabel: {
-    fontSize: 11,
-  },
-  groupList: {
-    gap: Spacing.xs,
-  },
-  groupAnalysisItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: Spacing.sm + 2,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-  },
-  groupAnalysisLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flex: 1,
-    marginRight: Spacing.sm,
-  },
-  groupAnalysisIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  groupAnalysisName: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  groupAnalysisSub: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  groupAnalysisRight: {
-    alignItems: 'flex-end',
-  },
-  groupAnalysisTotal: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupAnalysisBalance: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  memberList: {
-    gap: Spacing.sm,
-  },
-  memberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  memberInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  memberAvatarCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  memberAvatarText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  memberName: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  memberPct: {
-    fontSize: 10,
-  },
-  memberAmount: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   topExpenseList: {
     gap: Spacing.xs,
