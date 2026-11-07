@@ -26,6 +26,7 @@ import {
   formatCurrency,
 } from '../services/firestoreService';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import { shareApp } from '../config/appConfig';
 
 interface AddGroupMemberModalProps {
@@ -50,6 +51,7 @@ export function AddGroupMemberModal({
   onMemberAdded,
 }: AddGroupMemberModalProps) {
   const { colors } = useTheme();
+  const dialog = useDialog();
   const currentUser = auth.currentUser;
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -140,7 +142,7 @@ export function AddGroupMemberModal({
 
   const handleConfirmAdd = async () => {
     if (!selectedUser || !selectedUser.uid) {
-      Alert.alert('Error', 'Only users registered on SplitMate can be added to groups currently.');
+      dialog.showWarning('Registration Required', 'Only users registered on SplitMate can be added to groups currently.');
       return;
     }
 
@@ -157,7 +159,7 @@ export function AddGroupMemberModal({
       onMemberAdded();
       onClose();
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to add member.');
+      dialog.showError('Error', e.message || 'Failed to add member.');
     } finally {
       setSubmitting(false);
     }

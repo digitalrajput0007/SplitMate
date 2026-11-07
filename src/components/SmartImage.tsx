@@ -36,8 +36,9 @@ export const SmartImage = React.memo(function SmartImage({
   const hasSource = !hasError && !!(uri || thumbnailUri);
 
   if (!hasSource) {
+    const isSmallAvatar = !!(size && size <= 26);
     const initials = name
-      ? name.trim().split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, 2)
+      ? name.trim().split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase().slice(0, isSmallAvatar ? 1 : 2)
       : null;
 
     const isCustomIcon = fallbackIcon && fallbackIcon !== 'person';
@@ -51,8 +52,9 @@ export const SmartImage = React.memo(function SmartImage({
             style={[
               styles.initials,
               {
-                fontSize: size ? size * 0.38 : 16,
+                fontSize: size ? (isSmallAvatar ? Math.max(10, Math.round(size * 0.46)) : Math.round(size * 0.38)) : 16,
                 color: colors.primary,
+                fontWeight: '700',
               },
             ]}
             numberOfLines={1}

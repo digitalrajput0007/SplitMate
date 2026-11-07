@@ -15,7 +15,7 @@ export type RootStackParamList = {
   OTPVerification: { email: string, type: 'verify' | 'reset' };
   ForgotPassword: { email?: string };
   Contacts: undefined;
-  Analytics: undefined;
+  Analytics: { groupId?: string; dateFilter?: string; openDownloadModal?: boolean } | undefined;
   AddExpense: { groupId?: string; groupName?: string; initialBillingMonth?: string } | undefined;
   CreateGroup: undefined;
   GroupDetail: { groupId: string; groupName: string };
@@ -41,7 +41,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   HomeTab: undefined;
   GroupsTab: undefined;
-  AnalyticsTab: undefined;
+  AnalyticsTab: { groupId?: string; dateFilter?: string; openDownloadModal?: boolean } | undefined;
   ContactsTab?: undefined;
   ActivityTab: undefined;
   AccountTab: undefined;

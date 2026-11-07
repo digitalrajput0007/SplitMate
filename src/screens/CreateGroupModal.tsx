@@ -22,6 +22,7 @@ import * as Contacts from 'expo-contacts';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
+import { useDialog } from '../context/DialogContext';
 import {
   createGroupInFirestore,
   getSavedUserContactsFromFirestore,
@@ -60,6 +61,7 @@ const GROUP_TYPES: Array<{ id: GroupTypeOption; label: string; icon: keyof typeo
 export default function CreateGroupModal({ navigation }: Props) {
   const currentUser = auth.currentUser;
   const { colors, isDark } = useTheme();
+  const dialog = useDialog();
   const insets = useSafeAreaInsets();
 
   const AVATAR_COLORS = React.useMemo(() => [
@@ -190,7 +192,7 @@ export default function CreateGroupModal({ navigation }: Props) {
   const handleAddCustomPhone = () => {
     const norm = customPhone.replace(/[^0-9]/g, '').slice(-10);
     if (norm.length !== 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit Indian phone number.');
+      dialog.showWarning('Invalid Number', 'Please enter a valid 10-digit Indian phone number.');
       return;
     }
 
@@ -219,7 +221,7 @@ export default function CreateGroupModal({ navigation }: Props) {
 
   const handleBasicsNext = () => {
     if (!groupName.trim()) {
-      Alert.alert('Group Name Required', 'Please enter a group name before proceeding.');
+      dialog.showWarning('Group Name Required', 'Please enter a group name before proceeding.');
       return;
     }
     setCurrentStep(2);
@@ -269,7 +271,7 @@ export default function CreateGroupModal({ navigation }: Props) {
       });
     } catch (e: any) {
       setCreating(false);
-      Alert.alert('Error', e.message || 'Failed to create group.');
+      dialog.showError('Error', e.message || 'Failed to create group.');
     }
   };
 

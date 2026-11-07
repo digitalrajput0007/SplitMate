@@ -10,11 +10,12 @@ import {
   Alert,
   Modal,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../navigation/types';
 import { Spacing, BorderRadius, Typography, Shadows } from '../theme';
+import DownloadReportModal from '../components/DownloadReportModal';
 import { useTheme } from '../context/ThemeContext';
 import { SmartImage } from '../components/SmartImage';
 import { auth } from '../config/firebase';
@@ -46,6 +47,7 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || 'user_current';
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const groupId = route.params?.groupId || 'goa_trip';
 
@@ -56,6 +58,11 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
   const [pendingMembers, setPendingMembers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => getCurrentBillingMonth());
+  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
+
+  const handleGoToGroupAnalytics = () => {
+    navigation.navigate('Analytics', { groupId });
+  };
   const [selectedMemberId, setSelectedMemberId] = useState<string>('all');
   const [memberModalVisible, setMemberModalVisible] = useState(false);
 
@@ -543,6 +550,8 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           })}
         </ScrollView>
 
+      
+
         {/* Member Filter Divider & Pill */}
         <View
           style={[
@@ -711,10 +720,16 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
             </View>
           )}
 
-          {/* Action Row */}
+          {/* Action Row: Add Expense + Settle + Analytics + Download */}
           <View style={styles.actionRow}>
             <TouchableOpacity
-              style={[styles.addBtnCircle, { backgroundColor: colors.primary }]}
+              style={[
+                styles.actionSquareBtn,
+                {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                },
+              ]}
               onPress={() =>
                 navigation.navigate('AddExpense', {
                   groupId,
@@ -723,8 +738,10 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                 })
               }
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Add Expense"
             >
-              <MaterialIcons name="add" size={28} color={colors.onPrimary} />
+              <MaterialIcons name="add" size={26} color={colors.onPrimary} />
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -749,11 +766,43 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
                 color={colors.primary}
                 style={{ marginRight: 6 }}
               />
-              <Text style={[styles.settleUpPillText, { color: colors.primary }]}>
+              <Text style={[styles.settleUpPillText, { color: colors.primary }]} numberOfLines={1}>
                 {selectedMonth === 'ALL'
                   ? 'Settle Up'
                   : `Settle ${formatBillingMonthLabel(selectedMonth)}`}
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionSquareBtn,
+                {
+                  backgroundColor: colors.surfaceContainerLowest,
+                  borderColor: colors.primary,
+                },
+              ]}
+              onPress={handleGoToGroupAnalytics}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Group Analytics"
+            >
+              <MaterialIcons name="insights" size={20} color={colors.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionSquareBtn,
+                {
+                  backgroundColor: colors.surfaceContainerLowest,
+                  borderColor: colors.primary,
+                },
+              ]}
+              onPress={() => setShowDownloadModal(true)}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Download Group Report"
+            >
+              <MaterialIcons name="file-download" size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1177,6 +1226,23 @@ export default function GroupDetailScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* Download Group Report Modal (Locked to this particular group) */}
+      <DownloadReportModal
+        visible={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        activeGroups={group ? [group] : []}
+        allExpenses={expenses}
+        allSettlements={settlements}
+        allUsersMap={memberProfilesMap}
+        currentUid={currentUid}
+        currentUserName={currentUser?.displayName || 'User'}
+        currentUserEmail={currentUser?.email || ''}
+        defaultGroupId={groupId}
+        lockGroup={true}
+        defaultDateFilter={selectedMonth === 'ALL' ? 'all_time' : 'this_month'}
+      />
+
     </SafeAreaView>
   );
 }
@@ -1365,25 +1431,19 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: 8,
     marginTop: Spacing.sm,
   },
-  addBtnCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
+
   settleUpPillBtn: {
     flex: 1,
-    height: 52,
+    height: 48,
     borderRadius: 14,
     borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   settleUpPillText: {
     ...Typography.titleMd,
@@ -1631,4 +1691,13 @@ const styles = StyleSheet.create({
     ...Typography.titleSm,
     fontWeight: '700',
   },
+  actionSquareBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
 });

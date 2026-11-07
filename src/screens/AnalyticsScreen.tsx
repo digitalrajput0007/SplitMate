@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
@@ -49,6 +49,9 @@ import {
   HorizontalBarChart,
   GroupSpendingItem,
 } from '../components/charts/HorizontalBarChart';
+import DownloadReportModal from '../components/DownloadReportModal';
+import { BannerAdSlot } from '../components/BannerAdSlot';
+import { initializeInterstitialAd, showInterstitialAd } from '../services/adMobService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -103,18 +106,31 @@ export default function AnalyticsScreen() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<any>();
+  const routeGroupId = route?.params?.groupId;
   const currentUser = auth.currentUser;
   const currentUid = currentUser?.uid || '';
 
   const { activeGroups, groupBalances, loading: groupsLoading } = useUserGroups();
 
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(() => routeGroupId || 'all');
+
+  useEffect(() => {
+    initializeInterstitialAd();
+  }, []);
+
+  useEffect(() => {
+    if (route?.params?.groupId) {
+      setSelectedGroupId(route.params.groupId);
+    }
+  }, [route?.params?.groupId]);
   const [dateFilter, setDateFilter] = useState<DateRangeFilter>('this_month');
   const [memberViewMode, setMemberViewMode] = useState<MemberViewMode>('paid');
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<string | null>(null);
   const [trendViewMonths, setTrendViewMonths] = useState<6 | 12>(6);
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(null);
+  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
 
   const [allExpenses, setAllExpenses] = useState<ExpenseData[]>([]);
   const [allSettlements, setAllSettlements] = useState<SettlementData[]>([]);
@@ -783,6 +799,12 @@ export default function AnalyticsScreen() {
     setTimeout(() => setRefreshing(false), 800);
   }, []);
 
+  const handleDownloadPress = () => {
+    showInterstitialAd(() => {
+      setShowDownloadModal(true);
+    });
+  };
+
   const handleAddExpense = () => {
     if (selectedGroupId !== 'all') {
       const group = groupMap.get(selectedGroupId);
@@ -834,14 +856,17 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={[styles.headerActionBtn, { backgroundColor: colors.primary + '18' }]}
-            onPress={handleAddExpense}
-            activeOpacity={0.7}
-            accessibilityLabel="Add Expense"
-          >
-            <MaterialIcons name="add" size={22} color={colors.primary} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
+            <TouchableOpacity
+              style={[styles.headerActionBtn, { backgroundColor: colors.primary + '18' }]}
+              onPress={handleDownloadPress}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Download Financial Report"
+            >
+              <MaterialIcons name="file-download" size={22} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Group Filter Chips */}
@@ -1138,6 +1163,7 @@ export default function AnalyticsScreen() {
             </View>
           </View>
 
+
           {/* Empty State Banner if no expenses in range */}
           {filteredExpenses.length === 0 ? (
             <View
@@ -1175,6 +1201,9 @@ export default function AnalyticsScreen() {
             </View>
           ) : (
             <>
+              {/* Banner Ad Slot above Member Spending Breakdown */}
+              <BannerAdSlot style={{ marginVertical: Spacing.sm }} />
+
               {/* 4. Priority Feature: Member Spending Breakdown Donut Chart */}
               <View
                 style={[
@@ -1429,6 +1458,21 @@ export default function AnalyticsScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Download Financial Report Modal */}
+      <DownloadReportModal
+        visible={showDownloadModal}
+        onClose={() => setShowDownloadModal(false)}
+        activeGroups={activeGroups}
+        allExpenses={allExpenses}
+        allSettlements={allSettlements}
+        allUsersMap={allUsersMap}
+        currentUid={currentUid}
+        currentUserName={currentUser?.displayName || 'User'}
+        currentUserEmail={currentUser?.email || ''}
+        defaultGroupId={selectedGroupId}
+        defaultDateFilter={dateFilter}
+      />
     </View>
   );
 }

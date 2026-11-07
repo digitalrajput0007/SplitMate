@@ -85,28 +85,43 @@ export default function HomeScreen() {
     }
   }, [currentUser?.uid]);
 
-  // Listen to needed user profiles for activity feed
+  // Listen to needed user profiles for group members, activity feed, and alerts
   useEffect(() => {
-    if (recentActivities.length === 0 && unreadNotifications.length === 0 && pendingConfirmations.length === 0) return;
-
     const uidsToFetch = new Set<string>();
-    recentActivities.forEach(a => {
+
+    // 1. Group member profiles for My Groups preview
+    groups.slice(0, 5).forEach((g) => {
+      if (g.memberIds && Array.isArray(g.memberIds)) {
+        g.memberIds.forEach((uid: string) => {
+          if (uid) uidsToFetch.add(uid);
+        });
+      }
+    });
+
+    // 2. Activity feed profiles
+    recentActivities.forEach((a) => {
       if (a.actorUid) uidsToFetch.add(a.actorUid);
       if (a.targetUid) uidsToFetch.add(a.targetUid);
     });
-    unreadNotifications.forEach(n => {
+
+    // 3. Unread notification profiles
+    unreadNotifications.forEach((n) => {
       if (n.senderUid) uidsToFetch.add(n.senderUid);
     });
-    pendingConfirmations.forEach(s => {
+
+    // 4. Pending confirmation profiles
+    pendingConfirmations.forEach((s) => {
       if (s.fromUserId) uidsToFetch.add(s.fromUserId);
     });
 
+    if (uidsToFetch.size === 0) return;
+
     const unsubs: (() => void)[] = [];
-    uidsToFetch.forEach(uid => {
+    uidsToFetch.forEach((uid) => {
       if (!allUsersMap.has(uid)) {
         const unsub = subscribeToUserProfile(uid, (profile) => {
           if (profile) {
-            setAllUsersMap(prev => {
+            setAllUsersMap((prev) => {
               const next = new Map(prev);
               next.set(uid, profile);
               return next;
@@ -117,8 +132,8 @@ export default function HomeScreen() {
       }
     });
 
-    return () => unsubs.forEach(u => u());
-  }, [recentActivities, unreadNotifications, pendingConfirmations]);
+    return () => unsubs.forEach((u) => u());
+  }, [groups, recentActivities, unreadNotifications, pendingConfirmations]);
 
   // Dashboard Subscriptions
   useEffect(() => {
@@ -145,6 +160,11 @@ export default function HomeScreen() {
           if (data.name) setFirstName(data.name.split(' ')[0]);
           setUserPhoto(data.photoUrl || '');
           setUserPhotoThumb(data.photoThumbnailUrl || '');
+          setAllUsersMap((prev) => {
+            const next = new Map(prev);
+            next.set(currentUser.uid, data);
+            return next;
+          });
         }
       });
     });
@@ -319,11 +339,15 @@ export default function HomeScreen() {
             accessibilityLabel="Add Expense, Split a bill"
           >
             <View style={[styles.quickActionIconCircle, { backgroundColor: colors.primary + '18' }]}>
-              <MaterialIcons name="add-circle" size={26} color={colors.primary} />
+              <MaterialIcons name="add-circle" size={24} color={colors.primary} />
             </View>
             <View style={styles.quickActionTextContainer}>
-              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Add Expense</Text>
-              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Split a bill</Text>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]} numberOfLines={1} adjustsFontSizeToFit>
+                Add Expense
+              </Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                Split a bill
+              </Text>
             </View>
           </TouchableOpacity>
 
@@ -341,11 +365,41 @@ export default function HomeScreen() {
             accessibilityLabel="Create Group, Start new pool"
           >
             <View style={[styles.quickActionIconCircle, { backgroundColor: colors.secondary + '18' }]}>
-              <MaterialIcons name="group-add" size={26} color={colors.secondary} />
+              <MaterialIcons name="group-add" size={24} color={colors.secondary} />
             </View>
             <View style={styles.quickActionTextContainer}>
-              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]}>Create Group</Text>
-              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]}>Start new pool</Text>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]} numberOfLines={1} adjustsFontSizeToFit>
+                Create Group
+              </Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                Start new pool
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.quickActionCard,
+              {
+                backgroundColor: colors.surfaceContainerLowest,
+                borderColor: colors.divider,
+              },
+            ]}
+            onPress={() => navigation.navigate('Contacts')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Contacts & Friends, Split with friends"
+          >
+            <View style={[styles.quickActionIconCircle, { backgroundColor: (colors.accentTeal || colors.primary) + '18' }]}>
+              <MaterialIcons name="contacts" size={24} color={colors.accentTeal || colors.primary} />
+            </View>
+            <View style={styles.quickActionTextContainer}>
+              <Text style={[styles.quickActionTitle, { color: colors.onSurface }]} numberOfLines={1} adjustsFontSizeToFit>
+                Contacts & Friends
+              </Text>
+              <Text style={[styles.quickActionSubtitle, { color: colors.onSurfaceVariant }]} numberOfLines={1}>
+                Split with friends
+              </Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -527,6 +581,14 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Useful Monthly Financial Insight */}
+        <View style={styles.sectionContainer}>
+          <SmartInsight
+            insights={monthlyInsights}
+            onPress={() => navigation.navigate('MainTabs', { screen: 'AnalyticsTab' })}
+          />
+        </View>
+
         {/* Groups Preview Section */}
         <View style={styles.sectionContainer}>
           <SectionHeader
@@ -561,7 +623,11 @@ export default function HomeScreen() {
                     groupType={group.groupType as any}
                     members={(group.memberIds || []).map((uid: string) => {
                       const u = allUsersMap.get(uid);
-                      return { name: u?.name || 'Member', uri: u?.photoUrl, thumbnailUri: u?.photoThumbnailUrl };
+                      const isMe = uid === currentUser?.uid;
+                      const name = u?.name || (isMe ? (currentUser?.displayName || firstName || 'You') : '');
+                      const uri = u?.photoUrl || (isMe ? (userPhoto || currentUser?.photoURL || undefined) : undefined);
+                      const thumbnailUri = u?.photoThumbnailUrl || (isMe ? (userPhotoThumb || undefined) : undefined);
+                      return { name, uri, thumbnailUri };
                     })}
                     balanceLabel={balLabel}
                     balanceAmount={balFormatted}
@@ -581,11 +647,6 @@ export default function HomeScreen() {
 
         {/* Banner Ad blended under My Groups */}
         <BannerAdSlot style={{ marginVertical: 2 }} />
-
-        {/* Smart Insight Analytics */}
-        <View style={styles.sectionContainer}>
-          <SmartInsight insights={monthlyInsights} expenses={[]} settlements={[]} />
-        </View>
 
         {/* Recent Activity Section */}
         <View style={styles.sectionContainer}>
@@ -842,42 +903,46 @@ const styles = StyleSheet.create({
   },
   quickActionsRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    gap: Spacing.xs + 2,
   },
   quickActionCard: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: 4,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    minHeight: 64,
-    gap: Spacing.sm,
+    minHeight: 88,
+    gap: 6,
     ...Shadows.card,
   },
   quickActionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
   },
   quickActionTextContainer: {
-    flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   quickActionTitle: {
     ...Typography.titleSm,
     fontWeight: '700',
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 15,
+    textAlign: 'center',
   },
   quickActionSubtitle: {
     ...Typography.bodySm,
-    fontSize: 12,
-    lineHeight: 15,
+    fontSize: 10.5,
+    lineHeight: 13,
     marginTop: 2,
+    textAlign: 'center',
   },
   sectionContainer: {
     gap: Spacing.xs,

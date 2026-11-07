@@ -274,20 +274,6 @@ export default function AccountScreen() {
               <Text style={[styles.menuText, { color: colors.onSurface }]}>Payment Methods & UPI</Text>
               <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
             </TouchableOpacity>
-
-            <View style={[styles.menuDivider, { backgroundColor: colors.divider }]} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => navigation.navigate('Contacts' as any)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.iconCircle, { backgroundColor: colors.surfaceContainerLow }]}>
-                <MaterialIcons name="contacts" size={24} color={colors.primary} />
-              </View>
-              <Text style={[styles.menuText, { color: colors.onSurface }]}>Contacts & Friends</Text>
-              <MaterialIcons name="chevron-right" size={24} color={colors.outlineVariant} />
-            </TouchableOpacity>
           </View>
         </View>
 
