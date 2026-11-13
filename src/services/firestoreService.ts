@@ -1776,6 +1776,7 @@ export interface ExpenseComment {
   commentId: string;
   expenseId: string;
   uid: string;
+  userId?: string;
   userName: string;
   text: string;
   createdAt: any;
@@ -2120,6 +2121,7 @@ export const addCommentToExpense = async (expenseId: string, text: string) => {
       commentId: commentRef.id,
       expenseId,
       uid: user.uid,
+      userId: user.uid,
       userName: user.displayName || 'Member',
       text: text.trim(),
       createdAt: serverTimestamp(),
